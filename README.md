@@ -1,51 +1,59 @@
-# Nom du projet
+<div align="center">
+<a target="_blank" href="https://gitlab.cnes.fr/gridr/gridr">
+<picture>
+  <img
+    src="./doc/images/gridr.png"
+    alt="GRIDR"
+    width="40%"
+  />
+</picture>
+</a>
+
+<h4>Geometric and Radiometric Image Data Resampling</h4>
+
+[![Python](https://img.shields.io/badge/python-v3.8+-blue.svg)](https://www.python.org/downloads/release/python-380/)
+[![minimum rustc 1.79](https://img.shields.io/badge/rustc-1.79+-blue?logo=rust)](https://rust-lang.github.io/rfcs/2495-min-rust-version.html)
+[![minimum pyo3 0.21](https://img.shields.io/badge/pyo3-0.21+-green?logo=rust)](https://github.com/PyO3/pyo3)
+</div>
+
+
 Si possible, ajoutez un logo ou une capture de l'application pour rendre votre page plus dynamique/attrayante.
 
-- [Contexte](#contexte)
-- [Installation](#installation)
-- [Utilisation](#utilisation) 
-- [Liens utiles](#liens-utiles)
+- [Context](#context)
+- [Installation](#installation) 
+- [Usage](#usage) 
+- [Links](#links)
 
-## Contexte
+## Context
+GRIDR is a tool to resample and filter image data raster.
 
-Décrivez en quelques phrases le concept ou l'objectif de ce projet. Pensez à préciser s'il s'agit d'un projet spatial ou non.
+GRIDR is a python/rust project : rust is used to implement computational heavy algorithm.
 
-Listez les points de contact du projet :
-- Responsable CNES
-- Responsable technique
-- Autres
+GRIDR provides both elemental functions that can directly be used with in memory data and chain functions that aim to optimize the I/O operations.
 
-Vous pouvez également ajouter un lien vers le gitlab-pages du projet si vous en avez un.
-
+Functionnalities :
+- spatial resampling (not yet implemented) :
+    - grid based :
+        - linear oversampling of the grid coordinates
+        - exact radiometric interpolation with internal functions (nearest neighbor, linear, cubic, spline 
+        - radiometric interpolation with internal tabulated functions
+        - radiometric interpolation using an external kernel
+        - usage of mask and nodata values
+    - zoom
+    - unzoom
+- frequential filtering
+        
 ## Installation
 
-Décrivez les différentes étapes d'installation du projet pour quelqu'un qui partirait du dépôt GitLab cloné dans un environnement HPC. Pensez entre autres à :
-
-- Quel(s) module(s) importer ?
-- La liste de dépendances : est-elle bien renseignée dans un fichier requirements dans le dépôt ?
-- Y a-t-il des variables d'environnement à mettre en place ?
-
-Vous pouvez lister les commandes dans des encadrés, entrecoupés d'explications.
-
 ```
-$ commande 1 
-$ commande 2   
+pip install gridr
 ``` 
 
-## Utilisation
+## Usage
 
-Une fois le module installé, comment le lance-t-on ou lui fait-on appel ? Listez les différentes options avec si possible des illustrations du résultat obtenu. 
+TO BE DONE
 
-Là-aussi, vous pouvez utiliser des encadrés pour le code.
 
-```
-$ commande --option
-``` 
+## Links
 
-## Liens utiles
-- [Confluence de l'Usine Logicielle](https://confluence.cnes.fr/pages/viewpage.action?pageId=17961975)
-    - [Manuel pour l'utilisation de GitLab](https://confluence.cnes.fr/display/USINELOG/GitLab+-+Manuel+utilisateur)
-    - [Comment choisir son workflow Git](https://confluence.cnes.fr/display/USINELOG/Gestion+de+configuration+-+Choix+du+flow+Git)
-    - [Manuel pour l'utilisation de GitLab-CI](https://confluence.cnes.fr/display/USINELOG/GitLab-CI)
-- [Demandes de support à l'UL](https://confluence.cnes.fr/display/USINELOG/Les+demandes+de+support)
-- Vos propres pages de documentation :D
+TO BE DONE

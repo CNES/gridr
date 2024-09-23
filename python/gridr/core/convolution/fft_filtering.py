@@ -1,0 +1,351 @@
+from enum import IntEnum
+from typing import Union, Tuple, Any
+
+import numpy as np
+from scipy import signal
+
+from gridr.core.utils.array_window import window_check, window_extend, window_overflow
+from gridr.core.utils.parameters import tuplify
+
+class BoundaryPad(IntEnum):
+    NONE = 1
+    REFLECT = 2
+
+class ConvolutionOutputMode(IntEnum):
+    SAME = 1
+    FULL = 2
+    VALID = 3
+
+def get_filter_margin(
+        fil: np.ndarray,
+        zoom: int = 1,
+        axes = None,
+        ) -> Tuple[int]:
+    """Compute the required margin for filter in order to avoid edge effect.
+    In case of zoom = 1 it corresponds to the half size of the filter.
+    
+    Args:
+        fil: the input filter as ndarray
+        zoom: zoom
+    
+    Returns:
+        The margins array along all dimensions
+    """
+    assert(zoom ==1)
+    if axes is None:
+        axes = range(arr.ndim)
+    margins = [0 if i not in axes else
+            fil.shape[i]//2 for i in axes]
+    return margins
+
+def pad_array(
+        arr: np.ndarray,
+        win: np.ndarray,
+        pad: Tuple[int, int, int, int],
+        boundary: Union[BoundaryPad, Tuple[Tuple[BoundaryPad, BoundaryPad]]],
+        axes = None,
+        ) -> np.ndarray:
+    """Pad an array with respect to the rules set for edge management.
+    """
+    if axes is None:
+        axes = range(arr.ndim)
+        
+    out = arr
+    boundary_set = list(set([b for b in np.asarray(boundary).flat
+            if not b in [BoundaryPad.NONE, None, np.nan]]))
+    if len(boundary_set) == 0:
+        pass
+    elif len(boundary_set) == 1:
+        mode = None
+        if boundary_set[0] == BoundaryPad.REFLECT:
+            mode = "reflect"
+        else:
+            raise Exception(f"Not valid padding mode {boundary_set[0]}")
+        
+        indices = tuple((slice(None, None) if i not in axes else
+                slice(win[i][0],win[i][1]+1) for i in range(arr.ndim)))
+        out = np.pad(arr[indices], pad, mode=mode)
+    else:
+        raise Exception('Only one not NONE BoundaryPad mode is implemented')
+    return out
+
+def fft_odd_filter(
+        fil: np.ndarray,
+        axes = None,
+        ) -> np.ndarray:
+    """Check that the filter has an odd length along specified axes.
+    If it is not the case it is right/bottom padded with zero on the
+    corresponding axe(s).
+    
+    Args:
+        fil: the filter as a numpy ndarray
+        axes: the axes that will be used for convolution computation
+    
+    Returns:
+        The odd filter as numpy ndarray.
+    """
+    if axes is None:
+        axes = range(fil.ndim)
+
+    # If filter has an even size, we first pad with a 0 on the right et lower edge
+    pad_fil = [0 if i not in axes else
+            1 - fil.shape[i] % 2 for i in range(fil.ndim)]
+    if np.any(pad_fil):
+        pad_arg = tuple(((0, pad_fil[i]) for i in range(fil.ndim)))
+        fil = np.pad(fil, pad_arg, mode="constant", constant_values=0)
+    return fil
+
+def fft_array_filter_output_shape(
+        arr: np.ndarray,
+        fil: np.ndarray,
+        win: Union[np.ndarray or None],
+        boundary: Union[BoundaryPad, Tuple[Tuple[BoundaryPad, BoundaryPad]]] = BoundaryPad.NONE,
+        out_mode: ConvolutionOutputMode = ConvolutionOutputMode.SAME,
+        zoom: Union[int, Tuple[int, int]] = 1,
+        axes = None,
+        ) -> np.ndarray:
+    """
+    Compute fft_array_filter expected output shape along all axes.
+    
+    Args:
+        arr : the input array.
+        win : the production window given as a list of tuple containing the
+                first and last index for each dimension.
+                e.g. for a dimension 2 : 
+                ((first_row, last_row), (first_col, last_col))
+        fil: the filter given as an array in the spatial domain
+        boundary: the edge management rule as a single value (similar for each
+                side) or a tuple ((top, bottom), (left, right)). The rule is defined
+                by the BoundaryPad enum.
+        out_mode: the output mode for the returned array.
+        zoom: the zoom factor. It can either be a single integer or a tuple of two integers
+                representing the rational P/Q and given as (P, Q)
+        axes: the axes on which to perform the convolution. WARNING : not yet used.
+   
+    Returns:
+        an array containing the output shape
+    """
+    # zoom different from 1 not yet implemented
+    assert(zoom==1)
+    out = np.nan
+    
+    if axes is None:
+        axes = range(arr.ndim)
+        
+    #arr = np.asarray(arr)
+    #fil = np.asarray(fil)
+    
+    # If filter has an even size, we first pad with a 0 on the right et lower edge
+    fil = fft_odd_filter(fil, axes)
+    
+    # Compute the margin needed to avoid edge effect
+    conv_margins = get_filter_margin(fil=fil, zoom=zoom, axes=axes)
+    
+    # Set window to full array if not given
+    if win is None:
+        # Define a correct 2d window matching the array dimensions
+        win = [(None, None) if i not in axes else
+                   (0, arr.shape[i]-1) for i in range(arr.ndim)]
+    win = np.asarray(win)
+    
+    # Check process_window with input arr
+    if not window_check(arr, win, axes):
+        raise Exception("Target window error : not contained in input data")
+    
+    win_margins = win
+    
+    # Get the boundary management
+    boundary = np.asarray(tuplify(boundary, ndim=arr.ndim))
+    
+    if np.any(boundary != BoundaryPad.NONE):
+        # We want to manage at least one edge with either outer data
+        # or padding.
+        # Define the margins array
+        margins = np.repeat(conv_margins, 2).reshape((len(conv_margins),2))
+                
+        # Margins are computed regardless the boundary mode on each edge.
+        # Here we make it compliant with the boundary definition.
+        # If BoundaryPad.NONE => set the corresponding margin to 0
+        margins = np.where(boundary != BoundaryPad.NONE, margins, 0)
+        
+        # Apply the margin to the production window
+        win_margins = window_extend(win, margins, reverse=False)
+        
+    if out_mode == ConvolutionOutputMode.FULL:
+        # It returns the full data with eventually applied margins
+        out = [ arr.shape[i] if i not in axes else
+                win_margins[i][1] - win_margins[i][0] + 1 + 2 * conv_margins[i]
+                for i in range(arr.ndim)]
+    elif out_mode == ConvolutionOutputMode.SAME:
+        # It returns the data corresponding to the input window
+        # Please note that this mode takes into account the optional
+        # padding that may be performed
+        out = [ arr.shape[i] if i not in axes else
+                win[i][1] - win[i][0] + 1 for i in range(arr.ndim)]
+    
+    else:
+        raise NotImplementedError
+        
+    return np.asarray(out)
+
+
+def fft_array_filter(
+        arr: np.ndarray,
+        fil: np.ndarray,
+        win: Union[np.ndarray or None],
+        boundary: Union[BoundaryPad, Tuple[Tuple[BoundaryPad, BoundaryPad]]] = BoundaryPad.NONE,
+        out_mode: ConvolutionOutputMode = ConvolutionOutputMode.SAME,
+        zoom: Union[int, Tuple[int, int]] = 1,
+        axes = None,
+        ) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    FFT convolve between an array and a filter.
+    
+    This methods wraps the scipy signal.oaconvolve method by adding some functionalities :
+    - the filter is assumed to have an odd size ; if it is not the case, it is padded on the 
+      right et bottom edges with zeros.
+    - the user can precise the production window in order to limit the data given to the
+      convolution method. Please note that what is really given to the fft convolution depends
+      on the boundary argument.
+    - an edge management option is available in order to precise how to manage boundary at each
+      side. In details :
+      1. BoundaryPad.NONE : no padding in applied on the edge of the production window.
+      2. BoundaryPad.REFLECT : a padding is applied. The length of the padding is computed from
+         the filter size. If data is available in the full array it is taken into account. If 
+         data is not available or partially not available, a "mirror" pad is applied. In that case
+         the array given to the fft convolution method is extended - please note that the 
+         convolution method still apply a zero padding internally.
+      Please note that the padding rule may differs for each side.
+    - the window output can differ depending on the conv_mode :
+      1. In mode "SAME" : the output window matches the input production window.
+      2. In mode "FULL" : the output directly corresponds to the "full" mode of the internal
+         convolution method. Thus embedding both the margins (from the filter) and the extent
+         from the BoundaryPad mode. In that case the second element of the output can be used
+         to get the position of the production window origin.
+    
+    Args:
+        arr : the input array.
+        win : the production window given as a list of tuple containing the
+                first and last index for each dimension.
+                e.g. for a dimension 2 : 
+                ((first_row, last_row), (first_col, last_col))
+        fil: the filter given as an array in the spatial domain
+        boundary: the edge management rule as a single value (similar for each
+                side) or a tuple ((top, bottom), (left, right)). The rule is defined
+                by the BoundaryPad enum.
+        out_mode: the output mode for the returned array.
+        zoom: the zoom factor. It can either be a single integer or a tuple of two integers
+                representing the rational P/Q and given as (P, Q)
+        axes: the axes on which to perform the convolution. WARNING : not yet used.
+   
+    Returns:
+        a tuple containing :
+        - the filtered array whose size depends on the convolution mode
+        - the output coordinates of the production window considering a "full" mode output.
+    """
+    # zoom different from 1 not yet implemented
+    assert(zoom==1)
+
+    if axes is None:
+        axes = range(arr.ndim)
+        
+    #arr = np.asarray(arr)
+    #fil = np.asarray(fil)
+    
+    # If filter has an even size, we first pad with a 0 on the right et lower edge
+    fil = fft_odd_filter(fil, axes)
+    
+    # Compute the margin needed to avoid edge effect
+    conv_margins = get_filter_margin(fil=fil, zoom=zoom, axes=axes)
+    
+    # Set window to full array if not given
+    if win is None:
+        # Define a correct 2d window matching the array dimensions
+        win = [(None, None) if i not in axes else
+                   (0, arr.shape[i]-1) for i in range(arr.ndim)]
+    win = np.asarray(win)
+        
+    # Check process_window with input arr
+    if not window_check(arr, win, axes):
+        raise Exception("Target window error : not contained in input data")
+    
+    convol_fct = signal.oaconvolve
+    conv_arr = None
+    
+    # Compute the shift to apply to the full output in order to get
+    # the same window as input.
+    # This default computation corresponds to the case where 
+    # BoundaryPad is set to NONE for all edges
+    shift_same = np.asarray([0 if i not in axes else
+            fil.shape[i] // 2 for i in range(fil.ndim)])
+    
+    # Get the boundary management
+    boundary = np.asarray(tuplify(boundary, ndim=arr.ndim))
+    
+    if np.all(boundary == BoundaryPad.NONE):
+        # final window corresponds to the input window
+        indices = tuple((slice(None, None) if i not in axes else
+                slice(int(win[i][0]),int(win[i][1]+1)) for i in range(arr.ndim)))
+        conv_arr = arr[indices]
+        
+    elif np.any(boundary != BoundaryPad.NONE):
+        # We want to manage at least one edge with either outer data
+        # or padding.
+        # Define the margins array
+        margins = np.repeat(conv_margins, 2).reshape((len(conv_margins),2))
+                
+        # Margins are computed regardless the boundary mode on each edge.
+        # Here we make it compliant with the boundary definition.
+        # If BoundaryPad.NONE => set the corresponding margin to 0
+        margins = np.where(boundary != BoundaryPad.NONE, margins, 0)
+        
+        # For output : in order to get the same window we have to take
+        # account of used margins to shift the window
+        shift_same += margins[:,0]
+        #shift_same[0] += margins[0]
+        #shift_same[1] += margins[2]   
+        
+        # Apply the margin to the production window
+        win_margins = window_extend(win, margins, reverse=False)
+        
+        # Next compute the padding
+        # Here 0 means that no padding is required
+        pad = window_overflow(arr, win_margins, axes)
+        
+        if np.all(pad == 0):
+            # Nothing more to do, just take the window with margins
+            indices = tuple((slice(None, None) if i not in axes else
+                slice(win_margins[i][0],win_margins[i][1]+1) for i in range(arr.ndim)))
+            conv_arr = arr[indices]
+            #conv_arr = arr[win_margins[0]:win_margins[1]+1,
+            #    win_margins[2]:win_margins[3]+1]
+        else:
+            # Perform the padding - it directly gives the conv array
+            win_pad =  window_extend(win_margins, pad, reverse=True)
+            conv_arr = pad_array(arr=arr, win=win_pad, pad=pad,
+                    boundary=boundary, axes=axes)
+    
+    # Perform the convolution with mode = 'full' in order to master the 
+    # returned window
+    out = convol_fct(conv_arr, fil, mode='full', axes=axes)
+    
+    if out_mode == ConvolutionOutputMode.FULL:
+        # It returns the full data with eventually applied margins
+        # That directly correspond to the output
+        pass
+    elif out_mode == ConvolutionOutputMode.SAME:
+        # It returns the data corresponding to the input window
+        # Please note that this mode takes into account the optional
+        # padding that may be performed
+        indices = tuple((slice(None, None) if i not in axes else
+                slice(shift_same[i],
+                        shift_same[i]+ win[i][1] - win[i][0] + 1)
+                for i in range(arr.ndim)))
+        out = out[indices]
+    
+    else:
+        raise NotImplementedError
+    
+    win_same = np.asarray([shift_same, shift_same + win[:,1] - win[:,0]]).T
+    
+    return out, win_same

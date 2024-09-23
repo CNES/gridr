@@ -1,0 +1,151 @@
+import os
+import numpy as np
+import pytest
+
+from gridr.core.convolution.fft_filtering import fft_array_filter, fft_array_filter_output_shape, BoundaryPad, ConvolutionOutputMode
+
+IDENTITY_KERNEL = np.array([[0,0,0], [0, 1, 0], [0, 0, 0]])
+GAUSSIAN_BLUR_3_3 = 1./16. * np.array([[1, 2, 1], [2, 4, 2], [1, 2, 1]])
+
+class TestFFTFiltering:
+    
+    def test_fft_filtering_identity_1(self):
+        nrow, ncol = 50, 60
+        input_data = np.arange(nrow*ncol, dtype=np.float32).reshape((nrow, ncol))
+        
+        # Test a simple filtering with no border mode
+        out1, origin1 = fft_array_filter(
+                arr=input_data,
+                fil=IDENTITY_KERNEL,
+                win=None,
+                boundary=BoundaryPad.NONE,
+                out_mode=ConvolutionOutputMode.SAME,)
+        
+        # check that shape is the same
+        assert(np.all(out1.shape == input_data.shape))
+        # assert origin is at 1, 1 for the kernel
+        assert(np.all(origin1[:,0] == np.array(IDENTITY_KERNEL.shape) // 2))
+        # assert that valid data is close
+        np.testing.assert_allclose(out1[1:-1, 1:-1], input_data[1:-1,1:-1], rtol=1e-5, atol=0)
+        
+        # Change the out_mode
+        out2, origin2 = fft_array_filter(
+                arr=input_data,
+                fil=IDENTITY_KERNEL,
+                win=None,
+                boundary=BoundaryPad.NONE,
+                out_mode=ConvolutionOutputMode.FULL,)
+        assert(out2.shape[0] == input_data.shape[0] + 2 * (IDENTITY_KERNEL.shape[0] // 2))
+        assert(out2.shape[1] == input_data.shape[1] + 2 * (IDENTITY_KERNEL.shape[1] // 2))
+        assert(np.all(origin2[:,0] == np.array(IDENTITY_KERNEL.shape) // 2))
+        np.testing.assert_allclose(out2[2:-2, 2:-2], input_data[1:-1,1:-1], rtol=1e-5, atol=0)
+        
+        # Change the padding mode
+        out3, origin3 = fft_array_filter(
+                arr=input_data,
+                fil=IDENTITY_KERNEL,
+                win=None,
+                boundary=((BoundaryPad.REFLECT, BoundaryPad.REFLECT),
+                        (BoundaryPad.REFLECT, BoundaryPad.REFLECT)),
+                out_mode=ConvolutionOutputMode.FULL,)
+        assert(out3.shape[0] == input_data.shape[0] + 4 * (IDENTITY_KERNEL.shape[0] // 2))
+        assert(out3.shape[1] == input_data.shape[1] + 4 * (IDENTITY_KERNEL.shape[1] // 2))
+        
+        # Change the padding mode
+        out4, origin4 = fft_array_filter(
+                arr=input_data,
+                fil=IDENTITY_KERNEL,
+                win=None,
+                boundary=((BoundaryPad.REFLECT, BoundaryPad.NONE),
+                        (BoundaryPad.NONE, BoundaryPad.REFLECT)),
+                out_mode=ConvolutionOutputMode.FULL,)
+        assert(out4.shape[0] == input_data.shape[0] + 3 * (IDENTITY_KERNEL.shape[0] // 2))
+        assert(out4.shape[1] == input_data.shape[1] + 3 * (IDENTITY_KERNEL.shape[1] // 2))
+        assert(origin4[0][0] == 2 * (IDENTITY_KERNEL.shape[0] // 2))
+        assert(origin4[1][0] == IDENTITY_KERNEL.shape[1] // 2)
+        
+        # Change the padding mode
+        out5, origin5 = fft_array_filter(
+                arr=input_data,
+                fil=IDENTITY_KERNEL,
+                win=None,
+                boundary=((BoundaryPad.REFLECT, BoundaryPad.NONE),
+                        (BoundaryPad.NONE, BoundaryPad.REFLECT)),
+                out_mode=ConvolutionOutputMode.SAME,)
+        assert(np.all(origin5[:,0] == np.array([IDENTITY_KERNEL.shape[0] // 2, 0]) + np.array(IDENTITY_KERNEL.shape) // 2))
+        
+        
+    
+    def test_fft_filtering_identity_2(self):
+        nrow, ncol = 50, 60
+        input_data = np.arange(nrow*ncol, dtype=np.float32).reshape((nrow, ncol))
+
+        out1, origin1 = fft_array_filter(
+                arr=input_data,
+                fil=IDENTITY_KERNEL,
+                win=((10,20), (30,40)),
+                boundary=BoundaryPad.NONE,
+                out_mode=ConvolutionOutputMode.SAME,)
+        
+        # check that shape is the same
+        assert(np.all(out1.shape == (11, 11)))
+        # assert origin is at 1, 1 for the kernel
+        assert(np.all(origin1[:,0] == np.array(IDENTITY_KERNEL.shape) // 2))
+        # assert that valid data is close
+        np.testing.assert_allclose(out1[1:-1, 1:-1], input_data[11:20, 31:40], rtol=1e-5, atol=0)
+
+        out2, origin2 = fft_array_filter(
+                arr=input_data,
+                fil=IDENTITY_KERNEL,
+                win=((10,20), (30,40)),
+                boundary=BoundaryPad.NONE,
+                out_mode=ConvolutionOutputMode.FULL,)
+        
+        # check that shape is the same
+        assert(np.all(out2.shape == (11+2 * (IDENTITY_KERNEL.shape[0] // 2), 11+ 2 * (IDENTITY_KERNEL.shape[1] // 2))))
+        # check that origin2 windows has the right size
+        assert(origin2[0,0] == IDENTITY_KERNEL.shape[1] // 2)
+        assert(origin2[0,1] == 10 + origin2[0,0])
+        assert(origin2[1,0] == IDENTITY_KERNEL.shape[1] // 2)
+        assert(origin2[1,1] == 10 + IDENTITY_KERNEL.shape[1] // 2)
+        assert(np.all(origin2[:,1]-origin2[:,0] + 1 == np.asarray([11, 11])))
+        # assert origin is at 1, 1 for the kernel
+        assert(np.all(origin2[:,0] == np.array(IDENTITY_KERNEL.shape) // 2))
+        assert(np.all(origin2[:,1] == 10 + np.array(IDENTITY_KERNEL.shape) // 2))
+        # assert that valid data is close
+        np.testing.assert_allclose(out2[1+origin2[0,0]:1+origin2[0,1]-1, 1+origin2[1,0]:1+origin2[1,1]-1], input_data[11:20, 31:40], rtol=1e-5, atol=0)
+    
+    def test_fft_filtering_output_shape(self):
+        nrow, ncol = 50, 60
+        input_data = np.arange(nrow*ncol, dtype=np.float32).reshape((nrow, ncol))
+
+        for boundary, out_mode in (
+                (BoundaryPad.NONE, ConvolutionOutputMode.SAME),
+                (BoundaryPad.REFLECT, ConvolutionOutputMode.SAME),
+                (BoundaryPad.REFLECT, ConvolutionOutputMode.FULL),
+                (BoundaryPad.NONE, ConvolutionOutputMode.FULL),
+                (((BoundaryPad.NONE, BoundaryPad.NONE), (BoundaryPad.NONE, BoundaryPad.NONE)) , ConvolutionOutputMode.FULL),
+                (((BoundaryPad.NONE, BoundaryPad.REFLECT), (BoundaryPad.NONE, BoundaryPad.NONE)) , ConvolutionOutputMode.FULL),
+                ):
+            shape_out = fft_array_filter_output_shape(
+                arr=input_data,
+                fil=IDENTITY_KERNEL,
+                win=((10,20), (30,42)),
+                boundary=boundary,
+                out_mode=out_mode)
+                
+            out, _ = fft_array_filter(
+                arr=input_data,
+                fil=IDENTITY_KERNEL,
+                win=((10,20), (30,42)),
+                boundary=boundary,
+                out_mode=out_mode,)
+            
+            if not np.all(shape_out == out.shape):
+                raise Exception(f'test failed for boundary {boundary} out_mode {out_mode} : {shape_out}  VS {out.shape}')
+
+        
+        
+        
+        
+        
