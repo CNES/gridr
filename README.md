@@ -16,9 +16,6 @@
 [![minimum pyo3 0.21](https://img.shields.io/badge/pyo3-0.21+-green?logo=rust)](https://github.com/PyO3/pyo3)
 </div>
 
-
-Si possible, ajoutez un logo ou une capture de l'application pour rendre votre page plus dynamique/attrayante.
-
 - [Context](#context)
 - [Installation](#installation) 
 - [Usage](#usage) 
