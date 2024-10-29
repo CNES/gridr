@@ -27,6 +27,7 @@ def fft_filtering_oa_strip_chain(
         binary: bool = False,
         binary_threshold: float = 1e-3,
         zoom: int = 1,
+        round_out: bool = True,
         logger = None,
         ) -> int:
     """
@@ -82,6 +83,7 @@ def fft_filtering_oa_strip_chain(
                 greater or equal to binary_threshold are set to 1, 0 otherwise.
         zoom: the zoom factor. It can either be a single integer or a tuple of
                 two integers representing the rational P/Q and given as (P, Q)
+        round_out: option to round the written output to the nearest integer.
         logger : python logger object to use for logging. If None a logger is
                 initialized internally.
    
@@ -136,8 +138,8 @@ def fft_filtering_oa_strip_chain(
                     zoom = zoom,
                     axes = None,)
         if binary:
-            arr_out = (arr_out >= binary_threshold).astype(np.uint8)
-        else:
+            arr_out = (np.abs(arr_out) >= binary_threshold).astype(np.uint8)
+        elif round_out:
             arr_out = np.round(arr_out)
         ds_out.write(arr_out, 1)
         
@@ -269,10 +271,13 @@ def fft_filtering_oa_strip_chain(
                         f"{oa_dst_window}")
                 
                 if binary:
-                    bin_out = (oa_buffer[:, col_slice_out] >= binary_threshold).astype(np.uint8)
+                    bin_out = (np.abs(oa_buffer[:, col_slice_out]) >= binary_threshold).astype(np.uint8)
                     ds_out.write(bin_out, 1, window=oa_dst_window)
-                else:                
+                elif round_out:
                     ds_out.write(np.round(oa_buffer[:, col_slice_out]), 1,
+                            window=oa_dst_window)
+                else:
+                    ds_out.write(oa_buffer[:, col_slice_out], 1,
                             window=oa_dst_window)
                 dst_start_line = dst_stop_line
             
@@ -323,13 +328,16 @@ def fft_filtering_oa_strip_chain(
                     f"window {noa_dst_window}")
             # write the non overlap area
             if binary:
-                bin_out = (carr_out[noa_src_slice, col_slice_carr] >= binary_threshold).astype(np.uint8)
+                bin_out = (np.abs(carr_out[noa_src_slice, col_slice_carr]) >= binary_threshold).astype(np.uint8)
                 ds_out.write(bin_out, 1, window=noa_dst_window)
-            else:
+            elif round_out:
                 ds_out.write(np.round(carr_out[noa_src_slice, col_slice_carr]), 1,
                         window=noa_dst_window)
+            else:
+                ds_out.write(carr_out[noa_src_slice, col_slice_carr], 1,
+                        window=noa_dst_window)
             dst_start_line = dst_stop_line
-    return 1
+    return 0
 
 
 if __name__ == '__main__':

@@ -72,7 +72,7 @@ def bench_gridr_oa_strip_chain(raster_path_in, raster_path_out, filter_in, strip
     
     with rasterio.open(raster_path_out, "w",
                 driver_name="GTiff",
-                dtype=np.int16,
+                dtype=np.float32, #np.int16,
                 height=shape_out[0],
                 width=shape_out[1],
                 count=1,) as ds_out:
@@ -90,6 +90,7 @@ def bench_gridr_oa_strip_chain(raster_path_in, raster_path_out, filter_in, strip
                 out_mode = ConvolutionOutputMode.SAME,
                 strip_size = strip_size,
                 zoom = 1,
+                round_out = False,
                 logger=logger,)
         # Time it here
         d1 = datetime.now()
