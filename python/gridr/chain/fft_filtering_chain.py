@@ -1,6 +1,19 @@
+# coding: utf8
+#
+# Copyright (c) 2024 Centre National d'Etudes Spatiales (CNES).
+#
+# This file is part of GRIDR
+# (see https://gitlab.cnes.fr/gridr/gridr).
+#
+#
+"""
+Module for a FFT Filtering chain with overlap-add strip management
+"""
+
 from enum import IntEnum
 import logging
 from pathlib import Path
+from typing import Union, NoReturn
 
 import numpy as np
 import rasterio
@@ -14,6 +27,87 @@ from gridr.core.utils.parameters import tuplify
 from gridr.core.convolution.fft_filtering import (
         fft_array_filter, fft_array_filter_output_shape, fft_odd_filter,
         BoundaryPad, ConvolutionOutputMode, get_filter_margin, pad_array)
+
+
+def check_oa_strip_size(
+        arr: Union[np.ndarray, ArrayProfile],
+        fil: np.ndarray,
+        strip_size: int,
+        ) -> int:
+    """
+    Check the strip size against array and filter dimension.
+    The methods returns 0 if either :
+    - the half number of lines in array is lesser than the strip size
+    - the number of rows in the filter is greater or equal to the half number of
+        lines in the input array.
+    Otherwise it returns the given strip_size.
+    
+    Args:
+        arr: the input image array
+        fil: the filter given as an array in the spatial domain
+        strip_size : the chunk target number of rows
+        
+    Returns:
+        the original strip_size or 0
+    """
+    if arr.shape[0]/2 < strip_size:
+        strip_size = 0
+    if fil.shape[0] >= arr.shape[0]/2:
+        # There is no use of overlap
+        # Set strip_size to 0 in order to get only 1 chunk
+        strip_size = 0
+    return strip_size
+    
+
+def fft_array_filter_fallback(
+        ds_in: rasterio.io.DatasetReader,
+        ds_out: rasterio.io.DatasetWriter,
+        band: int,
+        fil: np.ndarray,
+        boundary: BoundaryPad,
+        out_mode: ConvolutionOutputMode,
+        binary: bool = False,
+        binary_threshold: float = 1e-3,
+        zoom: int = 1,
+        round_out: bool = True,
+        ) -> NoReturn:
+    """
+    Wrapper to the fft_array_filter core method in case of no strip.
+    
+    Args:
+        ds_in : opened input image data set
+        ds_out : opened output dataset
+        band : band to consider in the input dataset
+        fil: the filter given as an array in the spatial domain
+        boundary : the edge management rule as a single value (similar for each
+                side) or a tuple ((top, bottom), (left, right)). The rule is
+                defined by the BoundaryPad enum.
+        out_mode : the output mode for the returned array.
+        strip_size : the chunk target number of rows
+        binary : option to save output as binary (0 or 1)
+        binary_threshold : in case of binary option is activated, all values 
+                greater or equal to binary_threshold are set to 1, 0 otherwise.
+        zoom: the zoom factor. It can either be a single integer or a tuple of
+                two integers representing the rational P/Q and given as (P, Q)
+        round_out: option to round the written output to the nearest integer.
+    """
+    # Full read
+    buffer = np.zeros((ds_in.height, ds_in.width),
+            dtype=ds_in.profile['dtype'], order='C')
+    arr = ds_in.read(band, out=buffer)
+    arr_out, shift_same = fft_array_filter(
+                arr = arr,
+                fil = fil,
+                win = None, # full array
+                boundary = boundary,
+                out_mode = out_mode,
+                zoom = zoom,
+                axes = None,)
+    if binary:
+        arr_out = (np.abs(arr_out) >= binary_threshold).astype(np.uint8)
+    elif round_out:
+        arr_out = np.round(arr_out)
+    ds_out.write(arr_out, 1)
 
 
 def fft_filtering_oa_strip_chain(
@@ -93,9 +187,6 @@ def fft_filtering_oa_strip_chain(
     if logger is None:
         logger = logging.getLogger(__name__)
     assert(zoom == 1)
-
-    shape_in = (ds_in.height, ds_in.width)
-    shape_fil = fil.shape
     
     logger.debug(f"precompute output shape")
     # compute output shape from method parameters
@@ -112,37 +203,19 @@ def fft_filtering_oa_strip_chain(
     
     fil = fft_odd_filter(fil, axes=None)
     
-    if shape_in[0]/2 < strip_size:
-        strip_size = 0
-    
-    if fil.shape[0] >= shape_in[0]/2:
-        # There is no use of overlap
-        # Set strip_size to 0 in order to get only 1 chunk
-        strip_size = 0
+    strip_size = check_oa_strip_size(
+            arr=ArrayProfile.from_dataset(ds_in),
+            fil=fil,
+            strip_size=strip_size)
     
     # Compute strips definitions
     chunk_boundaries = chunks.get_chunk_boundaries(
                 nsize=ds_in.height, chunk_size=strip_size, merge_last=True)
     
     if len(chunk_boundaries) == 1:
-        # Full read
-        buffer = np.zeros((ds_in.height, ds_in.width),
-                dtype=ds_in.profile['dtype'], order='C')
-        arr = ds_in.read(band, out=buffer)
-        arr_out, shift_same = fft_array_filter(
-                    arr = arr,
-                    fil = fil,
-                    win = None, # full array
-                    boundary = boundary,
-                    out_mode = out_mode,
-                    zoom = zoom,
-                    axes = None,)
-        if binary:
-            arr_out = (np.abs(arr_out) >= binary_threshold).astype(np.uint8)
-        elif round_out:
-            arr_out = np.round(arr_out)
-        ds_out.write(arr_out, 1)
-        
+        # Full read => fallback to the core method
+        fft_array_filter_fallback(ds_in, ds_out, band, fil, boundary, out_mode,
+                binary, binary_threshold, zoom, round_out)
     else:
         # The overlap add algorithm is implemented here in order to limit
         # the number of operations.
@@ -220,7 +293,6 @@ def fft_filtering_oa_strip_chain(
             
             col_slice_carr = None
             col_slice_out = None
-            col_window = None
             
             # Set the used columns interval depending on the output_mode
             if out_mode == ConvolutionOutputMode.SAME:
@@ -271,7 +343,8 @@ def fft_filtering_oa_strip_chain(
                         f"{oa_dst_window}")
                 
                 if binary:
-                    bin_out = (np.abs(oa_buffer[:, col_slice_out]) >= binary_threshold).astype(np.uint8)
+                    bin_out = (np.abs(oa_buffer[:, col_slice_out]) >= binary_threshold
+                            ).astype(np.uint8)
                     ds_out.write(bin_out, 1, window=oa_dst_window)
                 elif round_out:
                     ds_out.write(np.round(oa_buffer[:, col_slice_out]), 1,
@@ -328,7 +401,8 @@ def fft_filtering_oa_strip_chain(
                     f"window {noa_dst_window}")
             # write the non overlap area
             if binary:
-                bin_out = (np.abs(carr_out[noa_src_slice, col_slice_carr]) >= binary_threshold).astype(np.uint8)
+                bin_out = (np.abs(carr_out[noa_src_slice, col_slice_carr]) >= binary_threshold
+                        ).astype(np.uint8)
                 ds_out.write(bin_out, 1, window=noa_dst_window)
             elif round_out:
                 ds_out.write(np.round(carr_out[noa_src_slice, col_slice_carr]), 1,
@@ -341,8 +415,8 @@ def fft_filtering_oa_strip_chain(
 
 
 if __name__ == '__main__':
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
+    alogger = logging.getLogger(__name__)
+    alogger.setLevel(logging.DEBUG)
     logging.basicConfig(level=logging.DEBUG)
     log_rio = rasterio.logging.getLogger()
     log_rio.setLevel(logging.ERROR)
@@ -351,20 +425,18 @@ if __name__ == '__main__':
     from artemis_io import artemis_io as aio
     aio.register_all()
     
-    ima_in = '/home/il/kelbera/work_campus/artemis/contrib/worker/AstridzImageFilteringWorker_ake/examples/amiens_10_r_6_41_ref_extrait.tif'
+    ima_in = '/home/il/kelbera/work_campus/artemis/contrib/worker/' \
+            + 'AstridzImageFilteringWorker_ake/examples/amiens_10_r_6_41_ref_extrait.tif'
     ima_in_ds = rasterio.open(ima_in)
     
-    filter_in = '/home/il/kelbera/work_campus/artemis/contrib/worker/AstridzImageFilteringWorker_ake/examples/filtre_dezoom2.f'
+    filter_in = '/home/il/kelbera/work_campus/artemis/contrib/worker/' \
+            + 'AstridzImageFilteringWorker_ake/examples/filtre_dezoom2.f'
     filter_ds = aio.open(filter_in, driver='cnes_orion_filter')
     filter_data = filter_ds.read(1)
-    #print("filter shape", filter_data.shape)
-    #help(ima_in_ds)
     print(ima_in_ds.profile)
-    # ds_out
-    # ds_out has to be init first => the size depends on boundary and convolution outputMode
     
 
-    shape_out = fft_array_filter_output_shape(arr=ArrayProfile.from_dataset(ima_in_ds),
+    my_shape_out = fft_array_filter_output_shape(arr=ArrayProfile.from_dataset(ima_in_ds),
             fil=filter_data,
             win=None,
             boundary=BoundaryPad.REFLECT,
@@ -372,44 +444,44 @@ if __name__ == '__main__':
             zoom = 1,
             axes = None,
             )
-    print('output_shape', shape_out)
+    print('output_shape', my_shape_out)
     
     path_out = './test_out.tif'
     with rasterio.open(path_out, "w",
                 driver_name="GTiff",
                 dtype=np.uint16,
-                height=shape_out[0],
-                width=shape_out[1],
-                count=1,) as ds_out:
+                height=my_shape_out[0],
+                width=my_shape_out[1],
+                count=1,) as my_ds_out:
                 #nbits=1) as ds_out:    
     
         fft_filtering_oa_strip_chain(
                 ds_in=ima_in_ds,
-                ds_out = ds_out,
+                ds_out = my_ds_out,
                 band = 1,
                 fil = filter_data,
                 boundary = BoundaryPad.REFLECT,
                 out_mode = ConvolutionOutputMode.FULL,
                 strip_size = 512,
                 zoom = 1,
-                logger=logger,)
+                logger=alogger,)
     
     path_out = './test_out_0.tif'
     with rasterio.open(path_out, "w",
                 driver_name="GTiff",
                 dtype=np.uint16,
-                height=shape_out[0],
-                width=shape_out[1],
-                count=1,) as ds_out:
+                height=my_shape_out[0],
+                width=my_shape_out[1],
+                count=1,) as my_ds_out:
                 #nbits=1) as ds_out:    
     
         fft_filtering_oa_strip_chain(
                 ds_in=ima_in_ds,
-                ds_out = ds_out,
+                ds_out = my_ds_out,
                 band = 1,
                 fil = filter_data,
                 boundary = BoundaryPad.REFLECT,
                 out_mode = ConvolutionOutputMode.FULL,
                 strip_size = 0,
                 zoom = 1,
-                logger=logger,)
+                logger=alogger,)

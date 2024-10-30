@@ -1,17 +1,33 @@
+# coding: utf8
+#
+# Copyright (c) 2024 Centre National d'Etudes Spatiales (CNES).
+#
+# This file is part of GRIDR
+# (see https://gitlab.cnes.fr/gridr/gridr).
+#
+#
+"""
+FFT Filtering core module
+"""
 from enum import IntEnum
 from typing import Union, Tuple, Any
 
 import numpy as np
 from scipy import signal
 
-from gridr.core.utils.array_window import window_check, window_extend, window_overflow
+from gridr.core.utils.array_window import (
+        window_check, window_extend, window_overflow)
 from gridr.core.utils.parameters import tuplify
 
 class BoundaryPad(IntEnum):
+    """Boundary pad mode enumeration.
+    """
     NONE = 1
     REFLECT = 2
 
 class ConvolutionOutputMode(IntEnum):
+    """Convolution area output mode enumeration.
+    """
     SAME = 1
     FULL = 2
     VALID = 3
@@ -27,13 +43,14 @@ def get_filter_margin(
     Args:
         fil: the input filter as ndarray
         zoom: zoom
+        axes: the axes that will be used for margin computation
     
     Returns:
         The margins array along all dimensions
     """
     assert(zoom ==1)
     if axes is None:
-        axes = range(arr.ndim)
+        axes = range(fil.ndim)
     margins = [0 if i not in axes else
             fil.shape[i]//2 for i in axes]
     return margins
@@ -46,6 +63,25 @@ def pad_array(
         axes = None,
         ) -> np.ndarray:
     """Pad an array with respect to the rules set for edge management.
+    
+    Args:
+        arr : the input array.
+        win : the production window given as a list of tuple containing the
+                first and last index for each dimension.
+                e.g. for a dimension 2 : 
+                ((first_row, last_row), (first_col, last_col))
+        pad: the size of padding for each side as a 4-element tuple (top, bottom
+                , right, left)
+        boundary: the edge management rule as a single value (similar for each
+                side) or a tuple ((top, bottom), (left, right)). The rule is 
+                defined by the BoundaryPad enum.
+        out_mode: the output mode for the returned array.
+        zoom: the zoom factor. It can either be a single integer or a tuple of
+                two integers representing the rational P/Q and given as (P, Q)
+        axes: the axes on which to perform the convolution.
+    
+    Returns:
+        The padded array
     """
     if axes is None:
         axes = range(arr.ndim)
@@ -87,7 +123,8 @@ def fft_odd_filter(
     if axes is None:
         axes = range(fil.ndim)
 
-    # If filter has an even size, we first pad with a 0 on the right et lower edge
+    # If filter has an even size, we first pad with a 0 on the right et lower
+    # edge
     pad_fil = [0 if i not in axes else
             1 - fil.shape[i] % 2 for i in range(fil.ndim)]
     if np.any(pad_fil):
@@ -115,12 +152,12 @@ def fft_array_filter_output_shape(
                 ((first_row, last_row), (first_col, last_col))
         fil: the filter given as an array in the spatial domain
         boundary: the edge management rule as a single value (similar for each
-                side) or a tuple ((top, bottom), (left, right)). The rule is defined
-                by the BoundaryPad enum.
+                side) or a tuple ((top, bottom), (left, right)). The rule is 
+                defined by the BoundaryPad enum.
         out_mode: the output mode for the returned array.
-        zoom: the zoom factor. It can either be a single integer or a tuple of two integers
-                representing the rational P/Q and given as (P, Q)
-        axes: the axes on which to perform the convolution. WARNING : not yet used.
+        zoom: the zoom factor. It can either be a single integer or a tuple of 
+                two integers representing the rational P/Q and given as (P, Q)
+        axes: the axes on which to perform the convolution.
    
     Returns:
         an array containing the output shape
@@ -132,9 +169,6 @@ def fft_array_filter_output_shape(
     if axes is None:
         axes = range(arr.ndim)
         
-    #arr = np.asarray(arr)
-    #fil = np.asarray(fil)
-    
     # If filter has an even size, we first pad with a 0 on the right et lower edge
     fil = fft_odd_filter(fil, axes)
     
@@ -248,9 +282,6 @@ def fft_array_filter(
 
     if axes is None:
         axes = range(arr.ndim)
-        
-    #arr = np.asarray(arr)
-    #fil = np.asarray(fil)
     
     # If filter has an even size, we first pad with a 0 on the right et lower edge
     fil = fft_odd_filter(fil, axes)
@@ -302,8 +333,6 @@ def fft_array_filter(
         # For output : in order to get the same window we have to take
         # account of used margins to shift the window
         shift_same += margins[:,0]
-        #shift_same[0] += margins[0]
-        #shift_same[1] += margins[2]   
         
         # Apply the margin to the production window
         win_margins = window_extend(win, margins, reverse=False)
@@ -317,8 +346,6 @@ def fft_array_filter(
             indices = tuple((slice(None, None) if i not in axes else
                 slice(win_margins[i][0],win_margins[i][1]+1) for i in range(arr.ndim)))
             conv_arr = arr[indices]
-            #conv_arr = arr[win_margins[0]:win_margins[1]+1,
-            #    win_margins[2]:win_margins[3]+1]
         else:
             # Perform the padding - it directly gives the conv array
             win_pad =  window_extend(win_margins, pad, reverse=True)

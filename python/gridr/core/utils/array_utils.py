@@ -1,13 +1,24 @@
-import sys
-PY311 = sys.version_info >= (3,11)
+# coding: utf8
+#
+# Copyright (c) 2024 Centre National d'Etudes Spatiales (CNES).
+#
+# This file is part of GRIDR
+# (see https://gitlab.cnes.fr/gridr/gridr).
+#
+#
+"""
+Array utils module
+"""
 from typing import Tuple
+import sys
+import numpy as np
+import rasterio
+PY311 = sys.version_info >= (3,11)
 if PY311:
     from typing import Self
 else:
     from typing_extensions import Self
 
-import numpy as np
-import rasterio
 
 
 class ArrayProfile(object):

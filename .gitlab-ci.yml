@@ -1,0 +1,319 @@
+# Workflow permettant de ne pas avoir de pipeline en double, branch et MR : https://docs.gitlab.com/ee/ci/yaml/workflow.html#switch-between-branch-pipelines-and-merge-request-pipelines
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+
+# Fonctionnalité SAST
+# Nécessite stage "test" et la variable CI_TEMPLATE_REGISTRY_HOST
+# Peut être personnalisé https://docs.gitlab.com/ee/user/application_security/sast/#customizing-the-sast-settings
+# Note: il y a actuellement un bug dans l'execution du rapport dans les MR, en cours de correction côté Gitlab  
+# Note 2 : Dans l'exemple, nous utilisons le dernier template de SAST Gitlab-CI qui permet de pouvoir exécuter l'analyse en phase de Merge request
+
+######
+# Include SonarQube
+# Le template SonarQube vous permet d'utiliser le scan Sonar et ainsi avoir un retour rapide sur la qualité de votre projet.
+# C'est un stage non bloquant c'est-à-dire que même si Sonar ne valide pas la qualité de votre projet, le pipeline continuera son workflow
+# Enfin pour plus d'informations vous pouvez consulter le confluence : https://confluence.cnes.fr/pages/viewpage.action?spaceKey=USINELOG&title=GitLab-CI+-+Exemples+de+.gitlab-ci.yml
+# Vous pouvez retrouver tous les templates à importer pour faciliter la construction de vos pipeline dans le projet suivant : https://gitlab.cnes.fr/usinelogicielle/public/gitlab-ci-templates
+######
+
+include:
+  - template: Jobs/SAST.latest.gitlab-ci.yml
+#  - project: "usinelogicielle/public/gitlab-ci-templates" # Inclut le stage de qualité sonarqube
+#    ref: v1.1.2 # référence de tag
+#    file: "jobs/sonarqube-gitlab-ci.yml"
+
+stages:
+    - init
+    - quality
+    - test
+    - sonarqube
+    - package
+    #- deploy
+    #- scan Xray
+
+# Default configuration for all jobs
+default:
+        tags:
+            - Usine_Logicielle
+        timeout: 30 minutes 
+
+# Définition des variables globales pour tous les jobs  
+#============================
+
+variables: 
+
+    # Variables globales déclarées en dehors du yaml, définies automatiquement par Gitlab (Liste non exhaustive. Voir https://docs.gitlab.com/ee/ci/pipelines/index.html#prefill-variables-in-manual-pipelines) 
+    #============================
+    # CI_PIPELINE_SOURCE 
+    # CI_COMMIT_BRANCH 
+    # CI_OPEN_MERGE_REQUESTS 
+    # CI_MERGE_REQUEST_IID
+    # CI_MERGE_REQUEST_SOURCE_BRANCH_NAME
+    # CI_MERGE_REQUEST_TARGET_BRANCH_NAME
+    # CI_PROJECT_PATH
+    # CI_COMMIT_REF_SLUG
+    # CI_PIPELINE_ID
+    # CI_PIPELINE_URL
+    # CI
+    # … 
+    
+    # Variables globales déclarées en dehors du yaml, définies par l'UL au niveau de l’instance Gitlab 
+    #============================
+    # CNES_CERTIFICATE 
+    
+    # Variables globales déclarées en dehors du yaml, définies par l'UL, au niveau du groupe Gitlab dans le menu "Settings > CI/CD > Variables", et héritées par le projet : 
+    #============================
+    # Pour les images Docker sur Artifactory : 
+    # DOCKER_AUTH_CONFIG 
+    # Pour la connexion à Artifactory : 
+    # ARTIFACTORY_HOST 
+    # ARTIFACTORY_USER 
+    # ARTIFACTORY_TOKEN 
+    # Pour la connexion à SonarQube : 
+    # GRIDR_SONAR_TOKEN 
+    # SONARQUBE_HOST 
+    
+
+    
+    SONARQUBE_TOKEN: "${GRIDR_SONAR_TOKEN}" #Variable du template sonarqube
+  
+
+    # Variables globales déclarées dans le yaml, constituant des "paramètres" pour les jobs manuels :
+    #============================
+    DEBUG:
+        value: 'false'
+        description: "Afficher des logs supplémentaires"
+
+    # Variables globales déclarées dans le yaml :
+    #============================
+    # Variables pour les tags des images Docker à utiliser pour les jobs 
+    #---------------------------  
+    TAG_IMAGE_PYTHON: "python:3.10.8"
+    TAG_IMAGE_SONAR: "sonarsource/sonar-scanner-cli:4.5"
+    
+    # Variables pour le client Command Line Interface "JFrog CLI" (voir https://www.jfrog.com/confluence/display/CLI/JFrog+CLI)
+    #---------------------------
+    # CI : [Default: false] If true, disables interactive prompts and progress bar.
+    CI: "true"
+    # JFROG_CLI_HOME_DIR : [Default: ~/.jfrog]. Définit le chemin du fichier de configuration de Jfrog CLI. 
+    JFROG_CLI_HOME_DIR: ".jfrog"
+    # JFROG_CLI_TEMP_DIR: [Default: /tmp] Définit le chemin utilisé pour stocker les fichiers temporaires de Jfrog CLI. 
+    JFROG_CLI_TEMP_DIR: ".jfrog_tmp"
+    # Version de Jfrog CLI et l'OS de la machine (sur Gitlab-CI ce sera toujours du amd64)
+    JFROG_VERSION: "v2/2.14.0"
+    JFROG_OS: "jfrog-cli-linux-amd64"
+
+    # Variables pour les applications JFrog, Artifactory, les artefacts, etc 
+    #---------------------------
+    # Couple de variable pour construire le chemin des builds infos dans Artifactory. Ce couple doit être unique
+    JFROG_CLI_BUILD_NAME: "${CI_PROJECT_PATH}_${CI_COMMIT_REF_SLUG}_gitlab-ci"
+    JFROG_CLI_BUILD_NUMBER: "${CI_PIPELINE_ID}"
+    # url générique du serveur contenant les images docker
+    ARTIFACTORY_URL: "${ARTIFACTORY_HOST}/docker"
+
+    # URL pour récupérer l'image Docker pour exécuter l'analyse décrite dans le template SAST
+    CI_TEMPLATE_REGISTRY_HOST: "${ARTIFACTORY_HOST}/gitlab-docker-remote"
+
+    # Variables pour le développement de l'application 
+    #---------------------------
+    # Necessaire pour le virtual env pour ne pas partir en timeout car internet n'est pas configure
+    PIP_INDEX_URL : "https://${ARTIFACTORY_USER}:${ARTIFACTORY_TOKEN}@${ARTIFACTORY_HOST}/artifactory/api/pypi/pypi/simple"
+    PIP_CERT: "${CNES_CERTIFICATE}"
+    # Variable pour deplacer le dossier de cache de pip dans le workspace
+    PIP_CACHE_DIR: "${WORKSPACE}/.pip-cache/"
+
+    # Variables pour les applications SonarScanner, etc, propres au projet  
+    #---------------------------
+    # Variables for sonarscaner project
+    SONAR_PROJECT_KEY: "gridr_gridr_AZL2cBD9sgWkcFyT2YGB"
+    SONAR_PROJECT_NAME: "GridR"
+
+    
+python: 
+    stage: init
+    image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
+    before_script:
+        # Installation de Jfrog CLI 2.14.0 (18 mars 2022)
+        - curl -sS --cacert ${CNES_CERTIFICATE} -u ${ARTIFACTORY_USER}:${ARTIFACTORY_TOKEN} -O "https://${ARTIFACTORY_HOST}/artifactory/jfrog-cli-go-remote/${JFROG_VERSION}/${JFROG_OS}/jfrog"
+        # On donne les permissions pour utiliser la commande jfrog 
+        - chmod 755 jfrog
+        # Définition d'un UUID unique 
+        - export UUID=$(cat /proc/sys/kernel/random/uuid)
+        # Export de UUID pour le faire passer entre les jobs 
+        - touch uuid.txt
+        - echo ${UUID} > uuid.txt
+        # Ajout des certificats du CNES dans jfrog CLI pour accéder à Artifactory en HTTPS
+        - mkdir -p "${JFROG_CLI_HOME_DIR}/security/certs/"
+        - cp ${CNES_CERTIFICATE} "${JFROG_CLI_HOME_DIR}/security/certs/"
+    script:
+        - python -m venv python_env
+        - source python_env/bin/activate
+        # Configuration de jfrog CLI  
+        - ./jfrog config add ${UUID} --artifactory-url=https://${ARTIFACTORY_HOST}/artifactory  --access-token=${ARTIFACTORY_TOKEN}
+        # Configuration du dépôt pip
+        - ./jfrog pip-config --server-id-resolve=${UUID} --repo-resolve=pypi
+        # Installation mise a jour pip
+        - ./jfrog pip install --upgrade pip
+        # Installation des requirements du projet
+        - ./jfrog pip install -r requirements_dev.txt --no-cache-dir --force-reinstall
+        # Installation projet
+        #- ./jfrog pip install .
+        #--module myapp
+        - deactivate
+    timeout: 15 minutes
+    artifacts:
+        untracked: true
+        expire_in: 1 day
+
+pytest:
+    stage: quality
+    image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
+    needs: 
+        - python
+    script:
+        # Chargement du module python
+        - source python_env/bin/activate
+        
+        # Précision de la variable PYTHONPATH.
+        # On lance la commande 'pytest' suivi d'options:
+        # --cov=[SOURCE]  Chemin indiquant la localisation de l'ensemble des packages à couvrir durant l'exécution (plusieurs sources permises).
+        # --cov-report=TYPE  Type du rapport à génrer: term, term-missing, annotate, html, xml, lcov (multi-allowed). 
+        #   ":DEST" où DEST spécifira l'emplacement de sortie du rapport. 
+        # --cov-report=term affichera dans le terminal un court compte rendu du rapport.
+        #- PYTHONPATH=. pytest --cov=gridr  --cov-report=xml:.coverage-reports/coverage.xml --cov-report=term
+        - PYTHONPATH=${PWD}/python:${PYTHONPATH} pytest --cov=python --cov-report=xml:.coverage-reports/coverage.xml --cov-report=term --junitxml=report.xml tests/python
+        #- python -m pytest --cov=gridr --cov-report=xml:.coverage-reports/coverage.xml --cov-report=term --junitxml=report.xml tests/python
+        - ls -al .coverage-reports/coverage.xml
+        - deactivate
+    #artifacts:
+    #    # Optimiser l'archivage au strict minimum pour gagner de l'espace et du transferts de bande passante
+    #    paths:
+    #      - ./.coverage-reports/coverage.xml
+    #    expire_in: 1 day
+    
+    artifacts:
+        untracked: true
+        expire_in: 1 day
+        reports:
+            junit: report.xml
+    cache:
+        key: "coverage-python-reports"
+        paths:
+          - .coverage-reports/coverage.xml
+        policy: push
+    
+
+pylint_analysis:
+    stage: quality
+    image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
+    needs: 
+        - python
+    script:
+        # Chargement du module python
+        - source python_env/bin/activate
+        # Will install pylint too
+        - pip list --verbose
+        # Analyse Pylint: il faut lui indiquer le module ou le package à analyser. 
+        #- pylint python/gridr --recursive=y --rcfile=pylintrc_RNC2015_D  --exit-zero --halt-on-invalid-sonar-rules n > pylint_report.json
+        - pylint python --recursive=y --rcfile=pylintrc_RNC2015_D  --exit-zero --halt-on-invalid-sonar-rules n > pylint_report.json 
+        - cat pylint_report.json
+    artifacts:
+        # Optimiser l'archivage au strict minimum pour gagner de l'espace et du transferts de bande passante
+        paths:
+          - ./pylint_report.json
+        expire_in: 1 day
+
+sonarqube:
+    stage: sonarqube
+    image: ${ARTIFACTORY_URL}/sonarsource/sonar-scanner-cli:4.5
+    needs:
+      - pytest
+      - pylint_analysis
+    variables:
+        # Definition de variables pour configuer sonar scanner
+        # Ces variables sont appelées par defaut par sonar-scanner
+        SONAR_TOKEN: ${SONARQUBE_TOKEN}
+        SONAR_HOST_URL: https://${SONARQUBE_HOST}
+        GIT_DEPTH: 0  #Prevent clone shallow error
+    before_script:
+        # Ajout un seul certificat du CNES dans java pour accéder à SonarQube en HTTPS. C'est lié à une limitation de Keytool.
+        # Nous sommes obligé de prendre un autre certificat car sonar-scanner ne se base pas sur l'intégralité de la chaine de certificat mais seulement du premier parent du serveur.
+        - keytool -importcert -alias sonarqube -file "/certs-cnes/AC_TECHNIQUE_SERVEURS_2028.crt" -keystore ${JAVA_HOME}/lib/security/cacerts -storepass changeit -noprompt
+ 
+    script:
+        - |-
+            if [ ${CI_PIPELINE_SOURCE} == "merge_request_event" ]; then
+              SONARQUBE_PARAMETERS="-Dsonar.pullrequest.key='${CI_MERGE_REQUEST_IID}' -Dsonar.pullrequest.branch='${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}' -Dsonar.pullrequest.base='${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}'"
+            elif [[ ${CI_COMMIT_BRANCH} =~ ^(feature|hotfix|bugfix|release|develop).*$ ]]; then
+              SONARQUBE_PARAMETERS="-Dsonar.branch.name='${CI_COMMIT_BRANCH}'"
+            fi
+        - "[ $DEBUG = true ] && echo sonar-scanner ${SONARQUBE_PARAMETERS} -Dsonar.externalIssuesReportPaths=pylint_report.json -Dsonar.sources=python -Dsonar.python.coverage.reportPaths=.coverage-reports/* -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300"
+        # Scan du projet avec sonar-scanner
+        - |-
+            if [[ -z ${SONAR_PROJECT_KEY} ]]; then 
+                sonar-scanner ${SONARQUBE_PARAMETERS} -X -Dsonar.verbose=true -Dsonar.externalIssuesReportPaths=pylint_report.json -Dsonar.sources=python -Dsonar.python.coverage.reportPaths=.coverage-reports/* -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300
+            else 
+                sonar-scanner ${SONARQUBE_PARAMETERS} -X -Dsonar.verbose=true -Dsonar.externalIssuesReportPaths=pylint_report.json -Dsonar.sources=python -Dsonar.python.coverage.reportPaths=.coverage-reports/* -Dsonar.projectKey="${SONAR_PROJECT_KEY}" -Dsonar.projectName="${SONAR_PROJECT_NAME}" -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300
+            fi
+      
+    allow_failure: true
+    artifacts:
+        untracked: true
+        expire_in: 1 day
+    cache:
+        key: "coverage-python-reports"
+        paths:
+          - .coverage-reports/coverage.xml
+        policy: pull
+
+package:
+    stage: package
+    image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
+    needs: 
+        - python
+    script:
+        # Chargement du module python
+        - echo 'Packaging....'
+        - source python_env/bin/activate
+        - python -m build
+        - deactivate
+    artifacts:
+        untracked: true
+        expire_in: 1 day
+    
+
+# publish-artifactory: 
+    # stage: deploy
+    # image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
+    # needs: 
+        # - package
+    # before_script : 
+        # # Accès a jfrog cli (installé dans le job python) mais il faut refaire un chmod 
+        # - chmod 755 jfrog
+        # # Obtention de UUID, afin de garder le meme identifiant que dans le premier job
+        # - export UUID=`cat uuid.txt`
+    # script:
+        # # Dépôt des packages dans le référentiel pypi Artifactory "testci-pip-dev-local"
+        # # Pour Python, l'option --module est nécessaire (même nom de module que dans Setup.py ou pyproject.toml)
+        # - ./jfrog rt u dist/ testci-pip-dev/ --module myapp
+        # # Publication de l'objet build-info dans Artifactory
+        # - ./jfrog rt bp --server-id ${UUID} --build-url ${CI_PIPELINE_URL}
+        
+# scan-xray:
+    # stage: scan Xray
+    # image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
+    # before_script:
+        # # Accès a jfrog cli (installé dans le job build-maven) mais il faut refaire un chmod 
+        # - chmod 755 jfrog
+        # # Obtention de UUID pour récupérer la config de jfrog cli
+        # - export UUID=`cat uuid.txt`
+    # script: 
+        # # Scan Xray (De base le rt est reconnue comme déprécié mais il permet d'éviter un bug de connexion)
+        # - ./jfrog rt bs --server-id ${UUID} --fail=false
+    # allow_failure: true
+
+

@@ -1,3 +1,14 @@
+# coding: utf8
+#
+# Copyright (c) 2024 Centre National d'Etudes Spatiales (CNES).
+#
+# This file is part of GRIDR
+# (see https://gitlab.cnes.fr/gridr/gridr).
+#
+#
+"""
+Module for operations on array's window : check, extend, overflow
+"""
 import numpy as np
 
 # Inside to outside signs for each edge
@@ -34,8 +45,8 @@ def window_check(arr: np.ndarray, win: np.ndarray, axes=None):
     Returns:
         True if the window lies inside the array. False otherwise.
     """
-    #arr = np.asarray(arr)
     win = np.asarray(win)
+    ret = True
     
     if arr.ndim == 0 or win.ndim == 0:  # scalar inputs
         raise ValueError("at least one input array is a scalar")
@@ -43,24 +54,26 @@ def window_check(arr: np.ndarray, win: np.ndarray, axes=None):
         raise ValueError("array's number of dimension should be equal to the "
                 "window's first dimension length")
     elif arr.size == 0 or win.size == 0:  # empty arrays
-        return False
+        ret = False
     
-    if axes is None:
-        axes = range(arr.ndim)
-    axes = np.atleast_1d(axes)
-    
-    # check that first index is greater or equal the last index
-    order_test = [np.nan if i not in axes else
-            win[i][1]-win[i][0]>=0 for i in axes]
-    # please note here that nan number are considered as True in np.all
-    if ~np.all(order_test):
-        raise Exception("At least one window's dimension range has invalid "
-                "order")
-    
-    # the order is ok ; now check that the window lies in the array
-    within_test = [np.nan if i not in axes else
-            win[i][0] >=0 and win[i][1] < arr.shape[i] for i in range(arr.ndim)]
-    return np.all(within_test)
+    if ret:
+        if axes is None:
+            axes = range(arr.ndim)
+        axes = np.atleast_1d(axes)  # pylint: disable=R0204
+        
+        # check that first index is greater or equal the last index
+        order_test = [np.nan if i not in axes else
+                win[i][1]-win[i][0]>=0 for i in axes]
+        # please note here that nan number are considered as True in np.all
+        if ~np.all(order_test):
+            raise Exception("At least one window's dimension range has invalid "
+                    "order")
+        
+        # the order is ok ; now check that the window lies in the array
+        within_test = [np.nan if i not in axes else
+                win[i][0] >=0 and win[i][1] < arr.shape[i] for i in range(arr.ndim)]
+        ret = np.all(within_test)
+    return ret
 
 def window_extend(
         win: np.ndarray,
@@ -115,12 +128,11 @@ def window_overflow(arr: np.ndarray, win: np.ndarray, axes=None) -> np.ndarray:
         the computed overflow array given as (top overflow, bottom overflow,
                 left overflow, right_overflow)
     """
-    #arr = np.asarray(arr)
     win = np.asarray(win)
         
     if axes is None:
         axes = range(arr.ndim)
-    axes = np.atleast_1d(axes)
+    axes = np.atleast_1d(axes)  # pylint: disable=R0204
     
     overflow = [[0, 0] if i not in axes else
             [abs(min(0, win[i][0])), max(0, win[i][1] - arr.shape[i]+1)]

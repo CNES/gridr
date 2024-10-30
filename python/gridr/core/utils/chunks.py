@@ -1,3 +1,14 @@
+# coding: utf8
+#
+# Copyright (c) 2024 Centre National d'Etudes Spatiales (CNES).
+#
+# This file is part of GRIDR
+# (see https://gitlab.cnes.fr/gridr/gridr).
+#
+#
+"""
+Chunk definition computation module
+"""
 from typing import List, Tuple
 
 import numpy as np
@@ -19,6 +30,9 @@ def get_chunk_boundaries(
         chunk_size: target chunk size
         merge_last: boolean option to enable merge of the last chunk if its size
                 is lower than the chunk size.
+    
+    Returns:
+        the chunk's intervals
     """
     # Set default fallback in case chunk_size equals 0
     intervals = [(0, nsize),]
