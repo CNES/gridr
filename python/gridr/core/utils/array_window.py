@@ -16,7 +16,7 @@ WINDOW_EDGE_OUTER_SIGNS = np.array((-1, 1))
 # Outside to inside signs for each edge
 WINDOW_EDGE_INNER_SIGNS = np.array((1, -1))
 
-def window_check(arr: np.ndarray, win: np.ndarray, axes=None):
+def window_check(arr: np.ndarray, win: np.ndarray, axes=None) -> bool:
     """Check a window lies inside an array shape.
     The method may raise an Exception if the order between index is not
     respected.
@@ -72,7 +72,7 @@ def window_check(arr: np.ndarray, win: np.ndarray, axes=None):
         # the order is ok ; now check that the window lies in the array
         within_test = [np.nan if i not in axes else
                 win[i][0] >=0 and win[i][1] < arr.shape[i] for i in range(arr.ndim)]
-        ret = np.all(within_test)
+        ret = np.all(within_test)  # pylint: disable=R0204
     return ret
 
 def window_extend(

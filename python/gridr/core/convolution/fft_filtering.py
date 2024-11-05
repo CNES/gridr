@@ -10,7 +10,7 @@
 FFT Filtering core module
 """
 from enum import IntEnum
-from typing import Union, Tuple, Any
+from typing import Union, Tuple, Any, Iterable
 
 import numpy as np
 from scipy import signal
@@ -25,12 +25,14 @@ class BoundaryPad(IntEnum):
     NONE = 1
     REFLECT = 2
 
+
 class ConvolutionOutputMode(IntEnum):
     """Convolution area output mode enumeration.
     """
     SAME = 1
     FULL = 2
     VALID = 3
+
 
 def get_filter_margin(
         fil: np.ndarray,
@@ -54,6 +56,7 @@ def get_filter_margin(
     margins = [0 if i not in axes else
             fil.shape[i]//2 for i in axes]
     return margins
+
 
 def pad_array(
         arr: np.ndarray,
@@ -105,6 +108,7 @@ def pad_array(
         raise Exception('Only one not NONE BoundaryPad mode is implemented')
     return out
 
+
 def fft_odd_filter(
         fil: np.ndarray,
         axes = None,
@@ -131,6 +135,60 @@ def fft_odd_filter(
         pad_arg = tuple(((0, pad_fil[i]) for i in range(fil.ndim)))
         fil = np.pad(fil, pad_arg, mode="constant", constant_values=0)
     return fil
+
+
+def fft_array_filter_check_data(
+        arr: np.ndarray,
+        fil: np.ndarray,
+        win: Union[np.ndarray or None],
+        zoom: Union[int, Tuple[int, int]] = 1,
+        axes = None,
+        ) -> Tuple[np.ndarray, np.ndarray, Iterable, Tuple]:
+    """
+    Perfoms check on input data in order to ensure the expected data types and
+    profiles :
+    - convert axes to explicit definition if None is given
+    - convert window to an explicit definition if None is given and make sure
+            it matches an ndarray type.
+    - make sure that the filter has an odd size along each dimension
+    - compute convolution margins
+    
+    Args:
+        arr : the input array.
+        win : the production window given as a list of tuple containing the
+                first and last index for each dimension.
+                e.g. for a dimension 2 : 
+                ((first_row, last_row), (first_col, last_col))
+        fil: the filter given as an array in the spatial domain
+        zoom: the zoom factor. It can either be a single integer or a tuple of 
+                two integers representing the rational P/Q and given as (P, Q)
+        axes: the axes on which to perform the convolution.
+    
+    Returns:
+        a tuple containing the filter, the window, the axes and the margins
+    """
+    if axes is None:
+        axes = range(arr.ndim)
+        
+    # If filter has an even size, we first pad with a 0 on the right et lower edge
+    fil = fft_odd_filter(fil, axes)
+    
+    # Compute the margin needed to avoid edge effect
+    conv_margins = get_filter_margin(fil=fil, zoom=zoom, axes=axes)
+    
+    # Set window to full array if not given
+    if win is None:
+        # Define a correct 2d window matching the array dimensions
+        win = [(None, None) if i not in axes else
+                   (0, arr.shape[i]-1) for i in range(arr.ndim)]
+    win = np.asarray(win)
+    
+    # Check process_window with input arr
+    if not window_check(arr, win, axes):
+        raise Exception("Target window error : not contained in input data")
+    
+    return fil, win, axes, conv_margins
+
 
 def fft_array_filter_output_shape(
         arr: np.ndarray,
@@ -166,26 +224,8 @@ def fft_array_filter_output_shape(
     assert(zoom==1)
     out = np.nan
     
-    if axes is None:
-        axes = range(arr.ndim)
-        
-    # If filter has an even size, we first pad with a 0 on the right et lower edge
-    fil = fft_odd_filter(fil, axes)
-    
-    # Compute the margin needed to avoid edge effect
-    conv_margins = get_filter_margin(fil=fil, zoom=zoom, axes=axes)
-    
-    # Set window to full array if not given
-    if win is None:
-        # Define a correct 2d window matching the array dimensions
-        win = [(None, None) if i not in axes else
-                   (0, arr.shape[i]-1) for i in range(arr.ndim)]
-    win = np.asarray(win)
-    
-    # Check process_window with input arr
-    if not window_check(arr, win, axes):
-        raise Exception("Target window error : not contained in input data")
-    
+    # check data and compute convolution margins
+    fil, win, axes, conv_margins = fft_array_filter_check_data(arr, fil, win, zoom, axes)
     win_margins = win
     
     # Get the boundary management
@@ -280,25 +320,8 @@ def fft_array_filter(
     # zoom different from 1 not yet implemented
     assert(zoom==1)
 
-    if axes is None:
-        axes = range(arr.ndim)
-    
-    # If filter has an even size, we first pad with a 0 on the right et lower edge
-    fil = fft_odd_filter(fil, axes)
-    
-    # Compute the margin needed to avoid edge effect
-    conv_margins = get_filter_margin(fil=fil, zoom=zoom, axes=axes)
-    
-    # Set window to full array if not given
-    if win is None:
-        # Define a correct 2d window matching the array dimensions
-        win = [(None, None) if i not in axes else
-                   (0, arr.shape[i]-1) for i in range(arr.ndim)]
-    win = np.asarray(win)
-        
-    # Check process_window with input arr
-    if not window_check(arr, win, axes):
-        raise Exception("Target window error : not contained in input data")
+    # check data and compute convolution margins
+    fil, win, axes, conv_margins = fft_array_filter_check_data(arr, fil, win, zoom, axes)
     
     convol_fct = signal.oaconvolve
     conv_arr = None

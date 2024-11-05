@@ -1,15 +1,35 @@
+# coding: utf8
+#
+# Copyright (c) 2024 Centre National d'Etudes Spatiales (CNES).
+#
+# This file is part of GRIDR
+# (see https://gitlab.cnes.fr/gridr/gridr).
+#
+#
+"""
+Tests for the gridr.core.convolution.fft_filtering module
+"""
 import os
 import numpy as np
 import pytest
 
-from gridr.core.convolution.fft_filtering import fft_array_filter, fft_array_filter_output_shape, BoundaryPad, ConvolutionOutputMode
+from gridr.core.convolution.fft_filtering import (
+        fft_array_filter,
+        fft_odd_filter,
+        fft_array_filter_check_data,
+        fft_array_filter_output_shape,
+        BoundaryPad,
+        ConvolutionOutputMode)
 
 IDENTITY_KERNEL = np.array([[0,0,0], [0, 1, 0], [0, 0, 0]])
 GAUSSIAN_BLUR_3_3 = 1./16. * np.array([[1, 2, 1], [2, 4, 2], [1, 2, 1]])
 
 class TestFFTFiltering:
+    """Test class"""
     
     def test_fft_filtering_identity_1(self):
+        """Test the fft_filtering_identity method
+        """
         nrow, ncol = 50, 60
         input_data = np.arange(nrow*ncol, dtype=np.float32).reshape((nrow, ncol))
         
@@ -75,7 +95,6 @@ class TestFFTFiltering:
         assert(np.all(origin5[:,0] == np.array([IDENTITY_KERNEL.shape[0] // 2, 0]) + np.array(IDENTITY_KERNEL.shape) // 2))
         
         
-    
     def test_fft_filtering_identity_2(self):
         nrow, ncol = 50, 60
         input_data = np.arange(nrow*ncol, dtype=np.float32).reshape((nrow, ncol))
@@ -115,7 +134,63 @@ class TestFFTFiltering:
         # assert that valid data is close
         np.testing.assert_allclose(out2[1+origin2[0,0]:1+origin2[0,1]-1, 1+origin2[1,0]:1+origin2[1,1]-1], input_data[11:20, 31:40], rtol=1e-5, atol=0)
     
+    
+    def test_fft_array_filter_check_data(self):
+        """Test the fft_array_filter_check_data_method
+        """
+        # test 2d data
+        nrow, ncol = 50, 60
+        arr = np.arange(nrow*ncol, dtype=np.float32).reshape((nrow, ncol))
+        
+        fil_odd = np.zeros((4,4))
+        fil_even, win, axes, conv_margins = fft_array_filter_check_data(
+                arr, fil=fil_odd, win=None, zoom=1, axes=None)
+        
+        # check the filter shape is odd
+        assert(np.all(fil_even.shape == (5,5)))
+        # check the window is bidimensionnal
+        assert(win.ndim == 2)
+        # check the window shape matches (2,2)
+        assert(np.all(win.shape == (2,2)))
+        # check the window covers all data
+        assert(np.all(win == ((0, nrow-1), (0, ncol-1))))
+        # check axes are explicit and expected length
+        assert(len(axes) == arr.ndim)
+        # check the conv margins are ok
+        assert(np.all(conv_margins == [fil_even.shape[0]//2,fil_even.shape[1]//2]))
+    
+    
+    def test_fft_odd_filter(self):
+        """Test the fft odd filter method"""
+        # First check an already odd filter
+        odd_filter = np.ones((5,5))
+        ret_filter = fft_odd_filter(odd_filter, None)
+        assert(np.all(odd_filter == ret_filter))
+        # same check but only on axe 1
+        ret_filter = fft_odd_filter(odd_filter, axes=(0,))
+        assert(np.all(odd_filter == ret_filter))
+        
+        # Check a even filter
+        even_filter = np.ones((4,4))
+        ret_filter = fft_odd_filter(even_filter, None)
+        assert(np.all(ret_filter.shape == (5,5)))
+        assert(np.all(even_filter == ret_filter[0:4,0:4]))
+        # check last column is 0
+        assert(np.all(ret_filter[:,-1] == 0))
+        # check last line is 0
+        assert(np.all(ret_filter[-1,:] == 0))
+        
+        # same check but only on axe 1
+        ret_filter = fft_odd_filter(even_filter, axes=(0,))
+        assert(np.all(ret_filter.shape == (5,4)))
+        assert(np.all(even_filter == ret_filter[0:4,0:4]))
+        # check last line is 0
+        assert(np.all(ret_filter[-1,:] == 0))
+    
+    
     def test_fft_filtering_output_shape(self):
+        """Test the fft_filtering_output_shape method
+        """
         nrow, ncol = 50, 60
         input_data = np.arange(nrow*ncol, dtype=np.float32).reshape((nrow, ncol))
 

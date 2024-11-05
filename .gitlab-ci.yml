@@ -32,8 +32,8 @@ stages:
     - test
     - sonarqube
     - package
-    #- deploy
-    #- scan Xray
+    - deploy
+    - scan Xray
 
 # Default configuration for all jobs
 default:
@@ -41,7 +41,7 @@ default:
             - Usine_Logicielle
         timeout: 30 minutes 
 
-# Définition des variables globales pour tous les jobs  
+# Définition des variables globales pour tous les jobs 
 #============================
 
 variables: 
@@ -126,10 +126,10 @@ variables:
     # Variable pour deplacer le dossier de cache de pip dans le workspace
     PIP_CACHE_DIR: "${WORKSPACE}/.pip-cache/"
 
-    # Variables pour les applications SonarScanner, etc, propres au projet  
+    # Variables pour les applications SonarScanner, etc, propres au projet
     #---------------------------
     # Variables for sonarscaner project
-    SONAR_PROJECT_KEY: "gridr_gridr_AZL2cBD9sgWkcFyT2YGB"
+    SONAR_PROJECT_KEY: "cnes:gridr:gridr"
     SONAR_PROJECT_NAME: "GridR"
 
     
@@ -286,34 +286,34 @@ package:
         expire_in: 1 day
     
 
-# publish-artifactory: 
-    # stage: deploy
-    # image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
-    # needs: 
-        # - package
-    # before_script : 
-        # # Accès a jfrog cli (installé dans le job python) mais il faut refaire un chmod 
-        # - chmod 755 jfrog
-        # # Obtention de UUID, afin de garder le meme identifiant que dans le premier job
-        # - export UUID=`cat uuid.txt`
-    # script:
-        # # Dépôt des packages dans le référentiel pypi Artifactory "testci-pip-dev-local"
-        # # Pour Python, l'option --module est nécessaire (même nom de module que dans Setup.py ou pyproject.toml)
-        # - ./jfrog rt u dist/ testci-pip-dev/ --module myapp
-        # # Publication de l'objet build-info dans Artifactory
-        # - ./jfrog rt bp --server-id ${UUID} --build-url ${CI_PIPELINE_URL}
+publish-artifactory: 
+    stage: deploy
+    image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
+    needs: 
+        - package
+    before_script : 
+        # Accès a jfrog cli (installé dans le job python) mais il faut refaire un chmod 
+        - chmod 755 jfrog
+        # Obtention de UUID, afin de garder le meme identifiant que dans le premier job
+        - export UUID=`cat uuid.txt`
+    script:
+        # Dépôt des packages dans le référentiel pypi Artifactory "gridr-pip-local"
+        # Pour Python, l'option --module est nécessaire (même nom de module que dans Setup.py ou pyproject.toml)
+        - ./jfrog rt u dist/ gridr-pip/ --module gridr
+        ## Publication de l'objet build-info dans Artifactory
+        #- ./jfrog rt bp --server-id ${UUID} --build-url ${CI_PIPELINE_URL}
         
-# scan-xray:
-    # stage: scan Xray
-    # image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
-    # before_script:
-        # # Accès a jfrog cli (installé dans le job build-maven) mais il faut refaire un chmod 
-        # - chmod 755 jfrog
-        # # Obtention de UUID pour récupérer la config de jfrog cli
-        # - export UUID=`cat uuid.txt`
-    # script: 
-        # # Scan Xray (De base le rt est reconnue comme déprécié mais il permet d'éviter un bug de connexion)
-        # - ./jfrog rt bs --server-id ${UUID} --fail=false
-    # allow_failure: true
+scan-xray:
+    stage: scan Xray
+    image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
+    before_script:
+        # Accès a jfrog cli (installé dans le job build-maven) mais il faut refaire un chmod 
+        - chmod 755 jfrog
+        # Obtention de UUID pour récupérer la config de jfrog cli
+        - export UUID=`cat uuid.txt`
+    script: 
+        # Scan Xray (De base le rt est reconnue comme déprécié mais il permet d'éviter un bug de connexion)
+        - ./jfrog rt bs --server-id ${UUID} --fail=false
+    allow_failure: true
 
 
