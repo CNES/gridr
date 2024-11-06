@@ -132,8 +132,8 @@ variables:
     SONAR_PROJECT_KEY: "cnes:gridr:gridr"
     SONAR_PROJECT_NAME: "GridR"
 
-    
-python: 
+
+jfrog_install:
     stage: init
     image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
     before_script:
@@ -149,6 +149,23 @@ python:
         # Ajout des certificats du CNES dans jfrog CLI pour accéder à Artifactory en HTTPS
         - mkdir -p "${JFROG_CLI_HOME_DIR}/security/certs/"
         - cp ${CNES_CERTIFICATE} "${JFROG_CLI_HOME_DIR}/security/certs/"
+    script:
+        - cat uuid.txt
+    timeout: 15 minutes
+    artifacts:
+        untracked: true
+        expire_in: 1 day
+    
+python: 
+    stage: init
+    image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
+    needs:
+        - jfrog_install
+    before_script:
+        # Accès a jfrog cli (installé dans le job python) mais il faut refaire un chmod 
+        - chmod 755 jfrog
+        # Obtention de UUID, afin de garder le meme identifiant que dans le premier job
+        - export UUID=`cat uuid.txt`
     script:
         - python -m venv python_env
         - source python_env/bin/activate
@@ -168,6 +185,47 @@ python:
     artifacts:
         untracked: true
         expire_in: 1 day
+    
+    
+# python: 
+    # stage: init
+    # image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
+    # needs:
+        # - jfrog_install
+    # before_script:
+        # # Installation de Jfrog CLI 2.14.0 (18 mars 2022)
+        # - curl -sS --cacert ${CNES_CERTIFICATE} -u ${ARTIFACTORY_USER}:${ARTIFACTORY_TOKEN} -O "https://${ARTIFACTORY_HOST}/artifactory/jfrog-cli-go-remote/${JFROG_VERSION}/${JFROG_OS}/jfrog"
+        # # On donne les permissions pour utiliser la commande jfrog 
+        # - chmod 755 jfrog
+        # # Définition d'un UUID unique 
+        # - export UUID=$(cat /proc/sys/kernel/random/uuid)
+        # # Export de UUID pour le faire passer entre les jobs 
+        # - touch uuid.txt
+        # - echo ${UUID} > uuid.txt
+        # # Ajout des certificats du CNES dans jfrog CLI pour accéder à Artifactory en HTTPS
+        # - mkdir -p "${JFROG_CLI_HOME_DIR}/security/certs/"
+        # - cp ${CNES_CERTIFICATE} "${JFROG_CLI_HOME_DIR}/security/certs/"
+    # script:
+        # - python -m venv python_env
+        # - source python_env/bin/activate
+        # # Configuration de jfrog CLI  
+        # - ./jfrog config add ${UUID} --artifactory-url=https://${ARTIFACTORY_HOST}/artifactory  --access-token=${ARTIFACTORY_TOKEN}
+        # # Configuration du dépôt pip
+        # - ./jfrog pip-config --server-id-resolve=${UUID} --repo-resolve=pypi
+        # # Installation mise a jour pip
+        # - ./jfrog pip install --upgrade pip
+        # # Installation des requirements du projet
+        # - ./jfrog pip install -r requirements_dev.txt --no-cache-dir --force-reinstall
+        # # Installation projet
+        # #- ./jfrog pip install .
+        # #--module myapp
+        # - deactivate
+    # timeout: 15 minutes
+    # artifacts:
+        # untracked: true
+        # expire_in: 1 day
+
+
 
 pytest:
     stage: quality
