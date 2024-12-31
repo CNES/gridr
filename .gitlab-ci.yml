@@ -88,6 +88,7 @@ variables:
     PIP_CERT: "${CNES_CERTIFICATE}"
     # Variable pour deplacer le dossier de cache de pip dans le workspace
     PIP_CACHE_DIR: "${WORKSPACE}/.pip-cache/"
+
     # Declaration des arguments de la ligne de commande de PIP
     PIP_ARG_MAIN: "--cert ${PIP_CERT} --index-url ${PIP_INDEX_URL} "
 
@@ -108,8 +109,6 @@ variables:
     #PIP_INDEX_ARTEMIS_CONTRIB_URL: "https://${ARTIFACTORY_USER}:${ARTIFACTORY_TOKEN}@${ARTIFACTORY_HOST}/artifactory/api/pypi/${ARTIFACTORY_ARTEMIS_CONTRIB_PIP}/simple"
     # Construction des arguments pour PIP
 
-
-
 rust_python_init:
     stage: init
     # Utilisation de l'image rust 1.79 bookworm ( bookworm base sur une Debian 12 (bullseye pour Debian 11))
@@ -122,10 +121,13 @@ rust_python_init:
         - export UUID=$(cat /proc/sys/kernel/random/uuid)
         # Export de UUID pour le faire passer entre les jobs
         - echo ${UUID} > uuid.txt
+
         # Ajout des certificats CNES pour permettre au runner de cloner le dépôt Gitlab.
         - cat ${CNES_CERTIFICATE} > /usr/local/share/ca-certificates/my-cert.crt
         # Mise à jour des certificats
         - update-ca-certificates
+
+
         # Installation dependances de build
         - apt-get update && apt-get install -y build-essential procps curl file git
 
@@ -143,10 +145,14 @@ rust_python_init:
 
         #FOR NOW THE CI ONLY WORKS WITH DEBIAN 12 PACKAGED PYTHON      
         - apt-get update && apt-get install -y python3.11 libpython3.11-dev python3.11-venv python3-pip
+
+
+
         #- apt-get update && apt-get install -y --no-install-recommends python3.10 libpython3.10-dev python3.10-venv python3-pip && update-alternatives --install /usr/bin/python python /usr/bin/python3.10 0 && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10
     script:
         # Check rust version
         - cargo --version
+
         ## Check asdf
         ##- ${ASDF_INSTALL_PATH}/asdf --version
         # Check python version
@@ -156,6 +162,7 @@ rust_python_init:
         # Mise en place du venv
         - VENV_VERSION_PYTHON=python_env_${TAG_VERSION_PYTHON}
         - GRIDR_VENV=${VENV_VERSION_PYTHON} make venv
+
 
 
     timeout: 15 minutes
@@ -338,6 +345,7 @@ release-publish-artifactory:
     artifacts:
         untracked: true
         expire_in: 1 day
+
 
 # Stage : Release
 # Ajout de variables d'environnement a recuperer dans le job gitlab_release_job
