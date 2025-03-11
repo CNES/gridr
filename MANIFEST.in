@@ -1,0 +1,4 @@
+# MANIFEST.in
+include rust/gridr/Cargo.toml
+recursive-include rust *.rs
+

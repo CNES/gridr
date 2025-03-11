@@ -10,6 +10,7 @@
 Chunk definition computation module
 """
 from typing import List, Tuple
+import itertools
 
 import numpy as np
 
@@ -36,7 +37,7 @@ def get_chunk_boundaries(
     """
     # Set default fallback in case chunk_size equals 0
     intervals = [(0, nsize),]
-    if chunk_size > 0:   
+    if chunk_size > 0 and chunk_size < nsize:   
         limits = np.unique(np.concatenate(
                 (np.arange(0, nsize+1, chunk_size), [nsize])))
         intervals = np.asarray(list(zip(limits[0:-1], limits[1:])))
@@ -47,3 +48,26 @@ def get_chunk_boundaries(
             # do not consider last interval
             intervals = intervals[0:-1]
     return intervals
+
+def get_chunk_shapes(
+        shape: Tuple,
+        chunk_shape: Tuple,
+        merge_last=False
+        ) -> List[Tuple[Tuple[int, int]]]:
+    """
+    Compute chunks on a ndimensional shape.
+    
+    This methods returns the tensor product of chunks computed on each axis.
+    
+    Args:
+        shape: shape to be chunked
+        chunk_shape: shape of a chunk
+        merge_last: boolean option to enable merge of the last chunk if its size
+                is lower than the chunk size.
+                
+    Returns:
+        the ndim chunk's intervals
+    """
+    chunks = [get_chunk_boundaries(nsize, chunk_size, merge_last)
+            for nsize, chunk_size in zip(shape, chunk_shape)]
+    return list(itertools.product(*chunks))

@@ -1,4 +1,3 @@
-# Workflow permettant de ne pas avoir de pipeline en double, branch et MR : https://docs.gitlab.com/ee/ci/yaml/workflow.html#switch-between-branch-pipelines-and-merge-request-pipelines
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -6,43 +5,18 @@ workflow:
       when: never
     - if: $CI_COMMIT_BRANCH
 
-# Fonctionnalité SAST
-# Nécessite stage "test" et la variable CI_TEMPLATE_REGISTRY_HOST
-# Peut être personnalisé https://docs.gitlab.com/ee/user/application_security/sast/#customizing-the-sast-settings
-# Note: il y a actuellement un bug dans l'execution du rapport dans les MR, en cours de correction côté Gitlab  
-# Note 2 : Dans l'exemple, nous utilisons le dernier template de SAST Gitlab-CI qui permet de pouvoir exécuter l'analyse en phase de Merge request
-
-######
-# Include SonarQube
-# Le template SonarQube vous permet d'utiliser le scan Sonar et ainsi avoir un retour rapide sur la qualité de votre projet.
-# C'est un stage non bloquant c'est-à-dire que même si Sonar ne valide pas la qualité de votre projet, le pipeline continuera son workflow
-# Enfin pour plus d'informations vous pouvez consulter le confluence : https://confluence.cnes.fr/pages/viewpage.action?spaceKey=USINELOG&title=GitLab-CI+-+Exemples+de+.gitlab-ci.yml
-# Vous pouvez retrouver tous les templates à importer pour faciliter la construction de vos pipeline dans le projet suivant : https://gitlab.cnes.fr/usinelogicielle/public/gitlab-ci-templates
-######
-
-include:
-  - template: Jobs/SAST.latest.gitlab-ci.yml
-#  - project: "usinelogicielle/public/gitlab-ci-templates" # Inclut le stage de qualité sonarqube
-#    ref: v1.1.2 # référence de tag
-#    file: "jobs/sonarqube-gitlab-ci.yml"
-
 stages:
     - init
     - quality
-    - test
     - sonarqube
     - package
-    - deploy
-    - scan Xray
+    - release
 
 # Default configuration for all jobs
 default:
         tags:
             - Usine_Logicielle
         timeout: 30 minutes 
-
-# Définition des variables globales pour tous les jobs 
-#============================
 
 variables: 
 
@@ -77,11 +51,6 @@ variables:
     # GRIDR_SONAR_TOKEN 
     # SONARQUBE_HOST 
     
-
-    
-    SONARQUBE_TOKEN: "${GRIDR_SONAR_TOKEN}" #Variable du template sonarqube
-  
-
     # Variables globales déclarées dans le yaml, constituant des "paramètres" pour les jobs manuels :
     #============================
     DEBUG:
@@ -89,31 +58,25 @@ variables:
         description: "Afficher des logs supplémentaires"
 
     # Variables globales déclarées dans le yaml :
+    TAG_IMAGE_PYTHON_DEFAULT_VERSION: "3.11"
+    TAG_IMAGE_PYTHON: "python:${TAG_IMAGE_PYTHON_DEFAULT_VERSION}"
+
+    TAG_IMAGE_SONAR: "sonarsource/sonar-scanner-cli:4.5"
     #============================
     # Variables pour les tags des images Docker à utiliser pour les jobs 
     #---------------------------  
-    TAG_IMAGE_PYTHON: "python:3.10.8"
-    TAG_IMAGE_SONAR: "sonarsource/sonar-scanner-cli:4.5"
     
     # Variables pour le client Command Line Interface "JFrog CLI" (voir https://www.jfrog.com/confluence/display/CLI/JFrog+CLI)
     #---------------------------
     # CI : [Default: false] If true, disables interactive prompts and progress bar.
     CI: "true"
-    # JFROG_CLI_HOME_DIR : [Default: ~/.jfrog]. Définit le chemin du fichier de configuration de Jfrog CLI. 
-    JFROG_CLI_HOME_DIR: ".jfrog"
-    # JFROG_CLI_TEMP_DIR: [Default: /tmp] Définit le chemin utilisé pour stocker les fichiers temporaires de Jfrog CLI. 
-    JFROG_CLI_TEMP_DIR: ".jfrog_tmp"
-    # Version de Jfrog CLI et l'OS de la machine (sur Gitlab-CI ce sera toujours du amd64)
-    JFROG_VERSION: "v2/2.14.0"
-    JFROG_OS: "jfrog-cli-linux-amd64"
-
     # Variables pour les applications JFrog, Artifactory, les artefacts, etc 
     #---------------------------
-    # Couple de variable pour construire le chemin des builds infos dans Artifactory. Ce couple doit être unique
-    JFROG_CLI_BUILD_NAME: "${CI_PROJECT_PATH}_${CI_COMMIT_REF_SLUG}_gitlab-ci"
-    JFROG_CLI_BUILD_NUMBER: "${CI_PIPELINE_ID}"
     # url générique du serveur contenant les images docker
     ARTIFACTORY_URL: "${ARTIFACTORY_HOST}/docker"
+    # url générique du serveur contenant les images docker gitlab
+    ARTIFACTORY_GITLAB_URL: "${ARTIFACTORY_HOST}/gitlab-docker-remote"
+
 
     # URL pour récupérer l'image Docker pour exécuter l'analyse décrite dans le template SAST
     CI_TEMPLATE_REGISTRY_HOST: "${ARTIFACTORY_HOST}/gitlab-docker-remote"
@@ -125,134 +88,124 @@ variables:
     PIP_CERT: "${CNES_CERTIFICATE}"
     # Variable pour deplacer le dossier de cache de pip dans le workspace
     PIP_CACHE_DIR: "${WORKSPACE}/.pip-cache/"
-
-    # Variables pour les applications SonarScanner, etc, propres au projet
-    #---------------------------
-    # Variables for sonarscaner project
-    SONAR_PROJECT_KEY: "cnes:gridr:gridr"
-    SONAR_PROJECT_NAME: "GridR"
+    # Declaration des arguments de la ligne de commande de PIP
+    PIP_ARG_MAIN: "--cert ${PIP_CERT} --index-url ${PIP_INDEX_URL} "
 
 
-jfrog_install:
+    # Variable proxy necessaires pour cargo
+    HTTP_PROXY: http://${PROXY_USER}:${PROXY_PWD}@${PROXY_SERVER}
+    HTTPS_PROXY: http://${PROXY_USER}:${PROXY_PWD}@${PROXY_SERVER}
+    NO_PROXY: ${NO_PROXY}
+    http_proxy: http://${PROXY_USER}:${PROXY_PWD}@${PROXY_SERVER}
+    https_proxy: http://${PROXY_USER}:${PROXY_PWD}@${PROXY_SERVER}
+    no_proxy: ${NO_PROXY}
+
+    ASDF_RELEASE_DOWNLOAD_URL: https://github.com/asdf-vm/asdf/releases/download/v0.16.1/asdf-v0.16.1-linux-amd64.tar.gz
+    ASDF_INSTALL_PATH: "${WORKSPACE}/asdf"
+
+    # Index PIP additionnels
+    #PIP_INDEX_ARTEMIS_URL: "https://${ARTIFACTORY_USER}:${ARTIFACTORY_TOKEN}@${ARTIFACTORY_HOST}/artifactory/api/pypi/${ARTIFACTORY_ARTEMIS_PIP}/simple"
+    #PIP_INDEX_ARTEMIS_CONTRIB_URL: "https://${ARTIFACTORY_USER}:${ARTIFACTORY_TOKEN}@${ARTIFACTORY_HOST}/artifactory/api/pypi/${ARTIFACTORY_ARTEMIS_CONTRIB_PIP}/simple"
+    # Construction des arguments pour PIP
+
+
+
+rust_python_init:
     stage: init
-    image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
+    # Utilisation de l'image rust 1.79 bookworm ( bookworm base sur une Debian 12 (bullseye pour Debian 11))
+    # Debian 12 : python 3.11
+    # Debian 11 : python 3.9
+    image: ${ARTIFACTORY_URL}/rust:1.79.0-bookworm
     before_script:
-        # Installation de Jfrog CLI 2.14.0 (18 mars 2022)
-        - curl -sS --cacert ${CNES_CERTIFICATE} -u ${ARTIFACTORY_USER}:${ARTIFACTORY_TOKEN} -O "https://${ARTIFACTORY_HOST}/artifactory/jfrog-cli-go-remote/${JFROG_VERSION}/${JFROG_OS}/jfrog"
-        # On donne les permissions pour utiliser la commande jfrog 
-        - chmod 755 jfrog
+        
         # Définition d'un UUID unique 
         - export UUID=$(cat /proc/sys/kernel/random/uuid)
-        # Export de UUID pour le faire passer entre les jobs 
-        - touch uuid.txt
+        # Export de UUID pour le faire passer entre les jobs
         - echo ${UUID} > uuid.txt
-        # Ajout des certificats du CNES dans jfrog CLI pour accéder à Artifactory en HTTPS
-        - mkdir -p "${JFROG_CLI_HOME_DIR}/security/certs/"
-        - cp ${CNES_CERTIFICATE} "${JFROG_CLI_HOME_DIR}/security/certs/"
+        # Ajout des certificats CNES pour permettre au runner de cloner le dépôt Gitlab.
+        - cat ${CNES_CERTIFICATE} > /usr/local/share/ca-certificates/my-cert.crt
+        # Mise à jour des certificats
+        - update-ca-certificates
+        # Installation dependances de build
+        - apt-get update && apt-get install -y build-essential procps curl file git
+
+        # UNCOMMENT THIS TO GET ASDF TO MANAGE MULTIPLE PYTHON VERSION
+        ## Get asdf binary (from 0.16.0)
+        #- mkdir ${ASDF_INSTALL_PATH}
+        #- curl -L ${ASDF_RELEASE_DOWNLOAD_URL} --cacert ${CNES_CERTIFICATE} -o ${ASDF_INSTALL_PATH}/asdf_release.tar.gz 
+        #- ls -al ${ASDF_INSTALL_PATH}
+        #- cd ${ASDF_INSTALL_PATH} && tar xzf asdf_release.tar.gz
+        #- ls -al ${ASDF_INSTALL_PATH}
+        ## Run asdf
+        #- ${ASDF_INSTALL_PATH}/asdf plugin add python
+        #- ${ASDF_INSTALL_PATH}/asdf plugin list all python
+        #- ${ASDF_INSTALL_PATH}/asdf install python 3.10.16
+
+        #FOR NOW THE CI ONLY WORKS WITH DEBIAN 12 PACKAGED PYTHON      
+        - apt-get update && apt-get install -y python3.11 libpython3.11-dev python3.11-venv python3-pip
+        #- apt-get update && apt-get install -y --no-install-recommends python3.10 libpython3.10-dev python3.10-venv python3-pip && update-alternatives --install /usr/bin/python python /usr/bin/python3.10 0 && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10
     script:
-        - cat uuid.txt
+        # Check rust version
+        - cargo --version
+        ## Check asdf
+        ##- ${ASDF_INSTALL_PATH}/asdf --version
+        # Check python version
+        - python3 -V
+        # For now manual set TAG_VERSION_PYTHON
+        - TAG_VERSION_PYTHON="3_11"
+        # Mise en place du venv
+        - VENV_VERSION_PYTHON=python_env_${TAG_VERSION_PYTHON}
+        - GRIDR_VENV=${VENV_VERSION_PYTHON} make venv
+
+
     timeout: 15 minutes
     artifacts:
         untracked: true
         expire_in: 1 day
-    
-python: 
+
+python_init:
     stage: init
-    image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
-    needs:
-        - jfrog_install
-    before_script:
-        # Accès a jfrog cli (installé dans le job python) mais il faut refaire un chmod 
-        - chmod 755 jfrog
-        # Obtention de UUID, afin de garder le meme identifiant que dans le premier job
-        - export UUID=`cat uuid.txt`
+    image: ${ARTIFACTORY_URL}/python:${TAG_IMAGE_PYTHON_DEFAULT_VERSION}
+    rules:
+        - if: $CI_COMMIT_TAG
+          when: never                                  # Do not run this job when a tag is created manually
+        - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH  # Run this job when commits are pushed or merged to the default branch
+    
     script:
-        - python -m venv python_env
-        - source python_env/bin/activate
-        # Configuration de jfrog CLI  
-        - ./jfrog config add ${UUID} --artifactory-url=https://${ARTIFACTORY_HOST}/artifactory  --access-token=${ARTIFACTORY_TOKEN}
-        # Configuration du dépôt pip
-        - ./jfrog pip-config --server-id-resolve=${UUID} --repo-resolve=pypi
-        # Installation mise a jour pip
-        - ./jfrog pip install --upgrade pip
-        # Installation des requirements du projet
-        - ./jfrog pip install -r requirements_dev.txt --no-cache-dir --force-reinstall
-        # Installation projet
-        #- ./jfrog pip install .
-        #--module myapp
+        # Mise en place du venv
+        - TAG_VERSION_PYTHON="3_11"
+        - VENV_VERSION_PYTHON=python_only_env_${TAG_VERSION_PYTHON}
+        - python -m venv ${VENV_VERSION_PYTHON}
+        - source ${VENV_VERSION_PYTHON}/bin/activate
+        # Mise a jour pip
+        - pip install --upgrade pip ${PIP_ARG_MAIN} --no-cache-dir
+        - pip install -r requirements_dev.txt ${PIP_ARG_MAIN} --no-cache-dir
+        - pip install twine ${PIP_ARG_MAIN} --no-cache-dir
         - deactivate
     timeout: 15 minutes
     artifacts:
         untracked: true
         expire_in: 1 day
-    
-    
-# python: 
-    # stage: init
-    # image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
-    # needs:
-        # - jfrog_install
-    # before_script:
-        # # Installation de Jfrog CLI 2.14.0 (18 mars 2022)
-        # - curl -sS --cacert ${CNES_CERTIFICATE} -u ${ARTIFACTORY_USER}:${ARTIFACTORY_TOKEN} -O "https://${ARTIFACTORY_HOST}/artifactory/jfrog-cli-go-remote/${JFROG_VERSION}/${JFROG_OS}/jfrog"
-        # # On donne les permissions pour utiliser la commande jfrog 
-        # - chmod 755 jfrog
-        # # Définition d'un UUID unique 
-        # - export UUID=$(cat /proc/sys/kernel/random/uuid)
-        # # Export de UUID pour le faire passer entre les jobs 
-        # - touch uuid.txt
-        # - echo ${UUID} > uuid.txt
-        # # Ajout des certificats du CNES dans jfrog CLI pour accéder à Artifactory en HTTPS
-        # - mkdir -p "${JFROG_CLI_HOME_DIR}/security/certs/"
-        # - cp ${CNES_CERTIFICATE} "${JFROG_CLI_HOME_DIR}/security/certs/"
-    # script:
-        # - python -m venv python_env
-        # - source python_env/bin/activate
-        # # Configuration de jfrog CLI  
-        # - ./jfrog config add ${UUID} --artifactory-url=https://${ARTIFACTORY_HOST}/artifactory  --access-token=${ARTIFACTORY_TOKEN}
-        # # Configuration du dépôt pip
-        # - ./jfrog pip-config --server-id-resolve=${UUID} --repo-resolve=pypi
-        # # Installation mise a jour pip
-        # - ./jfrog pip install --upgrade pip
-        # # Installation des requirements du projet
-        # - ./jfrog pip install -r requirements_dev.txt --no-cache-dir --force-reinstall
-        # # Installation projet
-        # #- ./jfrog pip install .
-        # #--module myapp
-        # - deactivate
-    # timeout: 15 minutes
-    # artifacts:
-        # untracked: true
-        # expire_in: 1 day
-
-
-
+        
 pytest:
     stage: quality
-    image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
+    # Utilisation de l'image rust 1.79 bookworm ( bookworm base sur une Debian 12 (bullseye pour Debian 11))
+    # Debian 12 : python 3.11
+    # Debian 11 : python 3.9
+    image: ${ARTIFACTORY_URL}/rust:1.79.0-bookworm
     needs: 
-        - python
+        - rust_python_init
+    before_script:
+        # Ajout des certificats CNES pour permettre au runner de cloner le dépôt Gitlab.
+        - cat ${CNES_CERTIFICATE} > /usr/local/share/ca-certificates/my-cert.crt
+        # Mise à jour des certificats
+        - update-ca-certificates
     script:
-        # Chargement du module python
-        - source python_env/bin/activate
-        
-        # Précision de la variable PYTHONPATH.
-        # On lance la commande 'pytest' suivi d'options:
-        # --cov=[SOURCE]  Chemin indiquant la localisation de l'ensemble des packages à couvrir durant l'exécution (plusieurs sources permises).
-        # --cov-report=TYPE  Type du rapport à génrer: term, term-missing, annotate, html, xml, lcov (multi-allowed). 
-        #   ":DEST" où DEST spécifira l'emplacement de sortie du rapport. 
-        # --cov-report=term affichera dans le terminal un court compte rendu du rapport.
-        #- PYTHONPATH=. pytest --cov=gridr  --cov-report=xml:.coverage-reports/coverage.xml --cov-report=term
-        - PYTHONPATH=${PWD}/python:${PYTHONPATH} pytest --cov=python --cov-report=xml:.coverage-reports/coverage.xml --cov-report=term --junitxml=report.xml tests/python
-        #- python -m pytest --cov=gridr --cov-report=xml:.coverage-reports/coverage.xml --cov-report=term --junitxml=report.xml tests/python
-        - ls -al .coverage-reports/coverage.xml
-        - deactivate
-    #artifacts:
-    #    # Optimiser l'archivage au strict minimum pour gagner de l'espace et du transferts de bande passante
-    #    paths:
-    #      - ./.coverage-reports/coverage.xml
-    #    expire_in: 1 day
-    
+        # For now manual set TAG_VERSION_PYTHON
+        - TAG_VERSION_PYTHON="3_11"
+        # Mise en place du venv
+        - VENV_VERSION_PYTHON=python_env_${TAG_VERSION_PYTHON}
+        - GRIDR_VENV=${VENV_VERSION_PYTHON} make test-python
     artifacts:
         untracked: true
         expire_in: 1 day
@@ -263,22 +216,21 @@ pytest:
         paths:
           - .coverage-reports/coverage.xml
         policy: push
-    
 
 pylint_analysis:
     stage: quality
-    image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
+    # Utilisation de l'image rust 1.79 bookworm ( bookworm base sur une Debian 12 (bullseye pour Debian 11))
+    # Debian 12 : python 3.11
+    # Debian 11 : python 3.9
+    image: ${ARTIFACTORY_URL}/rust:1.79.0-bookworm
     needs: 
-        - python
+        - rust_python_init
     script:
-        # Chargement du module python
-        - source python_env/bin/activate
-        # Will install pylint too
-        - pip list --verbose
-        # Analyse Pylint: il faut lui indiquer le module ou le package à analyser. 
-        #- pylint python/gridr --recursive=y --rcfile=pylintrc_RNC2015_D  --exit-zero --halt-on-invalid-sonar-rules n > pylint_report.json
-        - pylint python --recursive=y --rcfile=pylintrc_RNC2015_D  --exit-zero --halt-on-invalid-sonar-rules n > pylint_report.json 
-        - cat pylint_report.json
+        # For now manual set TAG_VERSION_PYTHON
+        - TAG_VERSION_PYTHON="3_11"
+        # Mise en place du venv
+        - VENV_VERSION_PYTHON=python_env_${TAG_VERSION_PYTHON}
+        - GRIDR_VENV=${VENV_VERSION_PYTHON} make pylint
     artifacts:
         # Optimiser l'archivage au strict minimum pour gagner de l'espace et du transferts de bande passante
         paths:
@@ -287,7 +239,7 @@ pylint_analysis:
 
 sonarqube:
     stage: sonarqube
-    image: ${ARTIFACTORY_URL}/sonarsource/sonar-scanner-cli:4.5
+    image: ${ARTIFACTORY_URL}/${TAG_IMAGE_SONAR}
     needs:
       - pytest
       - pylint_analysis
@@ -328,50 +280,107 @@ sonarqube:
           - .coverage-reports/coverage.xml
         policy: pull
 
-package:
+package-build:
     stage: package
-    image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
+    # Utilisation de l'image rust 1.79 bookworm ( bookworm base sur une Debian 12 (bullseye pour Debian 11))
+    # Debian 12 : python 3.11
+    # Debian 11 : python 3.9
+    image: ${ARTIFACTORY_URL}/rust:1.79.0-bookworm
     needs: 
-        - python
+        - rust_python_init
+    before_script:
+        # Ajout des certificats CNES pour permettre au runner de cloner le dépôt Gitlab.
+        - cat ${CNES_CERTIFICATE} > /usr/local/share/ca-certificates/my-cert.crt
+        # Mise à jour des certificats
+        - update-ca-certificates
+        # Installation dependances de build
+        - apt-get update && apt-get install -y build-essential procps curl file git
+        #FOR NOW THE CI ONLY WORKS WITH DEBIAN 12 PACKAGED PYTHON      
+        - apt-get update && apt-get install -y python3.11 libpython3.11-dev python3.11-venv python3-pip
     script:
-        # Chargement du module python
-        - echo 'Packaging....'
-        - source python_env/bin/activate
-        - python -m build
-        - deactivate
+        # For now manual set TAG_VERSION_PYTHON
+        - TAG_VERSION_PYTHON="3_11"
+        # Mise en place du venv
+        - VENV_VERSION_PYTHON=python_env_${TAG_VERSION_PYTHON}
+        - GRIDR_VENV=${VENV_VERSION_PYTHON} make build
     artifacts:
         untracked: true
         expire_in: 1 day
+
+
+
+# Stage : release
+# Deploy previously generated packages to artifactory
+.template_release_job:
+    image: ${ARTIFACTORY_URL}/python:${TAG_IMAGE_PYTHON_DEFAULT_VERSION}
+    stage: release
+    rules:
+        - if: $CI_COMMIT_TAG
+          when: never                                  # Do not run this job when a tag is created manually
+        - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH  # Run this job when commits are pushed or merged to the default branch
     
 
-publish-artifactory: 
-    stage: deploy
-    image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
-    needs: 
-        - package
-    before_script : 
-        # Accès a jfrog cli (installé dans le job python) mais il faut refaire un chmod 
-        - chmod 755 jfrog
-        # Obtention de UUID, afin de garder le meme identifiant que dans le premier job
-        - export UUID=`cat uuid.txt`
+release-publish-artifactory:
+    extends: .template_release_job
+    needs:
+        - python_init
+        - package-build
+        - pytest
     script:
-        # Dépôt des packages dans le référentiel pypi Artifactory "gridr-pip-local"
-        # Pour Python, l'option --module est nécessaire (même nom de module que dans Setup.py ou pyproject.toml)
-        - ./jfrog rt u dist/ gridr-pip/ --module gridr
-        ## Publication de l'objet build-info dans Artifactory
-        #- ./jfrog rt bp --server-id ${UUID} --build-url ${CI_PIPELINE_URL}
-        
-scan-xray:
-    stage: scan Xray
-    image: ${ARTIFACTORY_URL}/${TAG_IMAGE_PYTHON}
-    before_script:
-        # Accès a jfrog cli (installé dans le job build-maven) mais il faut refaire un chmod 
-        - chmod 755 jfrog
-        # Obtention de UUID pour récupérer la config de jfrog cli
-        - export UUID=`cat uuid.txt`
-    script: 
-        # Scan Xray (De base le rt est reconnue comme déprécié mais il permet d'éviter un bug de connexion)
-        - ./jfrog rt bs --server-id ${UUID} --fail=false
-    allow_failure: true
+        # Mise en place du venv
+        - TAG_VERSION_PYTHON="3_11"
+        - VENV_VERSION_PYTHON=python_only_env_${TAG_VERSION_PYTHON}
+        - source ${VENV_VERSION_PYTHON}/bin/activate
+        - ls dist/*
+        - python -m twine upload --verbose --cert ${CNES_CERTIFICATE} --repository-url https://${ARTIFACTORY_HOST}/artifactory/api/pypi/${ARTIFACTORY_GRIDR_PIP} --username ${ARTIFACTORY_USER} --password ${ARTIFACTORY_TOKEN} dist/*
+        #- !reference [.template_release_job, script]
+    timeout: 15 minutes
+    artifacts:
+        untracked: true
+        expire_in: 1 day
 
+# Stage : Release
+# Ajout de variables d'environnement a recuperer dans le job gitlab_release_job
+# Ce job recupere la version a partir du pyproject. Cette version servira de tag
+# pour le job qui suit
+# A ne faire que si la branche de commit est le main et si pas de tag manuel
+gitlab_release_init_job:
+    extends: .template_release_job
+    needs:
+        - release-publish-artifactory
+    script:
+        # Recuperation de la version a partir du pyproject
+        - PYPROJECT_VERSION=$(grep -E -o "version(\s){0,}=(\s){0,}\"[0-9]+?\.[0-9]+?(\.[0-9]+?)?\"" pyproject.toml | grep -E -o "[0-9]+?\.[0-9]+?(\.[0-9]+?)?")
+        - echo "EXTRA_DESCRIPTION=${PYPROJECT_VERSION}" >> variables.env  # Generate the EXTRA_DESCRIPTION and TAG environment variables
+        - echo "TAG=${PYPROJECT_VERSION}" >> variables.env             # and append to the variables.env file
+        #- !reference [.template_release_job, script]
+    artifacts:
+        reports:
+            dotenv: variables.env                                   # Use artifacts:reports:dotenv to expose the variables to other jobs
+    timeout: 15 minutes
+
+# Stage : Release
+# Creation automatique du tag en recuperant le numero de version du projet python
+# A ne faire que si la branche de commit est le main et si pas de tag manuel
+gitlab_release_job:
+    extends: .template_release_job
+    image: ${ARTIFACTORY_GITLAB_URL}/gitlab-org/release-cli:latest
+    variables:
+        SSL_CERT_FILE: '${CNES_CERTIFICATE}' # assuming the cert exists in your repo or it has been downloaded before
+        #SSL_CERT_DIR: '${CNES_CERTIFICATE}'  # use this variable if you want to use more than one custom certificates
+    needs:
+        - release-publish-artifactory
+        - gitlab_release_init_job
+    script:
+        - echo "Running release for TAG ${TAG}"
+    release:
+        name: 'Release ${TAG}'
+        tag_name: '${TAG}'
+        description: 'Release using the release-cli ; v${EXTRA_DESCRIPTION}'
+        ref: '$CI_COMMIT_SHA'
+
+    timeout: 15 minutes
+    artifacts:
+        untracked: true
+        expire_in: 1 day
 

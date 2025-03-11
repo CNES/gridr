@@ -1,0 +1,27 @@
+# Cargo.toml
+[package]
+name = "gridr"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+extension-module = ["pyo3/extension-module"]
+default = []
+
+[dependencies]
+pyo3 = { version = "0.21.2", features = ["extension-module", "experimental-declarative-modules"]}
+numpy = "0.21.0"
+ndarray = { version = "0.15.6", features = ["approx", "rayon"] }
+
+[build-dependencies]
+pyo3-build-config = "0.22.0"
+
+[lib]
+name = "_libgridr"  # private module to be nested into Python package,
+               # needs to match the name of the function with the `[#pymodule]` attribute
+path = "src/lib.rs"
+crate-type = ["cdylib"]  # required for shared library for Python to import from.
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+# See also PyO3 docs on writing Cargo.toml files at https://pyo3.rs
+

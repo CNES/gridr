@@ -9,16 +9,51 @@
 """
 Array utils module
 """
-from typing import Tuple
+# pylint: disable=C0413
 import sys
-import numpy as np
-import rasterio
 PY311 = sys.version_info >= (3,11)
+from typing import Tuple, NoReturn
 if PY311:
     from typing import Self
 else:
     from typing_extensions import Self
+import numpy as np
+import rasterio
+# pylint: enable=C0413
 
+from gridr.cdylib import (
+        py_array1_replace_i8,
+        py_array1_replace_u8,)
+
+def array_replace(
+        array: np.ndarray,
+        val_cond: int,
+        val_true: int,
+        val_false: int,
+        ) -> NoReturn:
+    """
+    
+    This methods wraps the rust function 'py_array1_replace_*' for integer types
+    
+    Args:
+        array : array into which elements are replaced inplace
+        val_cond : condition values
+        val_true : replaced value for elements whose input value equals to 
+                'val_cond'
+        val_false : replaced value for elements whose input value does not equals
+                to 'val_cond'
+    
+    Returns:
+        None
+    """
+    assert(array.dtype in (np.int8, np.uint8))
+    assert(array.flags.c_contiguous is True)
+    array = array.reshape(-1)
+    if array.dtype == np.int8:
+        py_array1_replace_i8(array, val_cond, val_true, val_false)
+    elif array.dtype == np.uint8:
+        py_array1_replace_u8(array, val_cond, val_true, val_false)
+        
 
 
 class ArrayProfile(object):
