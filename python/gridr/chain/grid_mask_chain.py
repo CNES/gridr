@@ -971,8 +971,20 @@ def build_grid_mask_chain(
 
             # Here we merge
             if compute_mask and merge_mask_grid is not None:
-                mask_indices = sma_w_buffer_mask.array[cslices] == 1 
-                sma_w_buffer_grid.array[cslices3][:, mask_indices] = merge_mask_grid
+                #mask_indices = sma_w_buffer_mask.array[cslices] == 1 
+                #sma_w_buffer_grid.array[cslices3][:, mask_indices] = merge_mask_grid
+                #array_replace(array=sma_w_buffer_grid.array[cslices3],
+                #        val_cond=0, val_true=merge_mask_grid, val_false=None,
+                #        array_cond=sma_w_buffer_mask.array[cslices],
+                #        array_cond_val=1, win=None)
+                array_replace(array=sma_w_buffer_grid.array[0][cslices],
+                        val_cond=0, val_true=merge_mask_grid, val_false=None,
+                        array_cond=sma_w_buffer_mask.array[cslices],
+                        array_cond_val=1, win=None)
+                array_replace(array=sma_w_buffer_grid.array[1][cslices],
+                        val_cond=0, val_true=merge_mask_grid, val_false=None,
+                        array_cond=sma_w_buffer_mask.array[cslices],
+                        array_cond_val=1, win=None)
             
             # Check masked/unmasked convention and ensure that the output buffer
             # is complient with the user's given convention.
