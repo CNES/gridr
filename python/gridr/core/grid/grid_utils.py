@@ -33,7 +33,10 @@ def interpolate_grid(
         mask_binarize_precision: float = 1e-6,
         mask_dtype: np.dtype = np.uint8,
         ) -> Tuple[np.ndarray]:
-    """Interpolate a 3-dimensionnal grid and its associated 2-dimensional mask.
+    """
+    @doc
+    
+    Interpolate a 3-dimensionnal grid and its associated 2-dimensional mask.
     The first dimension of the grid contain the variable.
     
     We assume here that the mask respect the convention where all non zero

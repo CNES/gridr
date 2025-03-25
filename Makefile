@@ -14,6 +14,10 @@ GRIDR_RUST_CRATE_PATH := $(ROOT_DIR)rust/gridr
 GRIDR_LIBGRIDR_SO_BUILD_TARGET := $(GRIDR_RUST_CRATE_PATH)/target/release/lib_libgridr.so
 GRIDR_LIBGRIDR_SO_PYTEST_TARGET := $(GRIDR_PYTHON_PATH)/cdylib/_libgridr.so
 
+GRIDR_LIBGRIDR_DOC_BUILD_PATH := $(GRIDR_RUST_CRATE_PATH)/target/doc
+
+GRIDR_DOCS_ROOT_PATH := $(ROOT_DIR)docs
+
 # Check cargo
 CHECK_CARGO = $(shell command -v cargo 2> /dev/null)
 
@@ -81,6 +85,22 @@ build-rust: venv ## build the rust project
 $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET): build-rust
 	rm -f "$(GRIDR_LIBGRIDR_SO_PYTEST_TARGET)"
 	@ln -s $(GRIDR_LIBGRIDR_SO_BUILD_TARGET) $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET)
+
+
+.PHONY: build-rust-doc
+build-rust-doc: venv ## build the rust project
+	@echo "Building rust documentation..."
+	@echo "Rust documentation location : $(GRIDR_LIBGRIDR_DOC_TARGET)"
+	rm -rf $(GRIDR_LIBGRIDR_DOC_BUILD_PATH)
+	@source $(GRIDR_VENV)/bin/activate && cd $(GRIDR_RUST_CRATE_PATH) && cargo doc --no-deps --document-private-items
+
+
+.PHONY: build-sphinx-doc
+build-sphinx-doc: venv $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET) ## build the sphinx documentation
+	@echo "Building sphinx documentation..."
+	@echo "Sphinx documentation location : $(GRIDR_DOCS_ROOT_PATH)"
+	@source $(GRIDR_VENV)/bin/activate && cd $(GRIDR_DOCS_ROOT_PATH) && make html
+	tar cf $(GRIDR_DOCS_ROOT_PATH).tar $(GRIDR_DOCS_ROOT_PATH)
 
 
 .PHONY: test-python

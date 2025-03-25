@@ -1,7 +1,7 @@
 #![warn(missing_docs)]
 //! Crate doc
-mod core;
-mod pyapi;
+pub mod core;
+pub mod pyapi;
 
 // Instead of declaring "mod lib_py" from another file you can also directly
 // define the pymodule here ; see bellow.

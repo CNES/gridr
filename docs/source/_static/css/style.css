@@ -1,0 +1,6 @@
+.rst-content {
+    max-width: 90%;  /* Ajuste ce pourcentage selon tes besoins */
+    margin-left: auto;
+    margin-right: auto;
+    padding: 0 15px;  /* Espacement pour le texte */
+}

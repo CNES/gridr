@@ -11,6 +11,7 @@ stages:
     - sonarqube
     - package
     - release
+    - doc
 
 # Default configuration for all jobs
 default:
@@ -392,3 +393,51 @@ gitlab_release_job:
         untracked: true
         expire_in: 1 day
 
+        
+build_doc:
+    # Utilisation de l'image rust 1.79 bookworm ( bookworm base sur une Debian 12 (bullseye pour Debian 11))
+    # Debian 12 : python 3.11
+    # Debian 11 : python 3.9
+    image: ${ARTIFACTORY_URL}/rust:1.79.0-bookworm
+    stage: doc
+    rules:
+        - if: $CI_COMMIT_TAG
+          when: never                                  # Do not run this job when a tag is created manually
+        - if: '$CI_COMMIT_BRANCH == "$CI_DEFAULT_BRANCH" || $CI_COMMIT_BRANCH == "dev"'
+    needs: 
+        - rust_python_init
+    before_script:
+        # Ajout des certificats CNES pour permettre au runner de cloner le dépôt Gitlab.
+        - cat ${CNES_CERTIFICATE} > /usr/local/share/ca-certificates/my-cert.crt
+        # Mise à jour des certificats
+        - update-ca-certificates
+        # Installation dependances de build
+        - apt-get update && apt-get install -y build-essential procps curl file git
+        #FOR NOW THE CI ONLY WORKS WITH DEBIAN 12 PACKAGED PYTHON      
+        - apt-get update && apt-get install -y python3.11 libpython3.11-dev python3.11-venv python3-pip
+    script:
+        # For now manual set TAG_VERSION_PYTHON
+        - TAG_VERSION_PYTHON="3_11"
+        # Mise en place du venv
+        - VENV_VERSION_PYTHON=python_env_${TAG_VERSION_PYTHON}
+        - GRIDR_VENV=${VENV_VERSION_PYTHON} make build-sphinx-doc
+    artifacts:
+        untracked: true
+        expire_in: 1 day
+
+pages:
+    image: ${ARTIFACTORY_URL}/python:${TAG_IMAGE_PYTHON_DEFAULT_VERSION}
+    stage: doc
+    rules:
+        - if: $CI_COMMIT_TAG
+          when: never                                  # Do not run this job when a tag is created manually
+        - if: $CI_COMMIT_BRANCH == "dev"  # Run this job when commits are pushed or merged to the default branch
+        #- if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH  # Run this job when commits are pushed or merged to the default branch
+    needs:
+        - build_doc
+    script:
+        # Mise en place du venv
+        - cp -r docs/build/html public
+    artifacts:
+        paths:
+        - public

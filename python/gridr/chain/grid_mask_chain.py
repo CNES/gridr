@@ -8,6 +8,7 @@
 #
 """
 Module for a Grid and Mask creation chain
+# @doc
 """
 
 from enum import IntEnum
@@ -95,7 +96,9 @@ def build_mask_chain(
         cpu_tile_shape: Optional[Tuple[int, int]] = DEFAULT_CPU_TILE_SHAPE,
         logger: Optional[logging.Logger] = None,
         ) -> int:
-    """Grid mask computation chain.
+    """
+    @doc
+    Grid mask computation chain.
     
     This method wraps the call to the build_mask core method with I/O 
     resources management and a parallel computation capacity.
@@ -485,7 +488,9 @@ def build_grid_mask_chain(
         cpu_tile_shape: Optional[Tuple[int, int]] = DEFAULT_CPU_TILE_SHAPE,
         logger: Optional[logging.Logger] = None,
         ) -> int:
-    """Grid and mask computation chain.
+    """
+    @doc
+    Grid and mask computation chain.
     
     This method wraps both the call to the build_grid method and the call to the
     call to the build_mask core method with I/O resources management and a
