@@ -1,9 +1,8 @@
 #![warn(missing_docs)]
 //! Crate doc
 use pyo3::prelude::*;
-use numpy::{PyReadonlyArray1, PyReadwriteArray1, Element};
 
-use crate::core::gx_array::{GxArrayWindow, GxArrayView, GxArrayViewMut};
+use crate::core::gx_array::{GxArrayWindow};
 
 /// A Python-exposed class representing a rectangular window for 2D array operations.
 ///

@@ -34,9 +34,15 @@
 /// - [`Self::nrow()`]: Returns the number of rows (2nd axis of the structure).
 /// - [`Self::ncol()`]: Returns the number of columns (3rd axis of the structure).
 
+
+use crate::core::gx_errors::{GxError};
+
 pub trait GxArrayShape {
+    /// Returns the number of variables (1st axis of the structure).
     fn nvar(&self) -> usize;
+    /// Returns the number of rows (2nd axis of the structure).
     fn nrow(&self) -> usize;
+    /// Returns the number of columns (3rd axis of the structure).
     fn ncol(&self) -> usize;
 }
 
@@ -86,6 +92,30 @@ pub struct GxArrayViewMut<'a, T> {
 
     /// Number of columns (3rd axis).
     pub ncol: usize,
+    
+    /// Number of rows as i64
+    pub nrow_i64: i64,
+    
+    /// Number of cols as i64
+    pub ncol_i64: i64,
+}
+
+impl<'a, T> GxArrayViewMut<'a, T> {
+    /// Creates a new mutable array view from a contiguous data slice.
+    ///
+    /// # Arguments
+    ///
+    /// - `data`: A reference to a contiguous slice of elements.
+    /// - `nvar`: Number of variables (first axis).
+    /// - `nrow`: Number of rows (second axis).
+    /// - `ncol`: Number of columns (third axis).
+    ///
+    /// # Returns
+    ///
+    /// A new `GxArrayViewMut` instance that provides a read-only view over the provided data.
+    pub fn new(data: &'a mut [T], nvar: usize, nrow: usize, ncol: usize) -> Self {
+        Self { data:data, nvar:nvar, nrow:nrow, ncol:ncol, nrow_i64:nrow as i64, ncol_i64:ncol as i64 }
+    }
 }
 
 impl<T> GxArrayShape for GxArrayViewMut<'_, T> {
@@ -147,6 +177,12 @@ pub struct GxArrayView<'a, T> {
 
     /// Number of columns (3rd axis).
     pub ncol: usize,
+    
+    /// Number of rows as i64
+    pub nrow_i64: i64,
+    
+    /// Number of cols as i64
+    pub ncol_i64: i64,
 }
 
 impl<'a, T> GxArrayView<'a, T> {
@@ -163,7 +199,7 @@ impl<'a, T> GxArrayView<'a, T> {
     ///
     /// A new `GxArrayView` instance that provides a read-only view over the provided data.
     pub fn new(data: &'a [T], nvar: usize, nrow: usize, ncol: usize) -> Self {
-        Self { data, nvar, nrow, ncol }
+        Self { data:data, nvar:nvar, nrow:nrow, ncol:ncol, nrow_i64:nrow as i64, ncol_i64:ncol as i64 }
     }
 }
 
@@ -228,6 +264,61 @@ pub struct GxArrayWindow {
 }
 
 impl GxArrayWindow {
+    
+    /// Returns the height (number of rows) of the window.
+    pub fn height(&self) -> usize {
+        self.end_row - self.start_row + 1
+    }
+
+    /// Returns the width (number of columns) of the window.
+    pub fn width(&self) -> usize {
+        self.end_col - self.start_col + 1
+    }
+
+    /// Returns the number of elements in the window.
+    pub fn size(&self) -> usize {
+        self.height() * self.width()
+    }
+    
+    /// This method calculates and returns the required windows in a lower resolute coordinate system 
+    /// to cover the full resolute target window given by the 'win' parameter.
+    /// If the `resolution` is equal to 1 in both directions, the required window is directly equal to the input window.
+    ///
+    /// Args:
+    ///     resolution : The grid's resolution factors for rows and columns (in that order).
+    ///     win: The target full resolution window
+    ///
+    /// Returns:
+    ///     A result containing the two windows: the source window and the relative window,
+    ///     or an error if the resolution is invalid.
+    pub fn get_wrapping_window_for_resolution(
+        resolution: (usize, usize),
+        win: &GxArrayWindow,
+    ) -> Result<(GxArrayWindow, GxArrayWindow), GxError> {
+        // Validate the resolution to avoid division by zero
+        if resolution.0 == 0 || resolution.1 == 0 {
+            return Err(GxError::ZeroResolution);
+        }
+
+        // Calculate the source window in the input grid
+        let win_src = GxArrayWindow {
+            start_row: win.start_row / resolution.0,
+            start_col: win.start_col / resolution.1,
+            end_row: win.end_row.div_ceil(resolution.0),
+            end_col: win.end_col.div_ceil(resolution.1),
+        };
+
+        // Calculate the relative window inside the source window
+        let win_rel = GxArrayWindow {
+            start_row: win.start_row % resolution.0,
+            start_col: win.start_col % resolution.1,
+            end_row: win.start_row + (win.end_row - win.start_row),
+            end_col: win.start_col + (win.end_col - win.start_col),
+        };
+
+        Ok((win_src, win_rel))
+    }
+    
     /// Validates the window against an array-like structure.
     ///
     /// Ensures that the window's row and column indices are within valid bounds  

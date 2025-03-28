@@ -80,7 +80,7 @@ where
     // from/to the input array
     let mut array_view_mut = array.readwrite();
     let array_slice = array_view_mut.as_slice_mut().expect("Failed to get slice");
-    let mut gx_array_view_mut = GxArrayViewMut { data: array_slice, nvar: 1, nrow: nrow, ncol: ncol };
+    let mut gx_array_view_mut = GxArrayViewMut::new(array_slice, 1, nrow, ncol);
     
     // Handle optional array_cond
     let cond_array_view;

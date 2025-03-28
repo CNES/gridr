@@ -81,7 +81,12 @@ build-rust: venv ## build the rust project
 	@source $(GRIDR_VENV)/bin/activate && cd $(GRIDR_RUST_CRATE_PATH) && cargo build --release
 	@touch $(GRIDR_LIBGRIDR_SO_BUILD_TARGET)
 
+.PHONY: test-rust
+test-rust: venv 
+	@echo "Test rust code..."
+	@source $(GRIDR_VENV)/bin/activate && cd $(GRIDR_RUST_CRATE_PATH) && RUST_BACKTRACE=1 cargo test -- --nocapture
 
+.PHONY: build-rust-py
 $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET): build-rust
 	rm -f "$(GRIDR_LIBGRIDR_SO_PYTEST_TARGET)"
 	@ln -s $(GRIDR_LIBGRIDR_SO_BUILD_TARGET) $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET)

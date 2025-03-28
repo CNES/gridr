@@ -6,6 +6,7 @@ from ._libgridr import (
         py_array1_replace_u8,
         py_array1_replace_f32_u8,
         py_array1_replace_f64_u8,
+        py_array1_grid_resampling_f64_u8,
         )
 
 __all__ = [
@@ -16,6 +17,7 @@ __all__ = [
         "py_array1_replace_u8",
         "py_array1_replace_f32_u8",
         "py_array1_replace_f64_u8",
+        "py_array1_grid_resampling_f64_u8",
         ]
 
 # It is a common practice in Python packaging to keep the extension modules
