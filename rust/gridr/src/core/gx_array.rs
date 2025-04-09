@@ -37,6 +37,10 @@
 
 use crate::core::gx_errors::{GxError};
 
+pub trait GxArrayRead<'a, T> {
+    fn data(&'a self) -> &'a [T];
+}
+
 pub trait GxArrayShape {
     /// Returns the number of variables (1st axis of the structure).
     fn nvar(&self) -> usize;
@@ -118,18 +122,28 @@ impl<'a, T> GxArrayViewMut<'a, T> {
     }
 }
 
+impl<'a, T> GxArrayRead<'a, T> for GxArrayViewMut<'a, T> {
+    #[inline(always)]
+    fn data(&'a self) -> &'a [T] {
+        &self.data
+    }
+}
+
 impl<T> GxArrayShape for GxArrayViewMut<'_, T> {
     /// Returns the number of variables (1st axis of the array).
+    #[inline(always)]
     fn nvar(&self) -> usize {
         self.nvar
     }
 
     /// Returns the number of rows (2nd axis of the array).
+    #[inline(always)]
     fn nrow(&self) -> usize {
         self.nrow
     }
 
     /// Returns the number of columns (3rd axis of the array).
+    #[inline(always)]
     fn ncol(&self) -> usize {
         self.ncol
     }
@@ -203,18 +217,28 @@ impl<'a, T> GxArrayView<'a, T> {
     }
 }
 
+impl<'a, T> GxArrayRead<'a, T> for GxArrayView<'a, T> {
+    #[inline(always)]
+    fn data(&'a self) -> &'a [T] {
+        &self.data
+    }
+}
+
 impl<T> GxArrayShape for GxArrayView<'_, T> {
     /// Returns the number of variables (1st axis of the array).
+    #[inline(always)]
     fn nvar(&self) -> usize {
         self.nvar
     }
 
     /// Returns the number of rows (2nd axis of the array).
+    #[inline(always)]
     fn nrow(&self) -> usize {
         self.nrow
     }
 
     /// Returns the number of columns (3rd axis of the array).
+    #[inline(always)]
     fn ncol(&self) -> usize {
         self.ncol
     }
@@ -369,3 +393,89 @@ impl GxArrayWindow {
     }
 }
 
+/// Compares two array's windows for approximate equality, element by element.
+///
+/// This function compares two windows (subregions) within two arrays. Each array is represented
+/// through a shape provider (`GxArrayShape`) and a data accessor (`GxArrayRead`).
+/// The function checks whether the values in the two corresponding windows are approximately equal
+/// within a given numerical tolerance.
+///
+/// The comparison is done element-wise across all variables, rows, and columns defined
+/// by the respective windows (`win_a` and `win_b`). The function assumes both windows are 2D, 
+/// span the same number of rows (`nrow`), and columns (`ncol`), and returns `false` immediately if
+/// the window shapes do not match.
+///
+/// # Type Parameters
+///
+/// * `A` - A type implementing `GxArrayShape` and `GxArrayRead`, representing the first array.
+/// * `B` - A type implementing `GxArrayShape` and `GxArrayRead`, representing the second array.
+/// * `T` - The element type of the arrays. Must support subtraction, conversion to `f64`, 
+///   and be `Copy`.
+///
+/// # Arguments
+///
+/// * `a` - A reference to the first array.
+/// * `win_a` - The window (subregion) of the first array to compare.
+/// * `b` - A reference to the second array.
+/// * `win_b` - The window (subregion) of the second array to compare.
+/// * `tol` - A floating-point tolerance value. Elements are considered equal if the absolute
+///   difference between them is less than or equal to this tolerance.
+///
+/// # Returns
+///
+/// Returns `true` if all corresponding elements in the two windows are approximately equal
+/// within the specified tolerance. Returns `false` if the window shapes differ or if any
+/// pair of corresponding elements differs by more than `tol`.
+///
+/// # Panics
+///
+/// This function does not panic as long as the window bounds are valid for the given arrays.
+///
+/// # Example
+///
+/// ```rust
+/// let result = gx_array_data_approx_eq_window(
+///     &array_a, &window_a,
+///     &array_b, &window_b,
+///     1e-6,
+/// );
+/// assert!(result);
+/// ```
+pub fn gx_array_data_approx_eq_window<'a, A, B, T>(
+    a: &'a A,
+    win_a: &GxArrayWindow,
+    b: &'a B,
+    win_b: &GxArrayWindow,
+    tol: f64,
+    ) -> bool
+where
+    A: GxArrayShape + GxArrayRead<'a, T>,
+    B: GxArrayShape + GxArrayRead<'a, T>,
+    T: std::ops::Sub + Into<f64> + From<f64> + Copy + 'a,
+{
+    let a_v_start = 0;
+    let a_v_end = a.nvar()-1;
+    let b_v_start = 0;
+    let b_v_end = b.nvar()-1;
+    
+    // Check windows and arrays are ok.
+    let nv = a_v_end - a_v_start + 1;
+    let nr = win_a.height();
+    let nc = win_a.width();
+
+    if nv != b_v_end - b_v_start + 1 ||
+       nr != win_b.height() ||
+       nc != win_b.width() {
+        return false;
+    }
+
+    (0..nv).all(|v| 
+        (0..nr).all(|r| 
+            (0..nc).all(|c| {
+                let a_idx = (a_v_start + v) * a.nrow() * a.ncol() + (win_a.start_row + r) * a.ncol() + (win_a.start_col + c);
+                let b_idx = (b_v_start + v) * b.nrow() * b.ncol() + (win_b.start_row + r) * b.ncol() + (win_b.start_col + c);
+                (a.data()[a_idx].into() - b.data()[b_idx].into()).abs() <= tol
+            })
+        )
+    )
+}
