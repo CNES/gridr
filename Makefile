@@ -116,7 +116,7 @@ test-python: venv $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET) ## perform tests on python 
 
 
 .PHONY: test
-test: test-python ## perform all tests
+test: test-rust test-python ## perform all tests
 
 .PHONY: pylint
 pylint: venv ## call pylint
