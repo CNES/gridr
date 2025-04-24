@@ -281,9 +281,11 @@ def build_mask_chain(
     buffer_shape = np.max(np.asarray([window_shape(chunk_win)
             for chunk_win in chunk_windows]), axis=0)
     
-    # Create shared memory array for read
-    sma_read_buffer = register_sma(read_buffer_shape, 
-            mask_in_ds.dtypes[mask_in_band-1])
+    sma_read_buffer = None
+    if mask_in_ds is not None:
+        # Create shared memory array for read
+        sma_read_buffer = register_sma(read_buffer_shape, 
+                mask_in_ds.dtypes[mask_in_band-1])
     
     # Create shared memory array for output
     sma_write_buffer = register_sma(buffer_shape, mask_out_dtype)
@@ -311,9 +313,14 @@ def build_mask_chain(
             cslices_write = window_indices(chunk_win, reset_origin=False)
             # read the data
             cmask_shape = window_shape(win_read)
-            cmask_arr = mask_in_ds.read(mask_in_band,
-                    window = as_rio_window(win_read),
-                    out=sma_read_buffer.array[0:cmask_shape[0], 0:cmask_shape[1]])
+            cmask_arr = None
+            
+            if sma_read_buffer is not None:
+                cmask_arr = mask_in_ds.read(mask_in_band,
+                        window = as_rio_window(win_read),
+                        out=sma_read_buffer.array[0:cmask_shape[0],
+                                0:cmask_shape[1]])
+            
             cgeometry_origin = (geometry_origin[0] + chunk_win[0][0],
                     geometry_origin[1] + chunk_win[1][0])
             
@@ -324,7 +331,7 @@ def build_mask_chain(
             
             # Check valid/masked convention and ensure that the input buffer
             # is complient with the core convention, i.e. 0 for valid data. 
-            if mask_in_unmasked_value != 0:
+            if cmask_arr is not None and mask_in_unmasked_value != 0:
                 array_replace(cmask_arr, mask_in_unmasked_value, 0, 1)
             
             # Choose between the tiled multiprocessing branch and the
@@ -394,8 +401,10 @@ def build_mask_chain(
                     tile_smb_out = SharedMemoryArray.clone(
                             sma=sma_write_buffer, array_slice=tile_slice)
 
-                    tile_smb_mask_in = SharedMemoryArray.clone(
-                            sma=sma_read_buffer, array_slice=None)
+                    tile_smb_mask_in = None
+                    if sma_read_buffer is not None:
+                        tile_smb_mask_in = SharedMemoryArray.clone(
+                                sma=sma_read_buffer, array_slice=None)
                     
                     # Append process parameters to 'tasks'
                     tasks.append({'shape': tile_shape,
@@ -920,8 +929,10 @@ def build_grid_mask_chain(
                         tile_smb_mask_out = SharedMemoryArray.clone(
                                 sma=sma_w_buffer_mask, array_slice=tile_slice)
 
-                        tile_smb_mask_in = SharedMemoryArray.clone(
-                                sma=sma_r_buffer_mask, array_slice=None)
+                        tile_smb_mask_in = None
+                        if sma_r_buffer_mask is not None:
+                            tile_smb_mask_in = SharedMemoryArray.clone(
+                                    sma=sma_r_buffer_mask, array_slice=None)
                     
                         # Append process parameters to 'tasks'
                         build_mask_args = {'shape': tile_shape,
