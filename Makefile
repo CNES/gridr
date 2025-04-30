@@ -101,7 +101,7 @@ build-rust-doc: venv ## build the rust project
 
 
 .PHONY: build-sphinx-doc
-build-sphinx-doc: venv $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET) ## build the sphinx documentation
+build-sphinx-doc: venv $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET) clean-sphinx-doc ## build the sphinx documentation
 	@echo "Building sphinx documentation..."
 	@echo "Sphinx documentation location : $(GRIDR_DOCS_ROOT_PATH)"
 	@source $(GRIDR_VENV)/bin/activate && cd $(GRIDR_DOCS_ROOT_PATH) && make html
@@ -135,7 +135,7 @@ build: venv ## build package
 
 
 .PHONY: clean
-clean: clean-venv clean-build clean-pyc clean-test ## remove all build, test, coverage and Python artifacts
+clean: clean-venv clean-build clean-pyc clean-test clean-sphinx-doc ## remove all build, test, coverage and Python artifacts
 
 .PHONY: clean-venv
 clean-venv:
@@ -175,6 +175,12 @@ clean-test:
 	@rm -f pytest-report.xml
 	@rm -f pylint-report.txt
 	@rm -f debug.log
+
+.PHONY: clean-sphinx-doc
+clean-sphinx-doc:
+	@echo "+ $@"
+	@rm -rf $(GRIDR_DOCS_ROOT_PATH)/build
+	@rm -rf $(GRIDR_DOCS_ROOT_PATH)/source/_notebooks/generated
 
 #ifndef GRIDR_VENV
 .PHONY: print_config 

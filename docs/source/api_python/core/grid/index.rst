@@ -7,4 +7,5 @@ core.grid
     grid_commons
     grid_mask
     grid_rasterize
+    grid_resampling
     grid_utils

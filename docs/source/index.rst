@@ -13,11 +13,18 @@ GridR documentation
 This is the main page of GridR's documentation.
 
 .. contents::
-   :backlinks: none
-   :local:
+    :backlinks: none
+    :local:
 
+.. toctree::
+    :maxdepth: 1
+    :caption: User guides
 
-The API documentation is available in the following section:
+    _notebooks/index
+    
+.. tip::
+    These guides are primarily based on Jupyter notebooks, which are also available directly from the root of the code repository.
+
 
 .. toctree::
     :maxdepth: 1

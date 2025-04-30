@@ -9,15 +9,12 @@
 """
 GridR notebook utils
 
-ex. PATH=$PWD/geckodriver_:$PATH DOC_BUILD=1 DOC_BUILD_OUTPUT_DIR=output/png jupyter nbconvert --to markdown --execute grid_resampling_001_work.ipynb --output output/notebook.md
+ex. DOC_BUILD=1 DOC_BUILD_OUTPUT_DIR=output/png jupyter nbconvert --to markdown --execute grid_resampling_001_work.ipynb --output output3/notebook.md
 
 """
 import os
 import numpy as np
 import uuid 
-
-import logging
-logging.basicConfig(level=logging.DEBUG)
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -33,9 +30,10 @@ from bokeh.io.export import export_png
 # This variable can be set in the caller environment in order to tell in which
 # context the plot methods are called (ie. interactive notebook or automatic
 # documentation build
-from selenium import webdriver
-from selenium.webdriver.firefox.options import Options
+#from selenium import webdriver
+#from selenium.webdriver.firefox.options import Options
 
+from IPython.display import Markdown, Image, display
 
 def create_local_firefox_webdriver():
     options = Options()
@@ -67,16 +65,24 @@ def plot_im(data, win_rect=None, prefix=None):
     if in_doc_build():
         # In that case some additionnal variables must be set in the calling
         # environment :
-        # - DOC_BUILD_OUTPUT_DIR
-        output_dir = os.environ.get("DOC_BUILD_OUTPUT_DIR", None)
+        # - DOC_BUILD_FILES_OUTPUT_DIR_PATH
+        # - DOC_BUILD_NOTEBOOK_OUTPUT_PATH
+        output_dir = os.environ.get("DOC_BUILD_FILES_OUTPUT_DIR_PATH", None)
         if not output_dir:
-            raise Exception("The environment variable `DOC_BUILD_OUTPUT_DIR` "
-                    "must be set")
+            raise Exception("The environment variable "
+                    "`DOC_BUILD_FILES_OUTPUT_DIR_PATH` must be set")
+        output_notebook_path = os.environ.get("DOC_BUILD_NOTEBOOK_OUTPUT_PATH",
+                None)
+        if not output_notebook_path:
+            raise Exception("The environment variable "
+                    "`DOC_BUILD_NOTEBOOK_OUTPUT_PATH` must be set")
         
         # Create the output directory if does not exists
         os.makedirs(output_dir, exist_ok=True)
         # Ensure unique name
-        unique_name = f"{prefix}_{uuid.uuid4().hex[:8]}.png"
+        unique_name = f"{prefix}.png"
+        if not prefix:
+            unique_name = f"{prefix}_{uuid.uuid4().hex[:8]}.png"
         # Full output path
         path = os.path.join(output_dir, unique_name)
         
@@ -85,13 +91,16 @@ def plot_im(data, win_rect=None, prefix=None):
                     export_name=path)
         else:
             raise NotImplementedError
+        
+        # Print the mardown string to render the image
+        rel_path = os.path.relpath(ret, os.path.dirname(output_notebook_path))
+        display(Markdown(f"![{unique_name}]({rel_path})"))
     else:
         if data.ndim == 2:
             ret = bokeh_plot_gray(data=data, win_rect=None, prefix=None)
         else:
             ret = bokeh_plot_rgb(data)
-        
-    return ret
+        display(ret)
 
 
 def bokeh_show_fig(fig, prefix=None):
@@ -107,7 +116,7 @@ def bokeh_show_fig(fig, prefix=None):
     - DOC_BUILD_OUTPUT_DIR : path to the output directory storing the plot
     """
     if in_doc_build():
-        output_dir = os.environ.get("DOC_BUILD_OUTPUT_DIR", None)
+        output_dir = os.environ.get("DOC_BUILD_FILES_OUTPUT_DIR_PATH", None)
         if not output_dir:
             raise Exception("The environment variable `DOC_BUILD_OUTPUT_DIR` "
                     "must be set")
@@ -140,13 +149,12 @@ def mpl_export_gray_static(data, win_rect=None, export_name=None):
 
     fig, ax = plt.subplots(figsize=(width / 100, height / 100), dpi=100)
 
-    # Définir les bornes sans tenir compte des NaN
+    # Define vmin and vmax
     finite_data = data[np.isfinite(data)]
     vmin, vmax = np.min(finite_data), np.max(finite_data)
 
-    # Palette avec le blanc pour les faibles valeurs, noir pour les fortes (comme Greys256)
     cmap = cm.get_cmap("Greys_r").copy()
-    cmap.set_bad(color='lightgray')  # Pour les NaN, comme dans Bokeh
+    cmap.set_bad(color='lightgray')  # The NaN color
 
     img = ax.imshow(data, cmap=cmap, vmin=vmin, vmax=vmax, origin='upper')
 
@@ -168,7 +176,6 @@ def mpl_export_gray_static(data, win_rect=None, export_name=None):
     plt.savefig(export_name, bbox_inches='tight', pad_inches=0)
     plt.close(fig)
 
-    print(f"[DOC] Image exportée : {export_name}")
     return export_name
     
 
@@ -206,7 +213,7 @@ def bokeh_plot_gray(data, win_rect=None, prefix=None):
             line_width=2
         )
 
-    # JS interactivité avec un div pour le survol
+    # JS : callback on mouse move
     info = Div(text="Move cursor on image", width=400)
     p.js_on_event("mousemove", CustomJS(args=dict(div=info, src=source), code="""
         const x = Math.floor(cb_obj.x);

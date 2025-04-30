@@ -26,7 +26,8 @@ from gridr.cdylib import (
         py_array1_grid_resampling_f64_u8,
         )
 
-F64_U8_F64_F64 = (np.dtype('float64'), np.dtype('uint8'), np.dtype('float64'), np.dtype('float64'))
+F64_U8_F64_F64 = (np.dtype('float64'), np.dtype('uint8'), np.dtype('float64'),
+        np.dtype('float64'))
 
 PY_ARRAY_GRID_RESAMPLING_FUNC = {
     F64_U8_F64_F64: py_array1_grid_resampling_f64_u8,
@@ -65,12 +66,12 @@ def array_grid_resampling(
 
         grid_row : np.ndarray
             A 2D array representing the row coordinates of the target grid, with
-            the same shape as `grid_col`. The coordinates targets row positions 
+            the same shape as `grid_col`. The coordinates target row positions 
             in the `array_in` input array.
 
         grid_col : np.ndarray
             A 2D array representing the column coordinates of the target grid,
-            with the same shape as `grid_row`. The coordinates targets column
+            with the same shape as `grid_row`. The coordinates target column
             positions in the `array_in` input array.
 
         grid_resolution : Tuple[int, int]
