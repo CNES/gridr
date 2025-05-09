@@ -7,4 +7,5 @@ API Documentation
 
     chain/index
     core/index
+    io/index
     scaling/index

@@ -356,3 +356,18 @@ def as_rio_window(win: np.ndarray) -> Window:
     win = np.asarray(win)
     args = [(incl_idx_0, incl_idx_1+1) for incl_idx_0, incl_idx_1 in win]
     return Window.from_slices(*args)
+
+def from_rio_window(rio_win: Window) -> np.ndarray:
+    """Convert a rasterio Window object to a GridR window
+    
+    Args:
+        rio_win : The rasterio.windows.Window window
+    
+    Returns:
+        The corresponding window
+    """
+    win = np.array([[rio_win.row_off, rio_win.row_off + rio_win.height -1],
+            [rio_win.col_off, rio_win.col_off + rio_win.width -1]])
+    return win
+    
+    

@@ -137,6 +137,7 @@ def generate_modules_rst():
         f.write(".. toctree::\n    :maxdepth: 2\n    :caption: API\n\n")
         f.write("    chain/index\n")
         f.write("    core/index\n")
+        f.write("    io/index\n")
         f.write("    scaling/index\n")
 
 # Execute the script
