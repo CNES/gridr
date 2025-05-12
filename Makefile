@@ -41,6 +41,10 @@ else
 	NUMPY_VERSION_TAG = "_numpy$(NUMPY_VERSION)"
 endif
 
+# Tag to use in coverage report basename
+ifndef COVERAGE_REPORT_TAG
+	COVERAGE_REPORT_TAG = ""
+endif
 #ifeq ($(PYTHON_VERSION_OK), 0)
 #	$(error "Requires python version >= $(PYTHON_VERSION_MIN). Current version is $(PYTHON_VERSION_CUR)")
 #endif
@@ -120,8 +124,7 @@ build-sphinx-doc: venv $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET) clean-sphinx-doc ## bu
 .PHONY: test-python
 test-python: venv $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET) ## perform tests on python code
 	@echo "Testing..."
-	@source $(GRIDR_VENV)/bin/activate && PYTHONPATH=$(ROOT_DIR)python:$(PYTHONPATH) pytest --cov=python --cov-report=xml:.coverage-reports/coverage.xml --cov-report=term --junitxml=report.xml tests/python
-
+	@source $(GRIDR_VENV)/bin/activate && PYTHONPATH=$(ROOT_DIR)python:$(PYTHONPATH) pytest --cov=python --cov-report=xml:.coverage-reports/coverage$(COVERAGE_REPORT_TAG).xml --cov-report=term --junitxml=report$(COVERAGE_REPORT_TAG).xml tests/python
 
 
 .PHONY: test
