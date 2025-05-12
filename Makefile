@@ -33,6 +33,14 @@ PYTHON_VERSION_MIN = 3.8
 PYTHON_VERSION_CUR = $(shell $(PYTHON) -c 'import sys; print("%d.%d"% sys.version_info[0:2])')
 PYTHON_VERSION_OK = $(shell $(PYTHON) -c 'import sys; cur_ver = sys.version_info[0:2]; min_ver = tuple(map(int, "$(PYTHON_VERSION_MIN)".split("."))); print(int(cur_ver >= min_ver))')
 
+NUMPY_VERSION_TAG = ""
+ifndef NUMPY_VERSION
+	NUMPY_VERSION_PIP = "numpy>=2.2"
+else
+	NUMPY_VERSION_PIP = "numpy==$(NUMPY_VERSION)"
+	NUMPY_VERSION_TAG = "_numpy$(NUMPY_VERSION)"
+endif
+
 #ifeq ($(PYTHON_VERSION_OK), 0)
 #	$(error "Requires python version >= $(PYTHON_VERSION_MIN). Current version is $(PYTHON_VERSION_CUR)")
 #endif
@@ -41,7 +49,7 @@ PYTHON_VERSION_OK = $(shell $(PYTHON) -c 'import sys; cur_ver = sys.version_info
 # Default if not defined is to create venv with a name that contains the current python version
 # Example: GRIDR_VENV="venv/other-venv/" make install
 ifndef GRIDR_VENV
-	GRIDR_VENV = "$(ROOT_DIR)venv/venv_py$(PYTHON_VERSION_CUR)"
+	GRIDR_VENV = "$(ROOT_DIR)venv/venv_py$(PYTHON_VERSION_CUR)${NUMPY_VERSION_TAG}"
 endif
 
 # PIP_ARG_MAIN is a variable that may contains PIP configuration arguments
@@ -71,6 +79,7 @@ venv: check ## create virtualenv in GRIDR_VENV directory if not exists
 	@test -d $(GRIDR_VENV) || python3 -m venv $(GRIDR_VENV)
 	@$(GRIDR_VENV)/bin/python -m pip install $(PIP_ARG_MAIN)--no-cache-dir --upgrade pip
 	@$(GRIDR_VENV)/bin/python -m pip install $(PIP_ARG_MAIN)--no-cache-dir setuptools setuptools-rust wheel build
+	@$(GRIDR_VENV)/bin/python -m pip install $(PIP_ARG_MAIN)--no-cache-dir ${NUMPY_VERSION_PIP} 
 	@$(GRIDR_VENV)/bin/python -m pip install $(PIP_ARG_MAIN)-r $(ROOT_DIR)requirements_dev.txt
 	@touch $(GRIDR_VENV)/bin/activate
 
