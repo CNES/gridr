@@ -41,6 +41,13 @@ else
 	NUMPY_VERSION_TAG = "_numpy$(NUMPY_VERSION)"
 endif
 
+GLIBC_VERSION := $(shell ldd --version | head -n1 | grep -o '[0-9]*\.[0-9]*')
+MANYLINUX_GLIBC_TAG := manylinux_2_$(shell echo $(GLIBC_VERSION) | cut -d. -f2)
+
+ifndef BUILD_DIST_OUTDIR
+	BUILD_DIST_OUTDIR = "dist_$(PYTHON_VERSION_CUR)${NUMPY_VERSION_TAG}"
+endif
+
 # Tag to use in coverage report basename
 ifndef COVERAGE_REPORT_TAG
 	COVERAGE_REPORT_TAG = ""
@@ -61,6 +68,11 @@ endif
 ifndef PIP_ARG_MAIN
 	PIP_ARG_MAIN := ""
 endif
+
+.PHONY: info
+info:
+	@echo "glibc version: $(GLIBC_VERSION)"
+	@echo "manylinux tag: $(MANYLINUX_GLIBC_TAG)"
 
 ################ MAKE targets by sections ######################
 
@@ -140,9 +152,9 @@ pylint: venv ## call pylint
 .PHONY: build
 build: venv ## build package
 	@echo "Build python package"
-	@$(GRIDR_VENV)/bin/python -m build
-
-
+	@$(GRIDR_VENV)/bin/python -m build --outdir $(BUILD_DIST_OUTDIR) 
+	@echo "Set wheel for manylinux base on glibc version"
+	@$(GRIDR_VENV)/bin/auditwheel repair $(BUILD_DIST_OUTDIR)/*.whl --plat $(MANYLINUX_GLIBC_TAG)_x86_64 -w $(BUILD_DIST_OUTDIR)_fixed/
 
 
 
@@ -157,7 +169,8 @@ clean-venv:
 .PHONY: clean-build
 clean-build:
 	@echo "+ $@"
-	@rm -fr build/
+	@rm -fr dist*/
+	@rm -fr build*/
 	@rm -fr .eggs/
 	@find . -name '*.egg-info' -exec rm -fr {} +
 	@find . -name '*.egg' -exec rm -f {} +

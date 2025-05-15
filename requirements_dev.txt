@@ -16,3 +16,4 @@ myst-parser
 jupyter
 matplotlib
 bokeh
+auditwheel

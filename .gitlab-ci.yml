@@ -70,7 +70,8 @@ variables:
     TAG_IMAGE_RUST_VERSION: "1.79"
     TAG_IMAGE_PYTHON_VERSION_311: "3.11.12"
     TAG_IMAGE_PYTHON_VERSION_310: "3.10.17"
-    TAG_IMAGE_OS: "bookworm-slim"
+    #TAG_IMAGE_OS: "bookworm-slim"
+    TAG_IMAGE_OS: "rockylinux8-minimal"
     
     TAG_IMAGE_PYTHON_DEFAULT_VERSION: "3.11.12"
     TAG_IMAGE_RUST_DEFAULT_VERSION: "1.79"
@@ -374,12 +375,14 @@ package-build:
             if [ -z "${NUMPY_VERSION:-}" ]; then
                 echo "NUMPY_VERSION not set, using default venv"
                 VENV_VERSION_PYTHON=python_env_${TAG_IMAGE_PYTHON_VERSION}
-                GRIDR_VENV=${VENV_VERSION_PYTHON} make build
+                GRIDR_VENV=${VENV_VERSION_PYTHON} BUILD_DIST_OUTDIR=dist_${CI_NODE_INDEX} make build
             else
                 echo "NUMPY_VERSION is set to ${NUMPY_VERSION}, using numpy-specific venv"
                 VENV_VERSION_PYTHON=python_env_${TAG_IMAGE_PYTHON_VERSION}_numpy${NUMPY_VERSION}
-                GRIDR_VENV=${VENV_VERSION_PYTHON} NUMPY_VERSION=${NUMPY_VERSION} make build
+                GRIDR_VENV=${VENV_VERSION_PYTHON} BUILD_DIST_OUTDIR=dist_${CI_NODE_INDEX} NUMPY_VERSION=${NUMPY_VERSION} make build
             fi
+
+        - mkdir -p dist && mv dist_${CI_NODE_INDEX}_fixed/* dist/
 
     artifacts:
         untracked: true
