@@ -43,6 +43,8 @@ def array_grid_resampling(
         win: Optional[np.ndarray] = None,
         array_in_mask: Optional[np.ndarray] = None,
         grid_mask: Optional[np.ndarray] = None,
+        grid_mask_valid_value: Optional[int] = 1,
+        grid_nodata: Optional[float] = None,
         array_out_mask: Optional[np.ndarray] = None,
         ) -> Union[np.ndarray, NoReturn]:
     """
@@ -103,10 +105,24 @@ def array_grid_resampling(
             If not provided, the entire input array is considered valid.
 
         grid_mask : Optional[np.ndarray], default None
-            A mask for the grid, where values of `1` represent invalid grid
-            cells.
+            An optional integer mask array for the grid. Grid cells
+            corresponding to `grid_mask_valid_value` are considered **valid**;
+            all other values indicate **invalid** cells and will `nodata_out` in
+            the output array.
             If not provided, the entire grid is considered valid.
             The grid mask must have the same shape as `grid_row` and `grid_col`.
+        
+        grid_mask_valid_value: Optional[int], default None
+            The value in `grid_mask` that designates a **valid** grid cell.
+            All values in `grid_mask` that differ from this will be treated as
+            **invalid**.  
+            This parameter is required if `grid_mask` is provided.
+        
+        grid_nodata: Optional[float], default None
+            The value in `grid_row` and `grid_col` to consider as **invalid**
+            cells.
+            Please note this option is exclusive with the `grid_mask`. The
+            exclusivity is managed within the bound core method.
 
         array_out_mask : Optional[np.ndarray], default None
             A mask for the output array that indicates where the resampled
@@ -259,6 +275,8 @@ def array_grid_resampling(
                 nodata_out=nodata_out,
                 array_in_mask=None,
                 grid_mask=grid_mask,
+                grid_mask_valid_value=grid_mask_valid_value,
+                grid_nodata=grid_nodata,
                 array_out_mask=None,
                 grid_win=py_grid_win,)
     if ret is not None:

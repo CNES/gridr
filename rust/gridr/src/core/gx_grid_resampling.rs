@@ -90,43 +90,115 @@ pub struct InvalidValueGridMeshValidator {
     pub epsilon: f64,
 }
 
+
+impl InvalidValueGridMeshValidator {
+    
+    /// Checks whether the value at a given node in the grid view is considered invalid,
+    /// based on a predefined invalid value and an epsilon tolerance.
+    ///
+    /// This method converts the value at the specified node to `f64`, then compares it
+    /// to the `invalid_value` defined in the validator. If the absolute difference between
+    /// the two is less than `epsilon`, the value is considered invalid.
+    ///
+    /// # Type Parameters
+    /// - `W`: The data type stored in the grid view. It must be copyable and convertible to `f64`.
+    ///
+    /// # Parameters
+    /// - `node`: The index of the node in the grid view to validate.
+    /// - `grid_view`: A reference to the grid data structure containing the value to check.
+    ///
+    /// # Returns
+    /// `true` if the value at the given node is within `epsilon` of the `invalid_value`,  
+    /// otherwise `false`.
+    #[inline] 
+    fn is_invalid<W>(&self, node: usize, grid_view: &GxArrayView<W>) -> bool
+    where
+        W: Into<f64> + Copy,
+    {
+        (grid_view.data[node].into() - self.invalid_value).abs() < self.epsilon
+    }
+}
+
 impl<W> GridMeshValidator<W> for InvalidValueGridMeshValidator
 where
     W: Into<f64> + Copy,
 {
+    /// Validates whether a mesh cell should be processed based on the validity of its nodes
+    /// in the associated grid view.
+    ///
+    /// The validation logic depends on the grid oversampling factors. Depending on whether
+    /// rows, columns, or both are oversampled, a subset of the cell's nodes are checked.
+    /// A node is considered invalid if its value is sufficiently close (within `epsilon`)
+    /// to a predefined `invalid_value`. If any of the relevant nodes are invalid,
+    /// the cell is rejected (returns `false`).
+    ///
+    /// This method delegates node-level checks to `is_invalid`.
+    ///
+    /// # Type Parameters
+    /// - `W`: The scalar type of the grid data values, which must be convertible to `f64` and `Copy`.
+    ///
+    /// # Parameters
+    /// - `mesh`: Mutable reference to the mesh structure containing node indices and oversampling metadata.
+    /// - `_out_idx`: An unused mutable reference to an output index (retained for interface compatibility).
+    /// - `grid_view`: A view of the grid data from which values are retrieved for validation.
+    ///
+    /// # Returns
+    /// `true` if all relevant nodes are considered valid; `false` otherwise.
+    ///
+    /// # Inlined
+    /// This method is marked `#[inline]` to encourage inlining during performance-critical loops.
     #[inline]
     fn validate<'a>(&self, mesh: &'a mut GridMesh, _out_idx: &'a mut usize, grid_view: &GxArrayView<'a, W>) -> bool {
-        if (grid_view.data[mesh.node1].into() - self.invalid_value).abs() < self.epsilon {
-            return false;
+        
+        match (mesh.grid_row_oversampling, mesh.grid_col_oversampling) {
+            // Both are different from 1
+            (r, c) if r != 1 && c != 1 => {
+                if self.is_invalid(mesh.node1, &grid_view) ||
+                        self.is_invalid(mesh.node2, &grid_view) ||
+                        self.is_invalid(mesh.node3, &grid_view) ||
+                        self.is_invalid(mesh.node4, &grid_view) {
+                    return false;
+                }
+                true
+            },                    
+            // Only rows are oversampled
+            (r, 1) if r != 1 => {
+                if self.is_invalid(mesh.node1, &grid_view) || self.is_invalid(mesh.node3, &grid_view) {
+                    return false;
+                }
+                true
+            },
+
+            // Only columns are oversampled
+            (1, c) if c != 1 => {
+                if self.is_invalid(mesh.node1, &grid_view) || self.is_invalid(mesh.node2, &grid_view) {
+                    return false;
+                }
+                true
+            },
+
+            // Default (1, 1)
+            _ => !self.is_invalid(mesh.node1, &grid_view),
         }
-        if (grid_view.data[mesh.node2].into() - self.invalid_value).abs() < self.epsilon {
-            return false;
-        }
-        if (grid_view.data[mesh.node3].into() - self.invalid_value).abs() < self.epsilon {
-            return false;
-        }
-        if (grid_view.data[mesh.node4].into() - self.invalid_value).abs() < self.epsilon {
-            return false;
-        }
-        true
     }
 }
 
 /// A validator that uses a binary mask array to determine validity.
 ///
 /// This implementation of `GridMeshValidator` checks an auxiliary mask array to determine
-/// whether a grid cell is valid. If any node in the mesh corresponds to a non-zero
-/// mask value, the cell is considered invalid.
+/// whether a grid cell is valid. If any node in the mesh does not correspond to the `valid_value`
+/// value, the cell is considered invalid.
 ///
 /// This is commonly used for excluding regions via precomputed masks (e.g., land/sea masks).
 ///
 /// # Fields
 ///
 /// * `mask_view` - A reference to a `GxArrayView` containing `u8` mask values.
-///   A value of `0` indicates valid, and any non-zero value indicates invalid.
+/// * `valid_value` - That value indicates valid, and any different value indicates invalid.
 #[derive(Debug)]
 pub struct MaskGridMeshValidator<'a> {
-    pub mask_view: &'a GxArrayView<'a, u8>
+    pub mask_view: &'a GxArrayView<'a, u8>,
+    pub valid_value: u8,
 }
 
 impl<'a, W> GridMeshValidator<W> for MaskGridMeshValidator<'a>
@@ -137,10 +209,25 @@ where
     fn validate(&self, mesh: &mut GridMesh, _out_idx: &mut usize, _grid_view: &GxArrayView<W>) -> bool
     {
         let mask = &self.mask_view.data;
-        mask[mesh.node1] == 0 &&
-        mask[mesh.node2] == 0 &&
-        mask[mesh.node3] == 0 &&
-        mask[mesh.node4] == 0
+        
+        let node1_valid = mask[mesh.node1] == self.valid_value;
+        let node2_valid = mask[mesh.node2] == self.valid_value;
+        let node3_valid = mask[mesh.node3] == self.valid_value;
+        let node4_valid = mask[mesh.node4] == self.valid_value;
+
+        match (mesh.grid_row_oversampling, mesh.grid_col_oversampling) {
+            // Both are different from 1
+            (r, c) if r != 1 && c != 1 => node1_valid && node2_valid && node3_valid && node4_valid,
+
+            // Only rows are oversampled
+            (r, 1) if r != 1 => node1_valid && node3_valid,
+
+            // Only columns are oversampled
+            (1, c) if c != 1 => node1_valid && node2_valid,
+
+            // Default (1, 1)
+            _ => node1_valid,
+        }
     }
 }
 
@@ -175,6 +262,8 @@ where
 /// - `node4`: Index of the bottom-left corner of the mesh.
 /// - `grid_nrow`: Total number of rows in the parent source grid.
 /// - `grid_ncol`: Total number of columns in the parent source grid.
+/// - `grid_row_oversampling`: The grid's oversampling for rows.
+/// - `grid_col_oversampling`: The grid's oversampling for columns.
 /// - `window_src`: The window applied on the source grid to restrict the region of interpolation.
 ///
 /// # Usage
@@ -192,6 +281,8 @@ pub struct GridMesh<'a> {
     node4: usize,
     grid_nrow: usize,
     grid_ncol: usize,
+    grid_row_oversampling: usize,
+    grid_col_oversampling: usize,
     window_src: &'a GxArrayWindow, 
 }
 
@@ -205,13 +296,22 @@ impl<'a> GridMesh<'a> {
     ///
     /// - `grid_nrow`: Number of rows in the source grid.
     /// - `grid_ncol`: Number of columns in the source grid.
+    /// - `grid_row_oversampling`: The grid's oversampling for rows.
+    /// - `grid_col_oversampling`: The grid's oversampling for columns.
     /// - `window_src`: A reference to a window on the source grid defining the region to iterate over.
     ///
     /// # Returns
     ///
     /// A new `GridMesh` positioned at the top-left corner of `window_src`.
     #[inline]
-    pub fn new(grid_nrow: usize, grid_ncol: usize, window_src: &'a GxArrayWindow) -> Self {
+    pub fn new(
+            grid_nrow: usize,
+            grid_ncol: usize,
+            grid_row_oversampling: usize,
+            grid_col_oversampling: usize,
+            window_src: &'a GxArrayWindow
+        ) -> Self
+    {
         let node1 = window_src.start_row * grid_ncol + window_src.start_col;
         Self {
             node1: node1,
@@ -220,6 +320,8 @@ impl<'a> GridMesh<'a> {
             node4: node1 + grid_ncol,
             grid_nrow: grid_nrow,
             grid_ncol: grid_ncol,
+            grid_row_oversampling: grid_row_oversampling,
+            grid_col_oversampling: grid_col_oversampling,
             window_src: window_src }
     }
     
@@ -403,7 +505,7 @@ where
     let mut gmi_row_idx_t: usize = grid_row_oversampling - gmi_row_idx;
         
     // Init the mesh used for grid values bilinear interpolation.
-    let mut gmi_mesh = GridMesh::new(grid_row_array.nrow, grid_row_array.ncol, &grid_window_src);
+    let mut gmi_mesh = GridMesh::new(grid_row_array.nrow, grid_row_array.ncol, grid_row_oversampling, grid_col_oversampling, &grid_window_src);
     
     // Mesh interpolation norm factor
     let gmi_norm_factor: f64 = (grid_col_oversampling * grid_row_oversampling) as f64;
@@ -595,6 +697,235 @@ mod gx_grid_resampling_test {
                 &mut None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
                 None, //grid_win: Option<&GxArrayWindow>,
                 );
+        
+        assert!(approx_eq(&data_out, &data_expected, 1e-10));
+    }
+    
+    
+    /// This test makes sure that an identity transformation with a invalid value
+    // is correct
+    #[test]
+    fn test_array1_grid_resampling_optimized_bicubic_identity_w_grid_nodata() {
+        let interp = GxOptimizedBicubicInterpolator::new();
+        
+        let nrow_in = 6;
+        let ncol_in = 5;
+        // Value to use as nodata
+        let grid_nodata = -99999.0;
+        // Row index used to fill the row grid with grid_nodata
+        let grid_nodata_row = 2;
+        // Col index used to fill the col grid with grid_nodata
+        let grid_nodata_col = 1;
+        let mut data_in = vec![0.0; nrow_in * ncol_in ];
+        let margin = 0;
+        
+        // we will not be able to interpolate at edge.
+        let nrow_out = nrow_in-2*margin;
+        let ncol_out = ncol_in-2*margin;
+        //let nrow_out = 2;
+        //let ncol_out = 2;
+        let nodata_val_out = 0.;
+        let mut data_out = vec![0.0; nrow_out * ncol_out];
+        let mut data_expected = vec![0.0; nrow_out * ncol_out];
+        let mut grid_row = vec![0.0; nrow_out * ncol_out];
+        let mut grid_col = vec![0.0; nrow_out * ncol_out];
+        
+        // Init data_in values
+        for irow in 0..nrow_in {
+            for icol in 0..ncol_in {
+                data_in[irow * ncol_in + icol] = 10.* (irow as f64) * (ncol_in as f64) + 2.5* (icol as f64);
+            }
+        }
+        // Init grid (identity from 2 - margin)
+        for irow in 0..nrow_out {
+            for icol in 0..ncol_out {
+                
+                if irow == grid_nodata_row {
+                    grid_row[irow * ncol_out + icol] = grid_nodata;
+                }
+                else {
+                    grid_row[irow * ncol_out + icol] = irow as f64 + margin as f64;
+                }
+                if icol == grid_nodata_col {
+                    grid_col[irow * ncol_out + icol] = grid_nodata;
+                }
+                else {
+                    grid_col[irow * ncol_out + icol] = icol as f64 + margin as f64;
+                }
+                
+                if irow == grid_nodata_row || icol == grid_nodata_col {
+                    data_expected[irow * ncol_out + icol] = nodata_val_out;
+                } else {
+                    data_expected[irow * ncol_out + icol] = data_in[(irow + margin) * ncol_in + (icol + margin)];
+                }
+            }
+        }
+        
+        // Init input structures
+        let array_in = GxArrayView::new(&data_in, 1, nrow_in, ncol_in);
+        let array_grid_row_in = GxArrayView::new(&grid_row, 1, nrow_out, ncol_out);
+        let array_grid_col_in = GxArrayView::new(&grid_col, 1, nrow_out, ncol_out);
+        let mut array_out = GxArrayViewMut::new(&mut data_out, 1, nrow_out, ncol_out);
+        let grid_checker = InvalidValueGridMeshValidator{invalid_value: grid_nodata, epsilon: 1e-10};
+        
+        let _ = array1_grid_resampling::<f64, i8, f64, f64, GxOptimizedBicubicInterpolator, InvalidValueGridMeshValidator>(&interp,
+                &grid_checker, //grid_validity_checker
+                &array_in,
+                &array_grid_row_in, //grid_row_array: &GxArrayView<'_, U>,
+                &array_grid_col_in, //grid_col_array: &GxArrayView<'_, U>,
+                1, //grid_row_oversampling: usize,
+                1, //grid_col_oversampling: usize,
+                &mut array_out, //ima_out: &mut GxArrayViewMut<'_, V>,
+                nodata_val_out, //nodata_val_out: V,
+                None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
+                None, //grid_mask_array: Option<&GxArrayView<'_, u8>>,
+                &mut None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
+                None, //grid_win: Option<&GxArrayWindow>,
+                );
+                
+        /*      UNCOMMENT FOR MANUAL DEBUGGING
+        println!("\ngrid_row\n");
+        for irow in 0..nrow_out {
+            for icol in 0..ncol_out {
+                let c = irow * ncol_out + icol;
+                print!("{} ", grid_row[c]);
+                //println!( "(row {}, col {}) - mask = {} - in = {} - out = {}", irow, icol , grid_mask[c], data_in[c], data_out[c]);
+            }
+            println!("");
+        }
+        println!("\ngrid_col\n");
+        for irow in 0..nrow_out {
+            for icol in 0..ncol_out {
+                let c = irow * ncol_out + icol;
+                print!("{} ", grid_col[c]);
+                //println!( "(row {}, col {}) - mask = {} - in = {} - out = {}", irow, icol , grid_mask[c], data_in[c], data_out[c]);
+            }
+            println!("");
+        }
+        println!("\ndata_in\n");
+        for irow in 0..nrow_out {
+            for icol in 0..ncol_out {
+                let c = irow * ncol_out + icol;
+                print!("{} ", data_in[c]);
+                //println!( "(row {}, col {}) - mask = {} - in = {} - out = {}", irow, icol , grid_mask[c], data_in[c], data_out[c]);
+            }
+            println!("");
+        }
+        println!("\ndata_out\n");
+        for irow in 0..nrow_out {
+            for icol in 0..ncol_out {
+                let c = irow * ncol_out + icol;
+                print!("{} ", data_out[c]);
+                //println!( "(row {}, col {}) - mask = {} - in = {} - out = {}", irow, icol , grid_mask[c], data_in[c], data_out[c]);
+            }
+            println!("");
+        } */
+        assert!(approx_eq(&data_out, &data_expected, 1e-10));
+    }
+    
+    /// This test makes sure that an identity transformation with a grid mask
+    // is correct
+    #[test]
+    fn test_array1_grid_resampling_optimized_bicubic_identity_w_grid_mask() {
+        let interp = GxOptimizedBicubicInterpolator::new();
+        
+        let nrow_in = 6;
+        let ncol_in = 5;
+        // Row index used to fill the row grid with grid_nodata
+        let grid_nodata_row = 2;
+        // Col index used to fill the col grid with grid_nodata
+        let grid_nodata_col = 1;
+        let mut data_in = vec![0.0; nrow_in * ncol_in ];
+        let margin = 0;
+        
+        // we will not be able to interpolate at edge.
+        let nrow_out = nrow_in-2*margin;
+        let ncol_out = ncol_in-2*margin;
+        //let nrow_out = 2;
+        //let ncol_out = 2;
+        let nodata_val_out = 0.;
+        // data out expected to be same size (oversampling 1)
+        let mut data_out = vec![0.0; nrow_out * ncol_out];
+        let mut data_expected = vec![0.0; nrow_out * ncol_out];
+        let mut grid_row = vec![0.0; nrow_out * ncol_out];
+        let mut grid_col = vec![0.0; nrow_out * ncol_out];
+        // init mask
+        let grid_mask_valid_value = 1;
+        let mut grid_mask = vec![grid_mask_valid_value; nrow_out * ncol_out];
+        
+        // Init data_in values
+        for irow in 0..nrow_in {
+            for icol in 0..ncol_in {
+                data_in[irow * ncol_in + icol] = 10.* (irow as f64) * (ncol_in as f64) + 2.5* (icol as f64);
+            }
+        }
+        // Init grid, mask and data_out
+        for irow in 0..nrow_out {
+            for icol in 0..ncol_out {
+                
+                grid_row[irow * ncol_out + icol] = irow as f64 + margin as f64;
+                grid_col[irow * ncol_out + icol] = icol as f64 + margin as f64;
+                
+                if irow == grid_nodata_row || icol == grid_nodata_col {
+                    grid_mask[irow * ncol_out + icol] = 0;
+                    data_expected[irow * ncol_out + icol] = nodata_val_out;
+                } else {
+                    data_expected[irow * ncol_out + icol] = data_in[(irow + margin) * ncol_in + (icol + margin)];
+                }
+            }
+        }
+        
+        // Init input structures
+        let array_in = GxArrayView::new(&data_in, 1, nrow_in, ncol_in);
+        let array_grid_row_in = GxArrayView::new(&grid_row, 1, nrow_out, ncol_out);
+        let array_grid_col_in = GxArrayView::new(&grid_col, 1, nrow_out, ncol_out);
+        let mask_view = GxArrayView::new(&grid_mask, 1, nrow_in, ncol_in);
+        let mut array_out = GxArrayViewMut::new(&mut data_out, 1, nrow_out, ncol_out);
+        let grid_checker = MaskGridMeshValidator{ mask_view: &mask_view, valid_value: grid_mask_valid_value };
+        
+        let _ = array1_grid_resampling::<f64, i8, f64, f64, GxOptimizedBicubicInterpolator, MaskGridMeshValidator>(&interp,
+                &grid_checker, //grid_validity_checker
+                &array_in,
+                &array_grid_row_in, //grid_row_array: &GxArrayView<'_, U>,
+                &array_grid_col_in, //grid_col_array: &GxArrayView<'_, U>,
+                1, //grid_row_oversampling: usize,
+                1, //grid_col_oversampling: usize,
+                &mut array_out, //ima_out: &mut GxArrayViewMut<'_, V>,
+                nodata_val_out, //nodata_val_out: V,
+                None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
+                None, //grid_mask_array: Option<&GxArrayView<'_, u8>>,
+                &mut None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
+                None, //grid_win: Option<&GxArrayWindow>,
+                );
+                
+        /*      UNCOMMENT FOR MANUAL DEBUGGING
+        println!("mask\n");
+        for irow in 0..nrow_out {
+            for icol in 0..ncol_out {
+                let c = irow * ncol_out + icol;
+                print!("{} ", grid_mask[c]);
+                //println!( "(row {}, col {}) - mask = {} - in = {} - out = {}", irow, icol , grid_mask[c], data_in[c], data_out[c]);
+            }
+            println!("");
+        }
+        println!("\ndata_in\n");
+        for irow in 0..nrow_out {
+            for icol in 0..ncol_out {
+                let c = irow * ncol_out + icol;
+                print!("{} ", data_in[c]);
+                //println!( "(row {}, col {}) - mask = {} - in = {} - out = {}", irow, icol , grid_mask[c], data_in[c], data_out[c]);
+            }
+            println!("");
+        }
+        println!("\ndata_out\n");
+        for irow in 0..nrow_out {
+            for icol in 0..ncol_out {
+                let c = irow * ncol_out + icol;
+                print!("{} ", data_out[c]);
+                //println!( "(row {}, col {}) - mask = {} - in = {} - out = {}", irow, icol , grid_mask[c], data_in[c], data_out[c]);
+            }
+            println!("");
+        } */
         
         assert!(approx_eq(&data_out, &data_expected, 1e-10));
     }
