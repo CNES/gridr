@@ -24,6 +24,7 @@ from gridr.core.grid.grid_commons import (
         window_apply_shape_origin_resolution,
         check_grid_coords_definition,
         grid_resolution_window,
+        grid_resolution_window_safe,
         )
 
 # Define test data
@@ -262,6 +263,52 @@ class TestGridCommons:
 
         try:
             grid_win, rel_win = grid_resolution_window(grid_resolution, win)
+        except Exception as e:
+            if isinstance(e, expected):
+                pass
+            else:
+                raise
+        else:
+            try:
+                if issubclass(expected, BaseException):
+                    raise Exception(f"The test should have raised an exceptionof type {expected}")
+            except TypeError:
+                pass
+            # Check
+            np.testing.assert_array_almost_equal(expected_grid_win, grid_win, decimal=testing_decimal)
+            np.testing.assert_array_almost_equal(expected_rel_win, rel_win, decimal=testing_decimal)
+    
+    
+    @pytest.mark.parametrize("data, expected, testing_decimal", [
+            (((1,), np.array([[2,10],]), (20,)), (np.array([[2,10],]), np.array([[0,8],])), 6),
+            (((1,), np.array([[2,10],]), (5,)), (np.array([[2,4],]), np.array([[0,2],])), 6),
+            #(((1,), np.array([[12,14],]), (5,)), (np.array([[12,4],]), np.array([[0,0],])), 6), => shoud raise an exception but not yet managed
+            
+            (((1,1), np.array([[2,10], [3, 5]]), (20, 20)), (np.array([[2,10], [3, 5]]), np.array([[0,8], [0, 2]])), 6),
+            (((1,1), np.array([[2,10], [3, 5]]), (5, 20)), (np.array([[2,4], [3, 5]]), np.array([[0,2], [0, 2]])), 6),
+            (((1,1), np.array([[2,10], [3, 5]]), (20, 4)), (np.array([[2,10], [3, 3]]), np.array([[0,8], [0, 0]])), 6),
+            
+            (((3,1), np.array([[2,10], [3, 5]]), (20, 20)), (np.array([[0,4], [3, 5]]), np.array([[2,10], [0, 2]])), 6),
+            (((3,1), np.array([[2,10], [3, 5]]), (2, 20)), (np.array([[0,1], [3, 5]]), np.array([[2,3], [0, 2]])), 6),
+            (((3,1), np.array([[3,3], [3, 5]]), (20, 20)), (np.array([[1,2], [3, 5]]), np.array([[0,0], [0, 2]])), 6), # test the grid_win > 1
+            (((3,1), np.array([[3,3], [3, 5]]), (2, 20)), (np.array([[0,1], [3, 5]]), np.array([[3,3], [0, 2]])), 6), # test backward shift
+            
+            (((3,1), np.array([[5,6], [3, 5]]), (20, 20)), (np.array([[1,2], [3, 5]]), np.array([[2,3], [0, 2]])), 6),
+            ])
+    def test_grid_resolution_window_safe(self, data, expected, testing_decimal):
+        """Test the grid_resolution_window_safe method
+        
+        Args:
+            data : input data as a tuple containing the resolution and the target win at full resolution
+            expected: expected data as a tuple containing the window in the grid and the relative window
+            testing_decimal: decimal precision used for np.testing.assert_array_almost_equal
+        """
+        # Create intial coordinates so that new coordinates match an integer sequence
+        grid_resolution, win, grid_shape = data
+        expected_grid_win, expected_rel_win = expected
+
+        try:
+            grid_win, rel_win = grid_resolution_window_safe(grid_resolution, win, grid_shape)
         except Exception as e:
             if isinstance(e, expected):
                 pass

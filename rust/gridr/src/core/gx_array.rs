@@ -354,9 +354,7 @@ impl GxArrayWindow {
     ///   the array whose dimensions will be checked.
     ///
     /// # Returns
-    ///
-    /// - `Ok(())` if the window is valid.
-    /// - `Err(String)` if the window is out of bounds.
+    /// `Ok(())` if the window is valid or an error if the window is out of bounds
     ///
     /// # Errors
     ///
@@ -376,20 +374,80 @@ impl GxArrayWindow {
     /// assert!(invalid_window.validate_with_array(&array_shape).is_err());
     /// ```
     ///
-    pub fn validate_with_array<T: GxArrayShape>(&self, array: &T) -> Result<(), String> {
+    pub fn validate_with_array<T: GxArrayShape>(&self, array: &T) -> Result<(), GxError> {
         if self.start_row > self.end_row || self.end_row >= array.nrow() {
-            return Err(format!(
+            return Err(GxError::WindowOutOfBounds {
+                context: "array row indices",
+                start_row: self.start_row,
+                end_row: self.end_row,
+                start_col: self.start_col,
+                end_col: self.end_col,
+                nrows: array.nrow(),
+                ncols: array.ncol(),
+            });
+            /*return Err(format!(
                 "Invalid row indices: start_row={}, end_row={}, max_row={}",
                 self.start_row, self.end_row, array.nrow() - 1
-            ));
+            ));*/
         }
         if self.start_col > self.end_col || self.end_col >= array.ncol() {
-            return Err(format!(
+            return Err(GxError::WindowOutOfBounds {
+                context: "array col indices",
+                start_row: self.start_row,
+                end_row: self.end_row,
+                start_col: self.start_col,
+                end_col: self.end_col,
+                nrows: array.nrow(),
+                ncols: array.ncol(),
+            });
+            /*return Err(format!(
                 "Invalid column indices: start_col={}, end_col={}, max_col={}",
                 self.start_col, self.end_col, array.ncol() - 1
-            ));
+            ));*/
         }
         Ok(())
+    }
+    
+    /// Resolves an optional window against an array.
+    ///
+    /// If `win` is `Some`, returns it directly. If `validate` is `true`, the window
+    /// will be validated against the array shape using [`GxArrayWindow::validate_with_array`].
+    ///
+    /// If `win` is `None`, a full window covering the entire array is returned.
+    ///
+    /// # Arguments
+    /// - `win`: An optional [`GxArrayWindow`] specifying the target region.
+    /// - `array`: A reference to an object implementing [`GxArrayShape`].
+    /// - `validate`: If `true`, performs bounds checking on the provided window.
+    ///
+    /// # Returns
+    /// - `Ok(GxArrayWindow)` containing either the provided window or the full window.
+    /// - `GxError::WindowOutOfBounds` if validation fails.
+    ///
+    /// # Example
+    /// ```
+    /// let win = GxArrayWindow::resolve_or_full(Some(sub_win), &array, true)?;
+    /// let full = GxArrayWindow::resolve_or_full(None, &array, false)?;
+    /// ```
+    pub fn resolve_or_full<T: GxArrayShape>(
+        win: Option<GxArrayWindow>,
+        array: &T,
+        validate: bool,
+    ) -> Result<GxArrayWindow, GxError> {
+        match win {
+            Some(win) => {
+                if validate {
+                    win.validate_with_array(array)?;
+                }
+                Ok(win)
+            }
+            None => Ok(GxArrayWindow {
+                start_row: 0,
+                start_col: 0,
+                end_row: array.nrow() - 1,
+                end_col: array.ncol() - 1,
+            }),
+        }
     }
 }
 

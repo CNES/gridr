@@ -20,7 +20,7 @@
 //! - [`array1_grid_resampling`]: The core function tested in this module. It performs resampling
 //!   using a provided interpolation kernel and optionally applies mesh validation.
 //!
-use crate::core::gx_array::{GxArrayWindow, GxArrayView, GxArrayViewMut, gx_array_data_approx_eq_window};
+use crate::core::gx_array::{GxArrayWindow, GxArrayView, GxArrayViewMut};
 //use crate::core::interp::gx_optimized_bicubic_kernel::{array1_optimized_bicubic_interp2};
 use crate::core::interp::gx_array_view_interp::GxArrayViewInterpolator;
 //use crate::core::interp::gx_optimized_bicubic_kernel::{GxOptimizedBicubicInterpolator};
@@ -66,7 +66,7 @@ pub struct NoCheckGridMeshValidator {
 impl<W> GridMeshValidator<W> for NoCheckGridMeshValidator{
     
     #[inline]
-    fn validate<'a>(&self, mesh: &'a mut GridMesh, out_idx: &'a mut usize, grid_view: &GxArrayView<'a, W>) -> bool
+    fn validate<'a>(&self, _mesh: &'a mut GridMesh, _out_idx: &'a mut usize, _grid_view: &GxArrayView<'a, W>) -> bool
     {
         true
     }
@@ -383,6 +383,13 @@ impl<'a> GridMesh<'a> {
 /// - `grid_col_array`: A structure holding the grid of column values to be interpolated.
 /// - `grid_row_oversampling`: The oversampling factor for the row dimension.
 /// - `grid_col_oversampling`: The oversampling factor for the column dimension.
+/// - `out_win`: An optional window to define the region where to save the interpolated values in `ima_out`.
+/// - `ima_in_origin_row`: An optional `f64` bias value that adjusts the row coordinate obtained from `grid_row_array`.
+///    Its primary use cases include aligning with alternative grid origin conventions or handling situations where the 
+///    provided `ima_in` array corresponds to a subregion of the complete source raster.
+/// - `ima_out_origin_row`: An optional `f64` bias value that adjusts the row coordinate obtained from `grid_col_array`.
+///    Its primary use cases include aligning with alternative grid origin conventions or handling situations where the 
+///    provided `ima_in` array corresponds to a subregion of the complete source raster.
 ///
 /// # Output
 /// The function computes interpolated values for both grid rows and columns at each
@@ -424,7 +431,7 @@ impl<'a> GridMesh<'a> {
 /// - (1,0) ('gmi_node_4' in code)
 ///
 
-pub fn array1_grid_resampling<T, U, V, W, I, C>(
+pub fn array1_grid_resampling<T, V, W, I, C>(
         interp: &I,
         grid_validity_checker: &C,
         ima_in: &GxArrayView<'_, T>,
@@ -434,14 +441,16 @@ pub fn array1_grid_resampling<T, U, V, W, I, C>(
         grid_col_oversampling: usize,
         ima_out: &mut GxArrayViewMut<'_, V>,
         nodata_val_out: V,
-        ima_mask_in: Option<&GxArrayView<'_, U>>,
-        grid_mask_array: Option<&GxArrayView<'_, u8>>,
-        ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
+        ima_mask_in: Option<&GxArrayView<'_,u8>>,
+        ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, u8>>, 
         grid_win: Option<&GxArrayWindow>,
+        out_win: Option<&GxArrayWindow>,
+        ima_in_origin_row: Option<f64>,
+        ima_in_origin_col: Option<f64>,
         ) -> Result<(), GxError>
 where
     T: Copy + PartialEq + std::ops::Mul<f64, Output=f64> + Into<f64>,
-    U: Copy + PartialEq + Into<f64>,
+    //U: Copy + PartialEq + Into<f64>,
     V: Copy + PartialEq + From<f64>,
     W: Copy + PartialEq + std::ops::Mul<f64, Output=f64> + Into<f64>,
     I: GxArrayViewInterpolator,
@@ -453,9 +462,20 @@ where
         return Err(GxError::ShapesMismatch { field1:"grid_row_array", field2:"grid_col_array" })
     }
     
-    // Check that both grid_mask_array and no_data_val_out are given if one is given
-    //assert_options_match!(grid_mask_array, nodata_val_out,
-    //        GxError::OptionsMismatch { field1:"grid_mask_array", field2:"nodata_val_out" });
+    // Check that if grid_row_oversampling is not 1 we get enough data to 
+    // interpolate (ie. at least 2)
+    if grid_row_oversampling > 1 && grid_row_array.nrow < 2 {
+        return Err(GxError::InsufficientGridCoverage { field1:"rows" })
+    }
+    // Check that if grid_col_oversampling is not 1 we get enough data to 
+    // interpolate (ie. at least 2)
+    if grid_col_oversampling > 1 && grid_row_array.ncol < 2 {
+        return Err(GxError::InsufficientGridCoverage { field1:"columns" })
+    }
+    
+    // Manage the optional ima_in_origin_* ; if not provided set it to 0.
+    let ima_in_origin_row: f64 = ima_in_origin_row.unwrap_or(0.);
+    let ima_in_origin_col: f64 = ima_in_origin_col.unwrap_or(0.);
     
     // Manage the optional grid_win
     // The grid_win contains production limit to apply on the full resolution grid.
@@ -463,7 +483,7 @@ where
     let full_res_grid_window = match grid_win {
         Some(some_grid_win) => {
             some_grid_win
-        }
+        },
         None =>  &GxArrayWindow {
             start_row: 0,
             end_row: (grid_row_array.nrow - 1) * grid_row_oversampling,
@@ -482,6 +502,21 @@ where
     // to set the start and stop indexes for columns and rows.
     let (grid_window_src, grid_window_rel) = GxArrayWindow::get_wrapping_window_for_resolution(
             (grid_row_oversampling, grid_col_oversampling), full_res_grid_window)?;
+
+    // Manage the output window
+    let out_window = match out_win {
+        Some(some_out_win) => {
+            some_out_win
+        },
+        None => &GxArrayWindow {
+            start_row: 0,
+            end_row: full_res_grid_window.height() - 1,
+            start_col: 0,
+            end_col: ncol_out - 1,
+        },
+    };
+    // Check that the dimension of `out_window` is sufficient with `ima_out`
+    out_window.validate_with_array(ima_out)?;
 
     // Current position in grid
     let mut grid_row_idx: usize = grid_window_src.start_row;
@@ -515,6 +550,13 @@ where
     // That buffer will be passed to the array1_interp2 method.
     let mut weights_buffer = interp.allocate_kernel_buffer();
     
+    // Init the target idx in `ima_out`
+    let mut windowed_out_idx: usize = out_window.start_row * ima_out.ncol + out_window.start_col;
+    // Compute the shift to apply to go to next row first col
+    // Please note we substract 1 here just because the jump is applied in the loop after a +1 addition
+    let mut window_out_idx_jump: usize = ima_out.ncol - out_window.end_col + out_window.start_col - 1;
+    let ima_out_var_size: usize = ima_out.nrow * ima_out.ncol;
+        
     for mut out_idx in 0..size_out {
         
         // Here we call the validity checker for each oversampled index.
@@ -527,28 +569,28 @@ where
             let gmi_w3: f64 = (gmi_col_idx * gmi_row_idx) as f64;
             let gmi_w4: f64 = (gmi_col_idx_t * gmi_row_idx) as f64;
             
-            // Perform the interpolation on column
+            // Perform the interpolation on column + apply origin bias
             let grid_col_val: f64 = (
                     grid_col_array.data[gmi_mesh.node1] * gmi_w1 +
                     grid_col_array.data[gmi_mesh.node2] * gmi_w2 +
                     grid_col_array.data[gmi_mesh.node3] * gmi_w3 +
                     grid_col_array.data[gmi_mesh.node4] * gmi_w4
-                    ) / gmi_norm_factor;
+                    ) / gmi_norm_factor + ima_in_origin_col;
             
-            // Perform the interpolation on rows
+            // Perform the interpolation on rows + apply origin bias
             let grid_row_val: f64 = (
                     grid_row_array.data[gmi_mesh.node1] * gmi_w1 +
                     grid_row_array.data[gmi_mesh.node2] * gmi_w2 +
                     grid_row_array.data[gmi_mesh.node3] * gmi_w3 +
                     grid_row_array.data[gmi_mesh.node4] * gmi_w4
-                    ) / gmi_norm_factor;
-            
+                    ) / gmi_norm_factor + ima_in_origin_row;
+                        
             // Do grid interpolation here
             let _ = interp.array1_interp2(
                     &mut weights_buffer,
                     grid_row_val,
                     grid_col_val,
-                    out_idx,
+                    windowed_out_idx,
                     ima_in,
                     nodata_val_out,
                     ima_mask_in,
@@ -559,13 +601,15 @@ where
             // do something
             for ivar in 0..ima_in.nvar {                
                 // Write nodata value to output buffer
-                ima_out.data[out_idx + ivar * size_out] = nodata_val_out;
+                //ima_out.data[out_idx + ivar * size_out] = nodata_val_out;
+                ima_out.data[windowed_out_idx + ivar * ima_out_var_size] = nodata_val_out;
             }
         }
         // Prepare next iteration
         
         // Global output : go next output column
         out_col_idx += 1;
+        windowed_out_idx += 1;
         
         // Mesh interpolation : go next column in current mesh
         gmi_col_idx += 1;
@@ -589,6 +633,7 @@ where
             
             // Reset output column index to 0
             out_col_idx = 0;
+            windowed_out_idx += window_out_idx_jump;
             
             // Go next row
             // out_row_idx += 1;
@@ -625,6 +670,7 @@ where
 mod gx_grid_resampling_test {
     use super::*;
     use crate::core::interp::gx_optimized_bicubic_kernel::{GxOptimizedBicubicInterpolator};
+    use crate::core::gx_array::{gx_array_data_approx_eq_window};
     
     /// Checks if two slices of f64 values are approximately equal within a given tolerance.
     ///
@@ -693,9 +739,11 @@ mod gx_grid_resampling_test {
                 &mut array_out, //ima_out: &mut GxArrayViewMut<'_, V>,
                 0., //nodata_val_out: V,
                 None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
-                None, //grid_mask_array: Option<&GxArrayView<'_, u8>>,
                 &mut None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
                 None, //grid_win: Option<&GxArrayWindow>,
+                None, //out_win: Option<&GxArrayWindow>,
+                None, //ima_in_origin_row: Option<f64>,
+                None, //ima_in_origin_col: Option<f64>,
                 );
         
         assert!(approx_eq(&data_out, &data_expected, 1e-10));
@@ -778,9 +826,11 @@ mod gx_grid_resampling_test {
                 &mut array_out, //ima_out: &mut GxArrayViewMut<'_, V>,
                 nodata_val_out, //nodata_val_out: V,
                 None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
-                None, //grid_mask_array: Option<&GxArrayView<'_, u8>>,
                 &mut None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
                 None, //grid_win: Option<&GxArrayWindow>,
+                None, //out_win: Option<&GxArrayWindow>,
+                None, //ima_in_origin_row: Option<f64>,
+                None, //ima_in_origin_col: Option<f64>,
                 );
                 
         /*      UNCOMMENT FOR MANUAL DEBUGGING
@@ -893,9 +943,11 @@ mod gx_grid_resampling_test {
                 &mut array_out, //ima_out: &mut GxArrayViewMut<'_, V>,
                 nodata_val_out, //nodata_val_out: V,
                 None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
-                None, //grid_mask_array: Option<&GxArrayView<'_, u8>>,
                 &mut None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
                 None, //grid_win: Option<&GxArrayWindow>,
+                None, //out_win: Option<&GxArrayWindow>,
+                None, //ima_in_origin_row: Option<f64>,
+                None, //ima_in_origin_col: Option<f64>,
                 );
                 
         /*      UNCOMMENT FOR MANUAL DEBUGGING
@@ -985,9 +1037,11 @@ mod gx_grid_resampling_test {
                 &mut array_out, //ima_out: &mut GxArrayViewMut<'_, V>,
                 0., //nodata_val_out: V,
                 None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
-                None, //grid_mask_array: Option<&GxArrayView<'_, u8>>,
                 &mut None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
                 None, //grid_win: Option<&GxArrayWindow>,
+                None, //out_win: Option<&GxArrayWindow>,
+                None, //ima_in_origin_row: Option<f64>,
+                None, //ima_in_origin_col: Option<f64>,
                 );
         
         //assert!(approx_eq(&data_out, &data_expected, 1e-10));
@@ -1047,9 +1101,11 @@ mod gx_grid_resampling_test {
                 &mut array_out, //ima_out: &mut GxArrayViewMut<'_, V>,
                 0., //nodata_val_out: V,
                 None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
-                None, //grid_mask_array: Option<&GxArrayView<'_, u8>>,
                 &mut None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>,
                 None, //grid_win: Option<&GxArrayWindow>,
+                None, //out_win: Option<&GxArrayWindow>,
+                None, //ima_in_origin_row: Option<f64>,
+                None, //ima_in_origin_col: Option<f64>,
                 );
     }
     
@@ -1126,9 +1182,11 @@ mod gx_grid_resampling_test {
                 &mut array_out_full, //ima_out: &mut GxArrayViewMut<'_, V>,
                 0., //nodata_val_out: V,
                 None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
-                None, //grid_mask_array: Option<&GxArrayView<'_, u8>>,
                 &mut None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
                 None, //grid_win: Option<&GxArrayWindow>,
+                None, //out_win: Option<&GxArrayWindow>,
+                None, //ima_in_origin_row: Option<f64>,
+                None, //ima_in_origin_col: Option<f64>,
                 );
         
         // Run resampling on window
@@ -1142,9 +1200,11 @@ mod gx_grid_resampling_test {
                 &mut array_out_win, //ima_out: &mut GxArrayViewMut<'_, V>,
                 0., //nodata_val_out: V,
                 None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
-                None, //grid_mask_array: Option<&GxArrayView<'_, u8>>,
                 &mut None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
                 Some(&window), //grid_win: Option<&GxArrayWindow>,
+                None, //out_win: Option<&GxArrayWindow>,
+                None, //ima_in_origin_row: Option<f64>,
+                None, //ima_in_origin_col: Option<f64>,
                 );
         
         // Compare the results
@@ -1152,5 +1212,112 @@ mod gx_grid_resampling_test {
                 start_col: 0, end_col: window.width()-1,};
         assert!(gx_array_data_approx_eq_window( &array_out_win, &win_array_out_win, &array_out_full,
                 &window, tol));
+    }
+    
+    /// This test aims to check the respect of the output windowing 
+    #[test]
+    fn test_array1_grid_resampling_optimized_bicubic_identity_output_window() {
+        let interp = GxOptimizedBicubicInterpolator::new();
+        let tol = 1e-6;
+        
+        let oversampling_row = 6;
+        let oversampling_col = 7;
+        let nrow_in = 20;
+        let ncol_in = 30;
+        let nrow_grid = nrow_in;
+        let ncol_grid = ncol_in;
+        
+        // Define full output
+        let nrow_out_full = (nrow_in - 1) * oversampling_row + 1;
+        let ncol_out_full = (ncol_in - 1) * oversampling_col + 1;
+        
+        // Define window related 
+        let window = GxArrayWindow{start_row: 3, end_row: 87, start_col: 18, end_col: 183};
+        
+        // define a larger output
+        let nrow_out_full_larger = nrow_out_full + 100;
+        let ncol_out_full_larger = ncol_out_full + 20;
+        let out_shift_row = 15 ;
+        let out_shift_col = 10;
+        let out_window = GxArrayWindow{start_row: out_shift_row, end_row: out_shift_row + window.height()-1, start_col: out_shift_col, end_col: out_shift_col + window.width()-1};
+        
+        
+        // Create the data in and out buffers
+        let mut data_in = vec![0.0; nrow_in * ncol_in ];
+        //let mut data_out_full_res = vec![0.0; nrow_out_full * ncol_out_full];
+        let mut data_out_full_res_larger = vec![0.0; nrow_out_full_larger * ncol_out_full_larger];
+        let mut data_out_win = vec![0.0; window.size()];
+        let mut grid_row = vec![0.0; nrow_grid * ncol_grid];
+        let mut grid_col = vec![0.0; nrow_grid * ncol_grid];
+        
+        // Init data_in values with a bicubic function -> we should be able
+        // to find similar values by interpolation of a decimated array
+        for irow in 0..nrow_in {
+            for icol in 0..ncol_in {
+                let xf = icol as f64;
+                let yf = irow as f64;
+                data_in[irow * ncol_in + icol] = 1.0 + 2.0 * xf + 3.0 * yf + 4.0 * xf * yf
+                        + 5.0 * xf.powi(2) + 6.0 * yf.powi(2)
+                        + 7.0 * xf.powi(3) + 8.0 * yf.powi(3);
+            }
+        }
+                
+        // Init grid to apply a simple transformation
+        for irow in 0..nrow_grid {
+            for icol in 0..ncol_grid {
+                grid_row[irow * ncol_grid + icol] = irow as f64 + 3.5;
+                grid_col[irow * ncol_grid + icol] = icol as f64 * 0.25;
+            }
+        }
+        
+        // Init input structures
+        let array_in = GxArrayView::new(&data_in, 1, nrow_in, ncol_in);
+        let array_grid_row_in = GxArrayView::new(&grid_row, 1, nrow_grid, ncol_grid);
+        let array_grid_col_in = GxArrayView::new(&grid_col, 1, nrow_grid, ncol_grid);
+        let mut array_out_full_larger = GxArrayViewMut::new(&mut data_out_full_res_larger, 1, nrow_out_full_larger, ncol_out_full_larger);
+        let mut array_out_win = GxArrayViewMut::new(&mut data_out_win, 1, window.height(), window.width());
+        let grid_checker = NoCheckGridMeshValidator{};
+        
+        // Run resampling on full grid
+        let _ = array1_grid_resampling::<f64, i8, f64, f64, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(&interp,
+                &grid_checker, //grid_validity_checker
+                &array_in,
+                &array_grid_row_in, //grid_row_array: &GxArrayView<'_, U>,
+                &array_grid_col_in, //grid_col_array: &GxArrayView<'_, U>,
+                oversampling_row, //grid_row_oversampling: usize,
+                oversampling_col, //grid_col_oversampling: usize,
+                &mut array_out_full_larger, //ima_out: &mut GxArrayViewMut<'_, V>,
+                0., //nodata_val_out: V,
+                None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
+                &mut None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
+                Some(&window), //grid_win: Option<&GxArrayWindow>,
+                Some(&out_window), //out_win: Option<&GxArrayWindow>,
+                None, //ima_in_origin_row: Option<f64>,
+                None, //ima_in_origin_col: Option<f64>,
+                );
+        
+        // Run resampling on window 
+        let _ = array1_grid_resampling::<f64, i8, f64, f64, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(&interp,
+                &grid_checker, //grid_validity_checker
+                &array_in,
+                &array_grid_row_in, //grid_row_array: &GxArrayView<'_, U>,
+                &array_grid_col_in, //grid_col_array: &GxArrayView<'_, U>,
+                oversampling_row, //grid_row_oversampling: usize,
+                oversampling_col, //grid_col_oversampling: usize,
+                &mut array_out_win, //ima_out: &mut GxArrayViewMut<'_, V>,
+                0., //nodata_val_out: V,
+                None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
+                &mut None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
+                Some(&window), //grid_win: Option<&GxArrayWindow>,
+                None, //out_win: Option<&GxArrayWindow>,
+                None, //ima_in_origin_row: Option<f64>,
+                None, //ima_in_origin_col: Option<f64>,
+                );
+        
+        // Compare the results
+        let win_array_out_win = GxArrayWindow { start_row: 0, end_row:window.height()-1,
+                start_col: 0, end_col: window.width()-1,};
+        assert!(gx_array_data_approx_eq_window( &array_out_win, &win_array_out_win, &array_out_full_larger,
+                &out_window, tol));
     }
 }

@@ -9,7 +9,7 @@
 """
 Module for operations on array's window : check, extend, overflow
 """
-from typing import Tuple, Optional
+from typing import List, Tuple, Optional
 
 import numpy as np
 from rasterio.windows import Window
@@ -138,6 +138,50 @@ def window_indices(
             for i in range(win.shape[0])))
     return indices
 
+def window_from_indices(
+    indices: Tuple[slice],
+    original_shape: Tuple[int, ...],
+    axes: Optional[List[int]] = None,
+) -> np.ndarray:
+    """Get the window (win) from the indices (slices).
+
+    Args:
+        indices: A tuple of slice objects, as returned by window_indices.
+        original_shape: The shape on which the indices/win will be applied.
+        axes: The axes that were considered when creating the indices.
+              If None, it's assumed all axes were considered.
+
+    Returns:
+        win: The reconstructed window as a numpy array from a tuple of slices.
+    """
+    ndim = len(indices)
+    win = np.zeros((ndim, 2), dtype=int)
+
+    if axes is None:
+        axes = range(ndim)
+    axes = np.atleast_1d(axes)
+
+    for i in range(ndim):
+        if i in axes:
+            s = indices[i]
+            # Invert slice(start, stop) to get (start, stop-1)
+            # The stop value in slice is exclusive, so we subtract 1 to get the 
+            # last index
+            start = s.start if s.start is not None else 0
+            # Default to last element if None
+            stop = s.stop - 1 if s.stop is not None else original_shape[i] - 1 
+
+            win[i, 0] = start
+            win[i, 1] = stop
+        else:
+            # For axes not included in 'axes' (which result in slice(None, None)),
+            # the window effectively covers the entire dimension of the original
+            # array.
+            # So, we set the start to 0 and the end to original_shape[i] - 1.
+            win[i, 0] = 0
+            win[i, 1] = original_shape[i] - 1
+
+    return win
 
 def window_apply(
         arr: np.ndarray,

@@ -164,7 +164,7 @@ where
     }
     
     if let Err(e) = win.validate_with_array(array) {
-        return Err(e);
+        return Err(e.to_string());
     }
 
     let mut row_offset = win.start_row * array.ncol;

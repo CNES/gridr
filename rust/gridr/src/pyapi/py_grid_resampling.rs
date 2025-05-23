@@ -7,17 +7,17 @@ use pyo3::exceptions::PyValueError;
 //use numpy::{PyArray1, PyArrayDyn, PyArrayMethods};
 use numpy::{PyArray1, PyArrayMethods, Element};
 /// We tell here what module/functions we use from the pure rust library (lib.rs)
-use crate::{assert_options_match, assert_options_exclusive};
+use crate::{assert_options_exclusive};
 use crate::core::gx_array::{GxArrayWindow, GxArrayView, GxArrayViewMut};
-use crate::core::gx_grid_resampling::{array1_grid_resampling, GridMeshValidator, NoCheckGridMeshValidator, MaskGridMeshValidator, InvalidValueGridMeshValidator};
+use crate::core::gx_grid_resampling::{array1_grid_resampling, NoCheckGridMeshValidator, MaskGridMeshValidator, InvalidValueGridMeshValidator};
 use crate::core::interp::gx_array_view_interp::GxArrayViewInterpolator;
 use crate::core::interp::gx_optimized_bicubic_kernel::{GxOptimizedBicubicInterpolator};
+use crate::core::gx_const::{F64_TOLERANCE};
 
 use super::py_array::{PyArrayWindow2};
 
-pub const F64_TOLERANCE: f64 = 1e-5;
 
-fn py_array1_grid_resampling<T, U, V, W>(
+fn py_array1_grid_resampling<T, V, W>(
     array_in: &Bound<'_, PyArray1<T>>,
     array_in_shape: (usize, usize, usize),
     grid_row: &Bound<'_, PyArray1<W>>,
@@ -27,20 +27,21 @@ fn py_array1_grid_resampling<T, U, V, W>(
     array_out: &Bound<'_, PyArray1<V>>,
     array_out_shape: (usize, usize, usize),
     nodata_out: V,
-    //array_in_origin: (usize, usize), ==> take care of that by the caller in the grid ?
-    array_in_mask: Option<&Bound<'_, PyArray1<U>>>,
+    array_in_origin: Option<(f64, f64)>,
+    array_in_mask: Option<&Bound<'_, PyArray1<u8>>>,
     //grid_origin: (W, W),
     grid_mask: Option<&Bound<'_, PyArray1<u8>>>,
     grid_mask_valid_value: Option<u8>,
     grid_nodata: Option<W>,
-    array_out_mask: Option<&Bound<'_, PyArray1<i8>>>,
+    array_out_mask: Option<&Bound<'_, PyArray1<u8>>>,
     //array_out_win : Option<PyArrayWindow2>,
     //array_out_origin,
     grid_win: Option<PyArrayWindow2>,
+    out_win: Option<PyArrayWindow2>,
     ) -> Result<(), PyErr>
 where
     T: Element + Copy + PartialEq + Default + std::ops::Mul<f64, Output=f64> + Into<f64>,
-    U: Element + Copy + PartialEq + Default + Into<f64>,
+    //U: Element + Copy + PartialEq + Default + Into<f64>,
     V: Element + Copy + PartialEq + Default + From<f64>,
     W: Element + Copy + PartialEq + Default + std::ops::Mul<f64, Output=f64> + Into<f64>,
 {
@@ -70,6 +71,15 @@ where
     
     // Manage the optional production window (in full resolution grid coordinates system)
     let rs_grid_win = grid_win.map(GxArrayWindow::from);
+    
+    // Manage the optional output window
+    let rs_out_win = out_win.map(GxArrayWindow::from);
+    
+    // Manage array in origin
+    let (origin_row_bias, origin_col_bias) = match array_in_origin {
+        Some((row_bias, col_bias)) => (Some(row_bias), Some(col_bias)),
+        None => (None, None),
+    };
     
     
     // Manage the grid validator mode through a the `grid_validator_flag` variable.
@@ -107,7 +117,7 @@ where
             // No validator parameter has been passed ; we set the grid_checker to the always
             // positiv NoCheckGridMeshValidator
             let grid_checker = NoCheckGridMeshValidator{};
-            match array1_grid_resampling::<T, U, V, W, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(
+            match array1_grid_resampling::<T, V, W, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(
                     &interp, // interp
                     &grid_checker, //
                     &array_in_arrayview, //ima_in
@@ -118,9 +128,11 @@ where
                     &mut array_out_arrayview, //ima_out
                     nodata_out, //nodata_val_out
                     None, //ima_mask_in
-                    None, //grid_mask_array
                     &mut None, //ima_mask_out
                     rs_grid_win.as_ref(), //grid_win
+                    rs_out_win.as_ref(), //out_win
+                    origin_row_bias, // ima_in_origin_row
+                    origin_col_bias, // ima_in_origin_col
                 ) {
                 Ok(_) => Ok(()),
                 Err(e) => Err(PyValueError::new_err(e.to_string())),
@@ -134,7 +146,7 @@ where
                 ))?;
             let grid_checker = MaskGridMeshValidator{ mask_view: &mask_view, valid_value: mask_valid_value };
             
-            match array1_grid_resampling::<T, U, V, W, GxOptimizedBicubicInterpolator, MaskGridMeshValidator>(
+            match array1_grid_resampling::<T, V, W, GxOptimizedBicubicInterpolator, MaskGridMeshValidator>(
                     &interp, // interp
                     &grid_checker, //
                     &array_in_arrayview, //ima_in
@@ -145,9 +157,11 @@ where
                     &mut array_out_arrayview, //ima_out
                     nodata_out, //nodata_val_out
                     None, //ima_mask_in
-                    None, //grid_mask_array
                     &mut None, //ima_mask_out
                     rs_grid_win.as_ref(), //grid_win
+                    rs_out_win.as_ref(), //out_win
+                    origin_row_bias, // ima_in_origin_row
+                    origin_col_bias, // ima_in_origin_col
                 ) {
                 Ok(_) => Ok(()),
                 Err(e) => Err(PyValueError::new_err(e.to_string())),
@@ -160,7 +174,7 @@ where
                 epsilon: F64_TOLERANCE
             };
             
-            match array1_grid_resampling::<T, U, V, W, GxOptimizedBicubicInterpolator, InvalidValueGridMeshValidator>(
+            match array1_grid_resampling::<T, V, W, GxOptimizedBicubicInterpolator, InvalidValueGridMeshValidator>(
                     &interp, // interp
                     &grid_checker, //
                     &array_in_arrayview, //ima_in
@@ -171,9 +185,11 @@ where
                     &mut array_out_arrayview, //ima_out
                     nodata_out, //nodata_val_out
                     None, //ima_mask_in
-                    None, //grid_mask_array
                     &mut None, //ima_mask_out
                     rs_grid_win.as_ref(), //grid_win
+                    rs_out_win.as_ref(), //out_win
+                    origin_row_bias, // ima_in_origin_row
+                    origin_col_bias, // ima_in_origin_col
                 ) {
                 Ok(_) => Ok(()),
                 Err(e) => Err(PyValueError::new_err(e.to_string())),
@@ -185,9 +201,9 @@ where
 
 /// This function calls the generic [`py_array1_grid_resampling`] with `T = f64`, `U = u8`, `V = f64` and `W = f64`.
 #[pyfunction]
-#[pyo3(signature = (array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution, array_out, array_out_shape, nodata_out, array_in_mask=None, grid_mask=None, grid_mask_valid_value=None, grid_nodata=None, array_out_mask=None, grid_win=None))]
+#[pyo3(signature = (array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution, array_out, array_out_shape, nodata_out, array_in_origin=None, array_in_mask=None, grid_mask=None, grid_mask_valid_value=None, grid_nodata=None, array_out_mask=None, grid_win=None, out_win=None, ))]
 #[allow(clippy::too_many_arguments)]
-pub fn py_array1_grid_resampling_f64_u8(
+pub fn py_array1_grid_resampling_f64(
     array_in: &Bound<'_, PyArray1<f64>>,
     array_in_shape: (usize, usize, usize),
     grid_row: &Bound<'_, PyArray1<f64>>,
@@ -197,19 +213,20 @@ pub fn py_array1_grid_resampling_f64_u8(
     array_out: &Bound<'_, PyArray1<f64>>,
     array_out_shape: (usize, usize, usize),
     nodata_out: f64,
-    //array_in_origin: (usize, usize), ==> take care of that by the caller in the grid ?
+    array_in_origin: Option<(f64, f64)>,
     array_in_mask: Option<&Bound<'_, PyArray1<u8>>>,
     //grid_origin: (W, W),
     grid_mask: Option<&Bound<'_, PyArray1<u8>>>,
     grid_mask_valid_value: Option<u8>,
     grid_nodata: Option<f64>,
-    array_out_mask: Option<&Bound<'_, PyArray1<i8>>>,
+    array_out_mask: Option<&Bound<'_, PyArray1<u8>>>,
     //array_out_win : Option<PyArrayWindow2>,
     //array_out_origin,
     grid_win: Option<PyArrayWindow2>,
+    out_win: Option<PyArrayWindow2>,
     ) -> Result<(), PyErr>
 {
-    py_array1_grid_resampling::<f64, u8, f64, f64>(
+    py_array1_grid_resampling::<f64, f64, f64>(
             array_in, //: &Bound<'_, PyArray1<f64>>,
             array_in_shape, //: (usize, usize, usize),
             grid_row, //: &Bound<'_, PyArray1<f64>>,
@@ -219,15 +236,16 @@ pub fn py_array1_grid_resampling_f64_u8(
             array_out, //: &Bound<'_, PyArray1<f64>>,
             array_out_shape, //: (usize, usize, usize),
             nodata_out, //: f64,
-            //array_in_origin: (usize, usize), ==> take care of that by the caller in the grid ?
+            array_in_origin, //: Option<(f64, f64)>,
             array_in_mask, //: Option<&Bound<'_, PyArray1<u8>>>,
             //grid_origin: (W, W),
             grid_mask, //: Option<&Bound<'_, PyArray1<u8>>>,
             grid_mask_valid_value, //: Option<u8>,
             grid_nodata, //: Option<W>,
-            array_out_mask, //: Option<&Bound<'_, PyArray1<i8>>>,
+            array_out_mask, //: Option<&Bound<'_, PyArray1<u8>>>,
             //array_out_win : Option<PyArrayWindow2>,
             //array_out_origin,
             grid_win, // grid_win: Option<PyArrayWindow2>,
+            out_win, // win_out: Option<PyArrayWindow2>,
             )
 }

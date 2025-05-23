@@ -326,20 +326,130 @@ def grid_resolution_window(
         resolution : The grid's resolution factors for rows and columns
         win: The target full resolution window
     """
-    resolution = np.asarray(resolution)
+    resolution_arr = np.asarray(resolution)
     
     # Compute the index in grid
     # - start index : we must take the nearest lower index in the input grid. It
     #        is given by the integer division of the target index by the 
     #        resolution along each axis.
     # - stop index : we must take the nearest upper index in the input grid.
-    grid_win = np.vstack((win[:, 0] // resolution,
-            win[:, 1] // resolution \
-            + (win[:,1] % resolution != 0).astype(int))).T
+    grid_win = np.vstack((win[:, 0] // resolution_arr,
+            win[:, 1] // resolution_arr \
+            + (win[:,1] % resolution_arr != 0).astype(int))).T
             
     # Compute the relative position in the grid_win in order to target the 
     # target win
-    rel_win = np.vstack((win[:,0] % resolution,
-            win[:,0] % resolution + win[:,1] - win[:,0])).T
+    rel_win = np.vstack((win[:,0] % resolution_arr,
+            win[:,0] % resolution_arr + win[:,1] - win[:,0])).T
     
+    return grid_win, rel_win
+    
+
+def grid_resolution_window_safe(
+        resolution: Tuple[int, int],
+        win: np.ndarray,
+        grid_shape : Tuple[int, int],
+        ) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    This method computes the required window needed in the input grid in order
+    to cover a full target resolution given through the 'window' parameter.
+    If grid's oversampling are equal to 1 in both direction, the required window
+    is directly equal to the input window.
+    
+    Args:
+        resolution : The grid's resolution factors for rows and columns
+        win: The target full resolution window
+        grid_shape: The total shape (rows, columns) of the input grid.
+    """
+    resolution_arr = np.asarray(resolution)
+    grid_shape_arr = np.asarray(grid_shape)
+    
+    # Compute the index in grid
+    # - start index : we must take the nearest lower index in the input grid. It
+    #        is given by the integer division of the target index by the 
+    #        resolution along each axis.
+    # - stop index : we must take the nearest upper index in the input grid.
+    grid_win_start = win[:, 0] // resolution_arr
+    grid_win_stop = win[:, 1] // resolution_arr \
+            + (win[:,1] % resolution_arr != 0).astype(int)
+    
+    # Store original start for rel_win adjustment
+    original_grid_win_start = np.copy(grid_win_start)
+
+    # For each dimension where resolution > 1, ensure stop - start + 1 >= 2
+    mask_resolution_gt_1 = resolution_arr > 1
+    current_size = grid_win_stop - grid_win_start
+    needs_extension_mask = (current_size < 1) & mask_resolution_gt_1
+    
+    # Extend stop if needed, but not beyond grid_shape_arr - 1
+    # This addresses cases like [5,5] needing to become [5,6] but grid max is 5
+    grid_win_stop[needs_extension_mask] = np.minimum(
+            grid_win_stop[needs_extension_mask] + 1,
+            grid_shape_arr[needs_extension_mask] - 1)
+    
+    # Re-evaluate current_size after initial stop extension
+    current_size = grid_win_stop - grid_win_start
+    
+    # Identify where size is still less than 1 (meaning stop is still <= start)
+    # This handles cases where original stop was already at boundary 
+    # (e.g., [5,5] and grid_shape is 6) and where resolution_arr > 1
+    needs_extension_mask = (current_size < 1) & mask_resolution_gt_1
+
+    # If still too small, try to shift start backward, but not below 0
+    # This handles cases like [5,5] becoming [5,5] because grid max was 5, now
+    # try [4,5]
+    grid_win_start[needs_extension_mask] = np.maximum(
+            grid_win_start[needs_extension_mask] - 1, 0)
+    
+    # Final check: ensure stop is not less than start for validity, but don't
+    # force minimum size here (The above logic already ensures minimum size
+    # where possible)
+    # This primarily addresses cases where start was shifted back and might have 
+    # become larger than stop
+    # This shouldn't happen with the logic above if grid_shape allows a 2-pixel
+    # window, but it's a safeguard for extreme edge cases where grid_shape
+    # itself is too small.
+    # For example, if grid_shape is 1, it's impossible to have a 2-pixel window.
+    grid_win_stop = np.maximum(grid_win_stop, grid_win_start)
+
+    # Ensure grid_win_start is not negative and grid_win_stop is within bounds
+    # (redundant with previous checks but good for final clamp)
+    grid_win_start = np.maximum(grid_win_start, 0)
+    grid_win_stop = np.minimum(grid_win_stop, grid_shape_arr - 1)
+    
+    
+    grid_win = np.vstack((grid_win_start, grid_win_stop)).T
+
+    # Compute the relative position in the grid_win in order to target the
+    # target win
+    # We need to adjust rel_win_start based on the *actual* grid_win_start
+    # compared to the original, ideal grid_win_start.
+    rel_win_start_adjusted = win[:,0] % resolution_arr + \
+            (original_grid_win_start - grid_win_start) * resolution_arr
+    
+    # The relative stop should just be the relative start plus the span of the 
+    # target window
+    rel_win_stop = rel_win_start_adjusted + (win[:,1] - win[:,0])
+    
+    # Max possible relative coordinate within the read grid_win, considering
+    # resolution.
+    # (grid_win_stop - grid_win_start) is the number of cells in the 
+    # grid_win minus 1
+    # Multiplied by resolution_arr and adding 1, this gives the number of
+    # elements in "high-resolution"
+    # For the max index we have to substract 1, leading to :
+    max_rel_coord_index = (grid_win_stop - grid_win_start) * resolution_arr
+    
+    rel_win_stop = np.minimum(rel_win_stop, max_rel_coord_index)
+
+    # Ensure rel_win_start is not negative (should be handled by modulo and 
+    # shift logic but good safeguard)
+    rel_win_start = np.maximum(rel_win_start_adjusted, 0)
+    
+    # Ensure rel_win_stop is not less than rel_win_start, creating a valid 
+    # relative window
+    rel_win_stop = np.maximum(rel_win_stop, rel_win_start)
+
+    rel_win = np.vstack((rel_win_start, rel_win_stop)).T
+
     return grid_win, rel_win

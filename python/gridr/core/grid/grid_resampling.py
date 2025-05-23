@@ -23,14 +23,13 @@ import rasterio
 
 from gridr.cdylib import (
         PyArrayWindow2,
-        py_array1_grid_resampling_f64_u8,
+        py_array1_grid_resampling_f64,
         )
 
-F64_U8_F64_F64 = (np.dtype('float64'), np.dtype('uint8'), np.dtype('float64'),
-        np.dtype('float64'))
+F64_U8_F64_F64 = (np.dtype('float64'), np.dtype('float64'), np.dtype('float64'))
 
 PY_ARRAY_GRID_RESAMPLING_FUNC = {
-    F64_U8_F64_F64: py_array1_grid_resampling_f64_u8,
+    F64_F64_F64: py_array1_grid_resampling_f64,
 }
     
 def array_grid_resampling(
@@ -39,7 +38,9 @@ def array_grid_resampling(
         grid_col: np.ndarray,
         grid_resolution: Tuple[int, int],
         array_out: Optional[np.ndarray],
-        nodata_out: [Union[int, float]] = 0,
+        array_out_win: Optional[np.ndarray] = None,
+        nodata_out: Optional[Union[int, float]] = 0,
+        array_in_origin: Optional[Tuple[float, float]] = (0., 0.),
         win: Optional[np.ndarray] = None,
         array_in_mask: Optional[np.ndarray] = None,
         grid_mask: Optional[np.ndarray] = None,
@@ -86,11 +87,26 @@ def array_grid_resampling(
             If `None`, a new array will be allocated. The shape of the output
             array is either determined based on the resolution and the input
             grid or by the optional `win` parameter.
+        
+        array_out_win : Optional[np.ndarray]
+            An optional np.ndarray that designates the specific area in 
+            array_out to receive the resampled data. If this parameter is None, 
+            the method will populate a default rectangular region starting from 
+            array_out's top-left corner. This argument is only considered when 
+            array_out is passed, requiring array_out to be large enough to 
+            contain array_out_win.
 
-        nodata_out : Union[int, float], default 0
+        nodata_out : Optional[Union[int, float]], default 0
             The value to be assigned to "NoData" in the output array. This value
             is used to fill in missing values where no valid resampling could
             occur or where a mask flag is set.
+        
+        array_in_origin : Optional[Tuple[float, float]], default (0., 0.)
+            Bias to respectively apply to the grid_row and grid_col coordinates.
+            The operation is performed by the wrapped rust function.
+            Its primary use cases include aligning with alternative grid origin 
+            conventions or handling situations where the provided `array_in` 
+            array corresponds to a subregion of the complete source raster.
 
         win : Optional[np.ndarray], default None
             A window (or sub-region) of the full resolution grid to limit the
@@ -214,6 +230,9 @@ def array_grid_resampling(
     
     # Allocate array_out if not given
     if array_out is None:
+        if array_out_win is not None:
+            # Ignore it
+            array_out_win = None
         array_out_shape = None
         if win is not None:
             # Take the output shape from the window defined at full resolution
@@ -238,12 +257,17 @@ def array_grid_resampling(
     assert(array_out_shape[0] == array_in_shape[0])
     array_out = array_out.reshape(-1)
     
+    py_array_out_win = None
+    if array_out_win is not None:
+        py_array_out_win = PyArrayWindow2(
+                start_row=array_out_win[0][0], end_row=array_out_win[0][1],
+                start_col=array_out_win[1][0], end_col=array_out_win[1][1])
+    
     array_in_mask_dtype = np.dtype('uint8')
     if array_in_mask is not None:
         array_in_mask_dtype = array_in_mask.dtype
     
-    func_types = (array_in.dtype, array_in_mask_dtype, array_out.dtype,
-            grid_row.dtype)
+    func_types = (array_in.dtype, array_out.dtype, grid_row.dtype)
     
     nodata_out = array_out.dtype.type(nodata_out)
     
@@ -273,12 +297,14 @@ def array_grid_resampling(
                 array_out=array_out,
                 array_out_shape=array_out_shape,
                 nodata_out=nodata_out,
+                array_in_origin=array_in_origin,
                 array_in_mask=None,
                 grid_mask=grid_mask,
                 grid_mask_valid_value=grid_mask_valid_value,
                 grid_nodata=grid_nodata,
                 array_out_mask=None,
-                grid_win=py_grid_win,)
+                grid_win=py_grid_win,
+                out_win=py_array_out_win,)
     if ret is not None:
         ret = ret.reshape(array_out_shape).squeeze()
     return ret

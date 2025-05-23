@@ -1,0 +1,1233 @@
+# coding: utf8
+#
+# Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
+#
+# This file is part of GRIDR
+# (see https://gitlab.cnes.fr/gridr/gridr).
+#
+#
+"""
+Module for a Grid and Mask creation chain
+# @doc
+
+TMP : PYTHONPATH=${PWD}/python:$PYTHONPATH python python/gridr/chain/grid_resampling_chain.py
+"""
+
+print("import begin")
+import itertools
+from enum import IntEnum
+from functools import partial
+import logging
+from pathlib import Path
+from typing import Union, NoReturn, Optional, Tuple, List, Dict
+
+import multiprocessing
+from multiprocessing import shared_memory, Pool
+
+import numpy as np
+import rasterio
+from rasterio.windows import Window
+import shapely
+
+print("importing gridr...")
+from gridr.core.utils import chunks
+from gridr.core.utils.array_utils import array_replace, ArrayProfile
+from gridr.core.utils.array_window import (window_shape, window_check,
+        window_indices, as_rio_window, window_from_chunk, window_shift,
+        window_overflow, window_extend, window_from_indices)
+from gridr.core.grid.grid_commons import (grid_full_resolution_shape,
+        grid_resolution_window_safe)
+from gridr.core.grid.grid_utils import oversample_regular_grid
+from gridr.core.grid.grid_rasterize import (grid_rasterize,
+        GridRasterizeAlg, ShapelyPredicate)
+from gridr.core.grid.grid_mask import build_mask
+from gridr.core.grid.grid_utils import build_grid, array_compute_resampling_grid_geometries
+from gridr.cdylib import PyGridGeometriesMetricsF64
+        
+from gridr.core.grid.grid_resampling import array_grid_resampling
+
+from gridr.scaling.shmutils import (SharedMemoryArray, shmarray_wrap,
+        create_and_register_sma)
+print("import end 1")
+
+# TODELETE FROM HERE
+import matplotlib
+import matplotlib.pyplot as plt
+from gridr.misc.mandrill import mandrill
+import sys
+print("import end 2")
+#sys.exit(0)
+
+class GridRIOMode(IntEnum):
+    """Define the backend to use for rasterize.
+    """
+    INPUT = 1
+    OUTPUT = 2
+
+DEFAULT_IO_STRIP_SIZE = 1000
+DEFAULT_TILE_SHAPE = (1000, 1000)
+DEFAULT_NCPU = 1
+
+READ_TILE_MIN_SIZE = (1000, 1000)
+
+def read_win_from_grid_metrics(
+        grid_metrics: PyGridGeometriesMetricsF64,
+        array_src_profile_2d: ArrayProfile,
+        margins: np.ndarray,
+        logger: logging.Logger,
+        logger_msg_prefix: str = ''
+        ):
+    """
+    Computes the source read window from grid metrics, taking into account
+    margins for interpolation, filtering, or other processing needs.
+
+    This function determines the read window (`src_win_read`) from the source 
+    array based on the destination and source bounds contained in `grid_metrics`.
+    It applies the necessary margins to ensure sufficient neighborhood data is 
+    available for operations such as interpolation, while handling cases where 
+    the window exceeds the array boundaries.
+
+    Parameters
+    ----------
+    grid_metrics : PyGridGeometriesMetricsF64
+        Object containing geometric metrics of the grid, including source and
+        destination bounds.
+        
+    array_src_profile_2d : ArrayProfile
+        Metadata/profile of the 2D source array, including shape and number of 
+        dimensions informations.
+        
+    margins : np.ndarray of shape (2, 2)
+        Margins to apply to the read window, formatted as 
+        [[top_margin, bottom_margin], [left_margin, right_margin]].
+        
+    logger : logging.Logger
+        Logger instance used for debugging messages.
+        
+    logger_msg_prefix : str, optional
+        Optional prefix to include in log messages for better traceability.
+
+    Returns
+    -------
+    src_win_read : np.ndarray of shape (2, 2)
+        Final source read window adjusted for margins and boundary constraints.
+        Format: [[row_start, row_end], [col_start, col_end]]. That's the window
+        that should be used for the raster read IO.
+        
+    src_win_marged : np.ndarray of shape (2, 2)
+        Desired read window with margins applied, before boundary correction 
+        (padding).
+        
+    pad : np.ndarray of shape (2, 2)
+        Amount of padding required if the marged window extends outside the 
+        source array.
+        Format: [[top_pad, bottom_pad], [left_pad, right_pad]].
+    """
+    def DEBUG(msg):
+        logger.debug(f"{logger_msg_prefix} - {msg}")
+        
+    # The metrics have been computed, ie there is at least one
+    # valid point in the grid regarding the masking options.
+    # We can get the dst and src window :
+    # - the dst bounds are given relative to the current strip
+    #   low resolute shape.
+    # - the src bounds are absolute coordinates value in the
+    #   input array.
+    dst_lowres_bounds = grid_metrics.dst_bounds
+    src_bounds = grid_metrics.src_bounds
+    
+    DEBUG( f"dst low res bounds : {dst_lowres_bounds} ")
+    DEBUG( f"src bounds : {src_bounds} ")
+    
+    # Define the strip low res computing window (upper limit included)
+    dst_lowres_win = np.array((
+            (dst_lowres_bounds.ymin, dst_lowres_bounds.ymax),
+            (dst_lowres_bounds.xmin, dst_lowres_bounds.xmax),))
+    DEBUG( f"dst win : {dst_lowres_win}")
+    
+    # Define the input read window 
+    src_win = np.array((
+            (int(np.floor(src_bounds.ymin)), int(np.ceil(src_bounds.ymax))),
+            (int(np.floor(src_bounds.xmin)), int(np.ceil(src_bounds.xmax))),))
+    DEBUG( f"src read win (preliminary) : {src_win}")
+    
+    # Here we got a preliminary read window, but :
+    # - That window may overflow (ie. adress coordinates outside
+    #   of the raster
+    # - We have to consider some margins :
+    #   -- margin required for the interpolation kernel
+    #   -- margin required for spline interpolation preprocessing. 
+    #   -- margin that may be required for other processing (egg.
+    #      antialiasing filtering)
+    #   A marged window may also overflow but we may have to 
+    #   manage edges here : the passed array has to cover for
+    #   margins.
+    #
+    # Strategy :
+    # 1. compute overflow of the preliminary window and limit it
+    #    to the available region
+    # 2. Add margins
+    # 3. Compute overflow of the marged window
+    # 4. Read the valid window and perform edge management if 
+    #    needed
+    
+    # 1. compute overflow
+    src_win_overflow = window_overflow(array_src_profile_2d, src_win)
+    DEBUG( f"src read win (preliminary) overflow : {src_win_overflow}")
+    
+    # 2. compute marged window
+    # 2.1 first crop the overflow if any
+    src_win_marged = window_extend(src_win, src_win_overflow, reverse=True)
+    DEBUG( f"src read win before margin : {src_win_marged}")
+    
+    # 2.2 apply the margin
+    src_win_marged = window_extend(src_win_marged, margins, reverse=False)
+    DEBUG( f"src read win after margin : {src_win_marged}")
+    
+    # 3. Compute overflow of the marged window    
+    src_win_marged_overflow = window_overflow(array_src_profile_2d, src_win_marged)
+    DEBUG( f"src read win required pad : {src_win_marged_overflow}")
+    
+    # `cstrip_read_win` corresponds to the window to read from src array
+    src_win_read = window_extend(src_win_marged, src_win_marged_overflow, reverse=True)
+    src_win_read_shape = window_shape(src_win_read)
+    DEBUG( f"src read win read : {src_win_read}")
+    
+    pad = np.array([[0,0], [0,0]])
+    if not np.all(src_win_marged_overflow == 0):
+        pad = src_win_marged_overflow
+    
+    return src_win_read, src_win_marged, pad
+
+
+def basic_grid_resampling_array(
+        grid_arr: np.ndarray,
+        grid_arr_shape: Tuple[int, int],
+        grid_resolution: Tuple[int, int],
+        grid_nodata: Optional[Union[int, float]],
+        grid_mask_arr: np.ndarray,
+        grid_mask_in_unmasked_value: np.uint8,
+        array_src_ds: rasterio.io.DatasetReader,
+        array_src_bands: Union[int, List[int]],
+        array_src_mask_ds: Optional[rasterio.io.DatasetReader],
+        array_src_mask_band: Optional[int],
+        oversampled_grid_win: np.ndarray,
+        margin: np.ndarray,
+        sma_out_buffer: SharedMemoryArray,
+        out_win: np.ndarray,
+        nodata_out: Optional[Union[int, float]],
+        logger_msg_prefix: str,
+        logger: logging.Logger,
+        ):
+    """Resamples source data into a target oversampled window on a grid.
+
+    This method processes a 3D raster grid (`grid_arr`) that includes row and 
+    column coordinates. The `grid_arr` may represent a sub-region of a larger, 
+    non-oversampled grid. Additionally, since `grid_arr` might correspond to a 
+    uniquely allocated buffer used for multiple sub-regions, we cannot rely on 
+    its `shape` attribute to determine the dimensions of the sub-region. 
+    Therefore, the `grid_arr_shape` argument is required.
+    
+    The goal is to generate data within a specific target window 
+    (`oversampled_grid_win`), which is defined in a full-resolution geometry.
+    The coordinates of this target window are relative to the local origin of 
+    `grid_arr`.
+
+    To optimize the loading of only the necessary extent from the source image
+    (`array_src_ds`), this method calls the `array_compute_resampling_grid_geometries`
+    on the minimal low-resolution grid window that completely contains the
+    target full-resolution window.
+    The provided `margin` parameter is also incorporated into this calculation
+    to ensure sufficient data coverage.
+
+
+    The method writes the resampled output to a shared memory array
+    (`sma_out_buffer`), using `out_win` to specify the target writing window
+    within this buffer.
+    
+    Optional masks for both the grid and the source array may be passed.
+    
+    If the grid metrics are not valid, ie. there was not sufficient valid dat
+    to determine the grid and source boundaries, the method flls the windowed
+    output with the `nodata_out` value.
+    
+    
+    Args:
+        grid_arr : np.ndarray
+            A 3D array of shape (2, rows, cols), containing the raster grid's row 
+            and column coordinates. It may represent a sub-region of a larger 
+            (non-oversampled) grid. The local origin (0, 0) corresponds to 
+            `grid_arr[:, 0, 0]`.
+
+        grid_arr_shape : Tuple[int, int]
+            Shape of the active sub-region in `grid_arr`, given as (rows, cols).
+            Required because `grid_arr` may be a larger buffer reused across
+            tiles or subregions.
+
+        grid_resolution : Tuple[int, int]
+            Resolution of the coarse grid, typically in pixels or map units per 
+            pixel (e.g., (10, 10)).
+
+        grid_nodata : scalar
+            The NoData value associated with `grid_arr`, marking invalid or 
+            missing data points.
+
+        grid_mask_arr : Optional[np.ndarray]
+            Optional 2D mask array aligned with `grid_arr` (shape: (rows, cols)). 
+            Indicates valid (unmasked) and invalid (masked) data.
+
+        grid_mask_in_unmasked_value : np.uint8
+            Value in `grid_mask_arr` that represents a valid/unmasked data point.
+
+        array_src_ds : DatasetReader
+            The source dataset (e.g., a GDAL or Rasterio object) from which
+            raster data will be read and resampled.
+
+        array_src_bands : List[int] or Tuple[int]
+            List of band indices to read from `array_src_ds`.
+
+        array_src_mask_ds : Optional[DatasetReader]
+            Optional dataset representing the mask associated with 
+            `array_src_ds`.
+
+        array_src_mask_band : int
+            Band index to read from `array_src_mask_ds` for the source mask.
+
+        oversampled_grid_win : np.ndarray
+            Target window for resampling, defined in full-resolution coordinates,
+            relative to the local origin of `grid_arr`.
+
+        margin : int
+            Pixel margin to apply when computing the minimal read window from 
+            `array_src_ds`, ensuring context for resampling (e.g., for kernels).
+
+        sma_out_buffer : np.ndarray or shared memory array
+            Output array (or shared memory buffer) where resampled values will 
+            be written.
+
+        out_win : np.ndarray
+            Window within `sma_out_buffer` specifying where to write the output 
+            data. Format: [[row_start, row_end], [col_start, col_end]].
+
+        nodata_out : scalar
+            NoData value to fill the output if the grid metrics are invalid or if 
+            no valid data points can be found.
+
+        logger_msg_prefix : str
+            Prefix to prepend to all logger messages, useful for debugging and 
+            tracing within logs.
+
+        logger : logging.Logger
+            Logger instance used for debug and informational messages.
+    """
+    def DEBUG(msg):
+        logger.debug(f"{logger_msg_prefix} - {msg}")
+    
+    # Determine the minimal coarse-grid window containing the oversampled window
+    # `oversamped_grid_win`.
+    grid_arr_win, _ = grid_resolution_window_safe(resolution=grid_resolution,
+            win=oversampled_grid_win, grid_shape=grid_arr_shape)
+    
+    # Compute strip grid metrics for current tile
+    DEBUG("Computing grid metrics... ")
+    grid_metrics = array_compute_resampling_grid_geometries(
+            grid_row=grid_arr[0],
+            grid_col=grid_arr[1],
+            grid_resolution=grid_resolution,
+            win = grid_arr_win,
+            grid_mask = grid_mask_arr,
+            grid_mask_valid_value = grid_mask_in_unmasked_value,
+            grid_nodata = None, # TODO : manage grid_nodata input
+            )
+    
+    if grid_metrics:
+        
+        array_src_profile_2d = ArrayProfile(
+            shape=(array_src_ds.height, array_src_ds.width),
+            ndim=2,
+            dtype=np.dtype(array_src_ds.dtypes[array_src_bands[0]]))
+        
+        array_src_win_read, \
+            array_src_win_marged,\
+            pad = read_win_from_grid_metrics(
+                    grid_metrics=grid_metrics,
+                    array_src_profile_2d=array_src_profile_2d,
+                    margins=margin,
+                    logger=logger,
+                    logger_msg_prefix=logger_msg_prefix
+                    )
+    
+        array_src_win_read_shape = window_shape(array_src_win_read)
+        
+        # memory required
+        DEBUG( "Computing required memory for array source read" )
+        array_src_win_memory = 0
+        
+        for band in array_src_bands:
+            array_src_win_band_memory = np.dtype('float64').itemsize * \
+                    np.prod(np.diff(array_src_win_read, axis=1))
+            array_src_win_memory += array_src_win_band_memory
+            DEBUG( f"memory needed for array_src_win + margin band {band}: "
+                    f"{array_src_win_band_memory} bytes" )
+        
+        DEBUG( f"total memory needed for array_src_win + margin : "
+                f"{array_src_win_memory} bytes" )
+        
+        # The `tile_read_buffer_shape` corresponds to the shape of the buffer
+        # that will hold the read data. It can be larger than the actual read 
+        # window set in the `tile_src_sin_read` variable in order to also hold 
+        # "virtual" margins.
+        array_src_read_buffer_shape = window_shape(array_src_win_marged)
+        array_src_read_buffer_shape = np.insert(array_src_read_buffer_shape, 0,
+                len(array_src_bands))
+        DEBUG( f'tile read buffer shape : {array_src_read_buffer_shape}' )
+        
+        # TODO : do not force float 64 here => requires bound core function to handle other types
+        #cstrip_read_buffer = np.zeros(cstrip_read_buffer_shape, dtype=array_src_profile.dtype, )
+        array_src_read_buffer = np.zeros(array_src_read_buffer_shape, dtype=np.float64 )
+        
+        # Read the source array.
+        # - Due to "virtual" margins we have to compute the correct indices in 
+        #   the tile_read_buffer that will hold the 
+        # read array for each band.
+        DEBUG( 'Reading tiles...' )
+        
+        get_read_buffer_indices = lambda b, p, s: tuple((b, 
+               slice(p[0][0], p[0][0] + s[0], None),
+               slice(p[1][0], p[1][0] + s[1], None),))
+        
+        for band_read, band_in in enumerate(array_src_bands):
+            indices = get_read_buffer_indices(band_read, pad,
+                    array_src_win_read_shape)
+            
+            # TODO : the bellow commented line should be decommented when f64 is not forced.
+            #array_src_ds.read(band+1, window = as_rio_window(ctile_src_win_read),
+            #        out=ctile_read_buffer[indices])
+            # Save read data in the buffer at `indices`.
+            
+            DEBUG( f"Reading source window for source band {band_in} "
+                    f"- source window : {array_src_win_read} "
+                    f"- target indices : {indices} ..." )
+                    
+            array_src_read_buffer[indices] = array_src_ds.read(band_in,
+                    window = as_rio_window(array_src_win_read)
+                    ).astype(np.float64)
+            
+            DEBUG( f"Reading source window for source band {band_in} "
+                    f"- source window : {array_src_win_read} "
+                    f"- target indices : {indices} [DONE]" )
+            
+            # TODO : implement edge management. For now we leave it 
+            # as it is considering the init zero value.
+        
+        # The grid stores absolute source coordinates. However, when operating
+        # on a localized sub-region of the raster, we must compensate for the
+        # relative shift of its origin.
+        # This calculated offset is then provided to the resampling function,
+        # which will apply it during the target coordinate to interpolate.
+        # We avoid modifying the grid in place to prevent unintended side
+        # effects if it's used concurrently by other processes.
+        #
+        # Specifically, 'tile_src_origin' is derived by adjusting for any
+        # 'tile_pad' (virtual padding) relative to the absolute upper-left
+        # corner of the read window ('tile_src_win_read'). This value precisely 
+        # defines the origin of the 'tile_read_buffer' in the context of the
+        # overall 'array_src' coordinate system.
+        array_src_origin = (
+                pad[0][0] - array_src_win_read[0][0],
+                pad[1][0] - array_src_win_read[1][0])
+        
+        # TODO/TOCHECK We may reset the sma_w_array_buffer.array if the cslices
+        # is limited (not the case for now)
+        
+        # TODO : MANAGE array_src_mask_ds
+        array_in_mask = None
+        
+        # TODO : MANAGE array_out_mask
+        array_out_mask = None
+        
+        # Call the resampling method
+        _ = array_grid_resampling(
+                array_in = array_src_read_buffer, # thats the previously read buffer
+                grid_row = grid_arr[0], # the grid rows
+                grid_col = grid_arr[1], # the grid columns
+                grid_resolution = grid_resolution,
+                array_out = sma_out_buffer.array,
+                array_out_win = out_win, # dst window in the array_out
+                nodata_out = nodata_out,
+                array_in_origin = array_src_origin,
+                win = oversampled_grid_win, # the production window
+                array_in_mask = array_in_mask, # TODO : Optional[np.ndarray] = None,
+                grid_mask = grid_mask_arr, # TO CHECK: Optional[np.ndarray] = None,
+                grid_mask_valid_value = grid_mask_in_unmasked_value, #: Optional[int] = 1,
+                grid_nodata = None, # TODO : manage grid_nodata input
+                array_out_mask = array_out_mask, #TODO: Optional[np.ndarray] = None,
+                )
+    
+    else:
+        # Write NODATA
+        win_slice = window_indices(out_win, reset_origin=False)
+        # Add the band axis.
+        win_slice = (slice(None, None),) + ctile_slice
+        sma_out_buffer.array[win_slice] = nodata_out
+
+
+def basic_grid_resampling_chain(
+        grid_ds: rasterio.io.DatasetReader,
+        grid_col_ds: Union[rasterio.io.DatasetReader, None],
+        grid_row_coords_band: int,
+        grid_col_coords_band: int,
+        grid_resolution: Tuple[int, int],
+        
+        array_src_ds: rasterio.io.DatasetReader,
+        array_src_bands: Union[int, List[int]],
+        
+        array_out_ds: rasterio.io.DatasetWriter,
+
+        interp: str,
+
+        nodata_out: Union[int, float],
+        
+        window: np.ndarray, 
+    
+        mask_out_ds: rasterio.io.DatasetWriter,
+        mask_out_dtype: Union[np.dtypes.Int8DType, np.dtypes.UInt8DType],
+        
+        grid_mask_in_ds: Optional[rasterio.io.DatasetReader],
+        grid_mask_in_unmasked_value: Optional[int],
+        grid_mask_in_band: Optional[int],
+        
+        computation_dtype: np.dtype,
+    
+        geometry_origin: Optional[Tuple[float, float]],
+        #geometry: Optional[Union[shapely.geometry.Polygon,
+        #        List[shapely.geometry.Polygon], shapely.geometry.MultiPolygon]],
+        mask_out_values: Optional[Tuple[int, int]] = (0,1),
+        
+        io_strip_size: int = DEFAULT_IO_STRIP_SIZE,
+        io_strip_size_target: GridRIOMode = GridRIOMode.INPUT,
+        ncpu: int = DEFAULT_NCPU,
+        tile_shape: Optional[Tuple[int, int]] = DEFAULT_TILE_SHAPE,
+        logger: Optional[logging.Logger] = None,
+        ) -> int:
+    """
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+
+    # Init a list to register SharedMemoryArray buffers
+    sma_buffer_name_list = []
+    register_sma = partial(create_and_register_sma,
+            register=sma_buffer_name_list)
+
+    # Get input shape from input grid
+    grid_nrow, grid_ncol = grid_ds.height, grid_ds.width
+    logger.debug(f"Grid shape : {grid_nrow} rows x {grid_ncol} columns")
+    
+    grid_row_ds = grid_ds
+    if grid_col_ds is None:
+        grid_col_ds = grid_ds
+        assert(grid_row_coords_band != grid_col_coords_band)
+    else:
+        # Test shapes are the same
+        assert(grid_nrow == grid_col_ds.height)
+        assert(grid_ncol == grid_col_ds.width)
+    
+    if grid_mask_in_ds is not None:
+        grid_mask_nrow, grid_mask_ncol = grid_mask_in_ds.height, grid_mask_in_ds.width
+        logger.debug(f"Grid mask shape : {grid_mask_nrow} rows x "
+                f"{grid_mask_ncol} columns")
+        logger.debug(f"Grid mask unmasked value : {grid_mask_in_unmasked_value}")
+        assert(grid_nrow == grid_mask_nrow)
+        assert(grid_ncol == grid_mask_ncol)
+        assert(grid_mask_in_unmasked_value is not None)
+        assert(grid_mask_in_unmasked_value >= 0)
+        logger.debug(f"Grid mask dtype : {np.dtype(grid_mask_in_ds.dtypes[grid_mask_in_band-1])}")
+        #assert(np.dtype(grid_mask_in_ds.dtypes[grid_mask_in_band-1]) == np.dtype('uint8'))
+    else:
+        logger.debug(f"Grid mask : no input grid mask")
+    
+    # Cut in strip chunks
+    # io_strip_size is computed for the output grid but it can either be piloted
+    # by setting a target size for the read buffer.
+    if io_strip_size not in [0, None]:
+        if io_strip_size_target == GridRIOMode.INPUT:
+            # We have to take into account the grid's resolution along rows
+            io_strip_size = io_strip_size * resolution[0]
+        elif io_strip_size_target == GridRIOMode.OUTPUT:
+            # The strip_size is directly given for the target output
+            pass
+        else:
+            raise ValueError(f"Not recognized value {io_strip_size_target} for "
+                    "the 'io_strip_size_target' argument")
+        logger.debug(f"Computed strip size (number of rows) : {io_strip_size}")
+    
+    # Compute the full output shape - used if no window
+    full_shape_out = grid_full_resolution_shape(shape=(grid_nrow, grid_ncol),
+            resolution=grid_resolution)
+    logger.debug(f"Computed full output shape : {full_shape_out[0]} rows x {full_shape_out[1]}"
+            " columns")
+    # Create an array profile for full output in order to use window utils
+    full_profile_out = ArrayProfile(shape=full_shape_out, ndim=2, dtype=np.dtype(array_out_ds.dtypes[0]))
+
+    # The window is given in target geometry - if None we set it to full grid
+    # The window contains the first and last index for each axis
+    if window is None:
+        logger.debug("No window given : the full grid is considered as window")
+        window = np.array(((0, full_shape_out[0]-1), (0, full_shape_out[1])))
+    
+    # If the window is given we have to check that it lies in the grid
+    elif not window_check(full_profile_out, window):
+        raise Exception("The given 'window' is outside the grid domain of "
+                    "definition.")
+
+    logger.debug(f"Window : {window}")
+    
+    shape_out = window[:,1] - window[:,0] + 1
+    logger.debug(f"Shape out : {shape_out}")
+
+    # Compute strips definitions
+    # TODO : MAKE SURE HERE THAT GRID CHUNKS COVER AT LEAST 2 ROWS IF RESOLUTION > 1
+    chunk_boundaries = chunks.get_chunk_boundaries(
+                nsize=shape_out[0], chunk_size=io_strip_size, merge_last=False)
+    
+    # First convert chunks to target windows
+    # Please note that the last coordinate in each chunk is not contained
+    # in the chunk (it corresponds to the index), whereas the window 
+    # definition contains index that are in the window
+    # Notes :
+    # - the shape_out corresponds to the production window shape
+    # - we shift the chunk_windows of the window origin 
+    chunk_windows = [np.array([[c0, c1-1], [0, shape_out[1]-1]]) \
+            + window[:,0].reshape(-1, 1) for c0, c1 in chunk_boundaries]
+
+    # Compute the window to read for each chunk window.
+    # This will returns both the window to read, and the relative window
+    # corresponding to the target chunk window.
+    # The `grid_resolution_window_safe` ensures for each dimension where
+    # resolution > 1, that stop - start + 1 >= 2 for the read window.
+    # This is required by the resampling method in order to interpolate the 
+    # grid values.
+    chunk_windows_read = [grid_resolution_window_safe(
+            resolution=grid_resolution, win=chunk_win,
+            grid_shape=(grid_nrow, grid_ncol)) for chunk_win in chunk_windows]
+
+    # Determine the read buffer shape for the grid
+    read_grid_buffer_shape = np.max(np.asarray([window_shape(read_win)
+            for read_win, rel_win in chunk_windows_read]), axis=0)
+    read_grid_buffer_shape3 = np.insert(read_grid_buffer_shape, 0, 2)
+    logger.debug(f"Read grid buffer shape : {read_grid_buffer_shape}")
+    logger.debug(f"Read grid buffer shape 3 : {read_grid_buffer_shape3}")
+    
+    # Create shared memory array for read input grid.
+    sma_r_buffer_grid = register_sma(read_grid_buffer_shape3,
+            grid_row_ds.dtypes[grid_row_coords_band-1])
+    
+    # TO_CHECK
+    # Create shared memory array for mask
+    sma_in_buffer_grid_mask = None
+    if grid_mask_in_ds is not None:
+        sma_in_buffer_grid_mask = register_sma(read_grid_buffer_shape,
+                grid_mask_in_ds.dtypes[grid_mask_in_band-1])
+
+    # Get array profile for input array
+    try:
+        array_src_bands[0]
+    except TypeError:
+        array_src_bands = [array_src_bands]
+    
+    #array_src_profile = ArrayProfile(
+    #        shape=(array_src_ds.height, array_src_ds.width),
+    #        ndim=array_src_ds.count,
+    #        dtype=np.dtype(array_src_ds.dtypes[array_src_bands[0]]))
+
+    # Determine the write buffer shape
+    # The computation is performed using the chunk_windows.
+    # - nrow x ncol : from max full res grid strip size
+    # - ndim : from the number of bands to process
+    write_buffer_shape = np.max(np.asarray([window_shape(chunk_win)
+            for chunk_win in chunk_windows]), axis=0)
+    write_buffer_shape = np.insert(write_buffer_shape, 0, len(array_src_bands))
+    
+    # Create shared memory array for output
+    logger.debug(f"Create write array buffer with shape {write_buffer_shape}")
+    sma_w_array_buffer = register_sma(write_buffer_shape,
+            np.dtype(array_out_ds.dtypes[0]))
+    logger.debug(f"Create write array buffer with shape {write_buffer_shape} DONE")
+
+    # Define here the margins required by interpolation
+    # TODO : make it generic / for now set the 2 margin for bicubic interp
+    margin = np.array(((2, 2), (2, 2)))
+
+    try:
+        for chunk_idx, (chunk_win, (win_read, win_rel)) in enumerate(
+                zip(chunk_windows, chunk_windows_read)):
+            
+            logger.debug(f"Chunk {chunk_idx} - chunk_win: {chunk_win}")
+            
+            # Compute current strip chunk parameters 
+            # - cshape : current strip output buffer shape
+            # - cread_shape : current strip read buffer shape (input mask)
+            # - cread_rows_arr : current strip array containing the read data 
+            #           for the grid rows 
+            # - cread_cols_arr : current strip array containing the read data 
+            #           for the grid columns 
+            # - cread_mask_arr : current strip array containing the read data
+            #           for the input mask if given
+            # - cslices : current strip slices to adress the output buffer whose
+            #       origin corresponds to the origin of the current strip
+            # - cslices_as_win : current strip slices converted to a window
+            # - cslices_write : current strip slice to adress the whole output 
+            #       dataset for IO write operation
+            # - cgeometry_origin : the shifted geometry origin corresponding to
+            #       the strip.
+            cshape = window_shape(chunk_win)
+            cslices = window_indices(chunk_win, reset_origin=True)
+            cslices_as_win = window_from_indices(cslices, cshape)
+            cslices3 = (slice(None, None),) + cslices
+            # Define the target positioning window `cstrip_target_win` to write to 
+            # disk. We have to revert back the shift of the production window.
+            cstrip_target_win = chunk_win - window[:,0].reshape(-1,1)
+            # read the grid data
+            cread_shape = window_shape(win_read)
+            
+            # First row and col grids
+            _ = grid_row_ds.read(grid_row_coords_band,
+                    window = as_rio_window(win_read),
+                    out = sma_r_buffer_grid.array[0, 0:cread_shape[0], 0:cread_shape[1]])
+            
+            _ = grid_col_ds.read(grid_col_coords_band,
+                    window = as_rio_window(win_read),
+                    out = sma_r_buffer_grid.array[1, 0:cread_shape[0], 0:cread_shape[1]])
+
+            cread_grid_arr = sma_r_buffer_grid.array[:, 0:cread_shape[0], 0:cread_shape[1]]
+            assert(cread_grid_arr[0].flags.c_contiguous)
+            assert(cread_grid_arr[1].flags.c_contiguous)
+            
+            # Read the grid mask data if given
+            cread_grid_mask_arr = None
+            if sma_in_buffer_grid_mask is not None:
+                cread_grid_mask_arr = grid_mask_in_ds.read(grid_mask_in_band,
+                        window = as_rio_window(win_read),
+                        out=sma_in_buffer_grid_mask.array[0:cread_shape[0],
+                                0:cread_shape[1]])
+
+            # Shift geometry origin for the strip
+            cgeometry_origin = (geometry_origin[0] + chunk_win[0][0],
+                    geometry_origin[1] + chunk_win[1][0])
+            
+            logger.debug(f"Chunk {chunk_idx} - shape : {cshape}")
+            logger.debug(f"Chunk {chunk_idx} - grid read shape : {cread_shape}")
+            logger.debug(f"Chunk {chunk_idx} - buffer slices : {cslices}")
+            logger.debug(f"Chunk {chunk_idx} - buffer slices as win : {cslices_as_win}")
+            logger.debug(f"Chunk {chunk_idx} - target write window : {cstrip_target_win}")
+            logger.debug(f"Chunk {chunk_idx} - resampling starts...")
+
+            # TO_CHECK
+            #cin_grid_mask = sma_in_buffer_grid_mask.array[0:cread_shape[0], 0:cread_shape[1]]
+            
+            # If no mask is given : set it to 1
+            #cin_grid_mask = None
+            #cin_grid_mask[:,:] = 1
+            # Check against image in dimension - here we will have to take care of origin convention
+            # For now let keep it simple and assume it that 0 is the pixel center (and not 0.5)
+            # TODO : replace by a less memory consuming code : each test expression generate a temporary array
+            
+            # No mask provided – we must at least ensure that addressed
+            # coordinates lie within the domain bounds.
+            # Oversampled grids pose a challenge: masking a single point may
+            # invalidate surrounding interpolated values, which can
+            # unintentionally exclude otherwise valid points.
+            # A better approach is to invalidate only those points outside the
+            # domain that have no valid neighbors within it.
+            
+            # TODO: Implement masking for points outside the domain, ensuring
+            # consistency with the interpolation strategy described above.
+            #if cin_grid_mask is None:
+            #    cin_grid_mask = sma_in_buffer_grid_mask.array[0:cread_shape[0], 0:cread_shape[1]]
+            #    cin_grid_mask[:,:] = 1
+            #    cin_grid_mask[ np.logical_or(
+            #            np.logical_or(cread_grid_arr[0] < 0., cread_grid_arr[0] > array_src_ds.height - 1.),
+            #            np.logical_or(cread_grid_arr[1] < 0., cread_grid_arr[1] > array_src_ds.width - 1.)
+            #            )] = 0
+            #    grid_mask_in_unmasked_value = 1
+            
+
+            if tile_shape is not None:
+                # Cut strip shape into tiled chunks.
+                logger.debug(f"Chunk {chunk_idx} - Tiled processing with tiles of {tile_shape[0]} x "
+                        f"{tile_shape[1]}")
+                        
+                chunk_tiles = chunks.get_chunk_shapes(cshape, tile_shape,
+                        merge_last=False)
+                
+                logger.debug(f"Chunk {chunk_idx} - Number of tiles to process :"
+                        f" {len(chunk_tiles)}")
+                
+                # Init the list of process arguments as 'tasks'
+                tasks = []
+                for ctile in chunk_tiles:
+                    logger.debug(f"Chunk {chunk_idx} - tile {ctile} "
+                            "- preparing args...")
+                    # Compute current strip chunk parameters to pass to the
+                    # 'build_mask_tile_worker' ('build_mask' wrapper) method
+                    # - ctile_origin : the tile origin corresponds here to the
+                    #        coordinates relative to the current strip, ie the
+                    #        first element of each window
+                    # - ctile_win : the window corresponding to the tile (convert
+                    #        the chunk index convention to the window index
+                    #        convention ; with no origin shift) relative to
+                    #        the current chunk
+                    # - ctile_geometry_origin : the shifted geometry origin
+                    #        corresponding to the current tile.
+                    # - ctile_grid_win : the full-resolution window within the 
+                    #       current chunk's grid that corresponds to the active
+                    #       tile.
+                    ctile_origin = chunk_win[..., 0]
+                    ctile_win = window_from_chunk(chunk=ctile, origin=None)
+                    ctile_geometry_origin = (cgeometry_origin[0] + ctile_win[0][0],
+                            cgeometry_origin[1] + ctile_win[1][0])
+                                                
+                    # Calculate the full-resolution window within the current
+                    # chunk's grid that corresponds to the active tile. The tile
+                    # window (`ctile_win`) is relative to the current chunk; 
+                    # therefore, we apply a relative shift (`win_rel`) to 
+                    # `ctile_win` to obtain the window aligned with the chunk's 
+                    # grid array, suitable for `basic_grid_resampling_array`.
+                    ctile_grid_win = window_shift(ctile_win, np.asarray(win_rel[:,0]))
+                                        
+                    logger.debug(f"Chunk {chunk_idx} - tile {ctile} - "
+                            f"tile's chunk origin : {ctile_origin}")
+                    logger.debug(f"Chunk {chunk_idx} - tile {ctile} - "
+                            f"tile window : {ctile_win}")
+                    logger.debug(f"Chunk {chunk_idx} - tile {ctile} - "
+                            f"tile full-resolution window within the chunk's "
+                            f"grid : {ctile_grid_win}")
+                    
+                    basic_grid_resampling_array(
+                            grid_arr=cread_grid_arr,
+                            grid_arr_shape=cread_shape,
+                            grid_resolution=grid_resolution,
+                            grid_nodata=None, # TODO
+                            grid_mask_arr=cread_grid_mask_arr,
+                            grid_mask_in_unmasked_value=grid_mask_in_unmasked_value,
+                            array_src_ds=array_src_ds,
+                            array_src_bands=array_src_bands,
+                            array_src_mask_ds=None, #TODO
+                            array_src_mask_band=None, #TODO
+                            oversampled_grid_win=ctile_grid_win,
+                            margin=margin,
+                            sma_out_buffer=sma_w_array_buffer,
+                            out_win=ctile_win,
+                            nodata_out=nodata_out,
+                            logger_msg_prefix=f"Chunk {chunk_idx} - tile {ctile} - ",
+                            logger=logger,
+                            )
+
+            else:
+                # Resampling on full strip - no tiling
+                logger.debug(f"Chunk {chunk_idx} - Full strip computation "
+                        "(no tiling)")
+
+                basic_grid_resampling_array(
+                        grid_arr=cread_grid_arr,
+                        grid_arr_shape=cread_shape,
+                        grid_resolution=grid_resolution,
+                        grid_nodata=None, # TODO
+                        grid_mask_arr=cread_grid_mask_arr,
+                        grid_mask_in_unmasked_value=grid_mask_in_unmasked_value,
+                        array_src_ds=array_src_ds,
+                        array_src_bands=array_src_bands,
+                        array_src_mask_ds=None, #TODO
+                        array_src_mask_band=None, #TODO
+                        oversampled_grid_win=win_rel,
+                        margin=margin,
+                        sma_out_buffer=sma_w_array_buffer,
+                        out_win=cslices_as_win,
+                        nodata_out=nodata_out,
+                        logger_msg_prefix=f"Chunk {chunk_idx} - ",
+                        logger=logger,
+                        )
+                
+            # Write full chunk at once
+            logger.debug(f"Chunk {chunk_idx} - write for full strip...")
+            array_out_ds.write(sma_w_array_buffer.array[cslices3],
+                    window=as_rio_window(cstrip_target_win))
+
+            logger.debug(f"Chunk {chunk_idx} - write ends.")
+                
+            # Set mask to no valid
+            if mask_out_ds is not None:
+                raise NotImplementedError
+
+
+    except:
+        raise
+
+    finally:
+        # Release the Shared memory buffer
+        SharedMemoryArray.clear_buffers(sma_buffer_name_list)
+    
+    return 1
+    
+
+
+image = mandrill[0]
+grid_dtype = np.float64
+data_in_dtype = np.float64
+data_out_dtype = np.float64
+
+array_in = image.astype(data_in_dtype)
+
+logging.basicConfig(level=logging.DEBUG)
+rasterio_logger = logging.getLogger('rasterio')
+rasterio_logger.setLevel(logging.INFO)
+mpl_logger = logging.getLogger('matplotlib')
+mpl_logger.setLevel(logging.INFO)
+pil_logger = logging.getLogger('PIL')
+pil_logger.setLevel(logging.INFO)
+
+def create_grid(nrow, ncol, origin_pos, origin_node, v_row_y, v_row_x, v_col_y, v_col_x):
+    """
+    """
+    x = np.arange(0, ncol, dtype=grid_dtype)
+    y = np.arange(0, nrow, dtype=grid_dtype)
+    xx, yy = np.meshgrid(x, y)
+    print(nrow, xx.shape[0])
+    print(xx)
+
+    xx -= origin_pos[0]
+    yy -= origin_pos[1]
+
+    yyy = origin_node[0] + yy * v_row_y + xx * v_col_y
+    xxx = origin_node[1] + yy * v_row_x + xx * v_col_x
+
+    return yyy, xxx
+
+def plot_grid(grid_row, grid_col, grid_resolution, array_shape, mask=None, win=None, raster_image=None):
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Rectangle
+    
+    plt.figure(figsize=(20, 20))
+    
+        # Afficher l'image raster en arrière-plan si fournie
+    if raster_image is not None:
+        # L'étendue (extent) de l'image est cruciale pour la faire correspondre aux coordonnées.
+        # [xmin, xmax, ymin, ymax]
+        # Ici, x correspond aux colonnes (grid_col) et y aux lignes (grid_row)
+        # plt.gca().invert_yaxis() est utilisé plus tard, donc ymax sera la première ligne (0)
+        # et ymin sera la dernière ligne (array_shape[0] - 1)
+        plt.imshow(raster_image, cmap='gray', alpha=0.5,
+                   extent=[0, array_shape[1], array_shape[0], 0]) # extent = [left, right, bottom, top]
+                                                                  # Notez l'ordre pour y : bottom (max row) puis top (min row)
+                                                                  # en raison de invert_yaxis()
+                                                                  # C'est parce que imshow affiche l'origine en haut à gauche par défaut.
+
+    if win is not None:
+        target_win, _ = oversample_regular_grid(
+            grid = np.array((grid_row, grid_col)),
+            grid_oversampling_row = grid_resolution[0],
+            grid_oversampling_col = grid_resolution[1],
+            grid_mask = None,
+            win = win,
+            )
+        
+        top = list(zip(target_win[0][0,:], target_win[1][0,:]))
+        right = list(zip(target_win[0][:,-1], target_win[1][:,-1]))
+        bottom = list(zip(target_win[0][-1,:][::-1], target_win[1][-1,:][::-1]))
+        left = list(zip(target_win[0][:,0][::-1], target_win[1][:,0][::-1]))
+        win_contour = top + right + bottom + left
+        plt.plot([v[1] for v in win_contour], [v[0] for v in win_contour], linestyle='--', linewidth=1., color='green')
+        
+        #window_height=win[0][1] - win[0][0] + 1
+        #window_width=win[1][1] - win[1][0] + 1
+        #rect = Rectangle(
+        #    (win[0][0], win[1][0]),  # coin inférieur gauche
+        #    window_width,                  # largeur
+        #    window_height,                 # hauteur
+        #    linewidth=0.5,
+        #    edgecolor='red',
+        #    facecolor='none',
+        #    linestyle='--'
+        #)
+        #plt.gca().add_patch(rect)
+    
+    # Afficher les lignes horizontales
+    for i in range(grid_row.shape[0]):
+        plt.plot(grid_col[i], grid_row[i], color="blue", linestyle='-', alpha=0.2)
+    
+    # Afficher les lignes verticales
+    for j in range(grid_row.shape[1]):
+         plt.plot(grid_col[:,j], grid_row[:,j], color="blue", linestyle='-', alpha=0.2)
+    
+
+    if mask is not None:
+        masked_index = np.where(grid_mask==0)
+        non_masked_index = np.where(grid_mask==1)
+        out_of_bounds_index = np.where(np.logical_or(
+                         np.logical_or(grid_row < 0., grid_row > array_shape[0] - 1.),
+                         np.logical_or(grid_col < 0., grid_col > array_shape[1] - 1.)
+                        ))
+        plt.scatter(grid_col[masked_index].reshape(-1), grid_row[masked_index].reshape(-1), color="red", s=8, alpha=0.5)
+        plt.scatter(grid_col[out_of_bounds_index].reshape(-1), grid_row[out_of_bounds_index].reshape(-1), color="orange", s=8, alpha=0.9)
+        plt.scatter(grid_col[non_masked_index].reshape(-1), grid_row[non_masked_index].reshape(-1), color="blue", s=8, alpha=0.5)
+    else:
+        plt.scatter(grid_col.reshape(-1), grid_row.reshape(-1), color="blue", s=4, alpha=0.5)
+        
+    
+    # Ajouter des labels pour les axes
+    plt.xlabel('Columns')
+    plt.ylabel('Rows')
+
+    
+
+    # Ajuster l'axe des X et des Y pour mieux voir le quadrillage
+    plt.xlim(np.min(grid_col)-1, np.max(grid_col)+1)
+    plt.ylim(np.min(grid_row)-1, np.max(grid_row)+1)
+    
+    # Ajouter un titre
+    plt.title("Grid Display")
+    
+    # Afficher le quadrillage
+    #plt.grid(True)
+    
+    # Afficher le plot
+    plt.gca().invert_yaxis()
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.show()
+
+def plot_image(path):
+    import matplotlib.pyplot as plt
+
+    with rasterio.open(path) as ds:
+        raster_image = ds.read(1)
+    print(raster_image)
+    array_shape = raster_image.shape
+    plt.imshow(raster_image, cmap='gray', alpha=1,
+                   extent=[0, array_shape[1], 0, array_shape[0]]) 
+    #plt.gca().invert_yaxis()
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.show()
+
+    
+def plot_grid_w_edges(grid_row, grid_col, tiles_row, tiles_col, win=None):
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Rectangle
+    
+    plt.figure(figsize=(20, 20))
+
+    if win is not None:
+        window_height=win[0][1] - win[0][0] + 1
+        window_width=win[1][1] - win[1][0] + 1
+        rect = Rectangle(
+            (win[0][0], win[1][0]),  # coin inférieur gauche
+            window_width,                  # largeur
+            window_height,                 # hauteur
+            linewidth=0.5,
+            edgecolor='red',
+            facecolor='none',
+            linestyle='--'
+        )
+        plt.gca().add_patch(rect)
+    
+    # Afficher les lignes horizontales
+    for i in range(grid_row.shape[0]):
+        plt.plot(grid_col[i], grid_row[i], color="blue", linestyle='-', alpha=0.2)
+    
+    # Afficher les lignes verticales
+    for j in range(grid_row.shape[1]):
+         plt.plot(grid_col[:,j], grid_row[:,j], color="blue", linestyle='-', alpha=0.2)
+    
+    plt.scatter(grid_col.reshape(-1), grid_row.reshape(-1), s=3, alpha=0.5)
+
+    # Afficher les bords
+    tiles_edges_row_idx, tiles_edges_col_idx, tiles_edges_row_h, tiles_edges_row_v = tiles_row
+    _, _, tiles_edges_col_h, tiles_edges_col_v = tiles_col
+    _
+    for i in range(len(tiles_edges_row_idx)):
+        plt.plot(tiles_edges_col_h[i], tiles_edges_row_h[i], color="green", linewidth=2, linestyle='-', alpha=0.7)
+        
+    for i in range(len(tiles_edges_col_idx)):
+        plt.plot(tiles_edges_col_v[i], tiles_edges_row_v[i], color="green", linewidth=2, linestyle='-', alpha=0.7)
+    
+    # Ajouter des labels pour les axes
+    plt.xlabel('Columns')
+    plt.ylabel('Rows')
+
+    # Ajuster l'axe des X et des Y pour mieux voir le quadrillage
+    plt.xlim(np.min(grid_col)-1, np.max(grid_col)+1)
+    plt.ylim(np.min(grid_row)-1, np.max(grid_row)+1)
+    
+    # Ajouter un titre
+    plt.title("Grid Display")
+    
+    # Afficher le quadrillage
+    #plt.grid(True)
+    
+    # Afficher le plot
+    plt.gca().invert_yaxis()
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.show()
+
+print("init data...")
+nrow = 50
+ncol = 40
+origin_pos = np.array((0.3,0.2))
+origin_node = np.array((0., 0.))
+v_row_y = 5.2
+v_row_x = 1.2
+v_col_y = -2.7
+v_col_x = 7.1
+grid_row, grid_col = create_grid(nrow, ncol, origin_pos, origin_node, v_row_y, v_row_x, v_col_y, v_col_x)
+roi = np.array(((10,40),(5,100)))
+grid_mask = np.ones(grid_row.shape, dtype=np.uint8)
+grid_mask[np.logical_and(np.logical_and(grid_row >= roi[0][0], grid_row <= roi[0][1]), np.logical_and(grid_col >= roi[1][0], grid_col <= roi[1][1]))] = 0
+
+
+
+# write grid on disk
+grid_path = "./my_grid.tif"
+with rasterio.open(grid_path, "w",
+                        driver="GTiff",
+                        dtype=grid_row.dtype,
+                        height=grid_row.shape[0],
+                        width=grid_row.shape[1],
+                        count=2,
+                        #nbits=1, => not working for int8 (only for uint8)
+                        ) as grid_out_ds:
+    grid_out_ds.write(grid_row, 1)
+    grid_out_ds.write(grid_col, 2)
+    grid_out_ds = None
+    
+# write grid on disk
+grid_mask_path = "./my_grid_mask.tif"
+with rasterio.open(grid_mask_path, "w",
+                        driver="GTiff",
+                        dtype=grid_mask.dtype,
+                        height=grid_mask.shape[0],
+                        width=grid_mask.shape[1],
+                        count=1,
+                        nbits=1, #=> not working for int8 (only for uint8)
+                        ) as grid_mask_out_ds:
+    grid_mask_out_ds.write(grid_mask, 1)
+    grid_mask_out_ds = None
+
+# write array_in on disk
+array_in_path = "./image_in.tif"
+with rasterio.open(array_in_path, "w",
+                        driver="GTiff",
+                        dtype=mandrill.dtype,
+                        height=mandrill.shape[1],
+                        width=mandrill.shape[2],
+                        count=mandrill.shape[0],
+                        #nbits=1, => not working for int8 (only for uint8)
+                        ) as array_in_ds:
+    array_in_ds.write(mandrill[0], 1)
+    array_in_ds.write(mandrill[1], 2)
+    array_in_ds.write(mandrill[2], 3)
+    array_in_ds = None
+    
+grid_in_ds = rasterio.open(grid_path, "r")
+grid_in_col_ds = grid_in_ds
+array_src_ds = rasterio.open(array_in_path, "r")
+F=100
+oversampling_row, oversampling_col = (10*F, 10*F)
+
+full_output_shape = grid_full_resolution_shape(shape=(grid_in_ds.height, grid_in_ds.width), resolution= (oversampling_row, oversampling_col))
+print("grid in shape", (grid_in_ds.height, grid_in_ds.width))
+print("full window output_shape", full_output_shape)
+
+# window in output geometry
+window = np.array(((100, 400), (0, 300)), dtype=np.int32) * F
+if window is None:
+    window = np.array(((0, full_output_shape[0]), (0, full_output_shape[1])))
+output_shape = window[:,1] - window[:,0] + 1
+print("output_shape", output_shape)
+
+
+grid_resolution = (oversampling_row, oversampling_col)
+
+if False:
+    plot_grid(grid_row, grid_col, grid_resolution, (mandrill.shape[1], mandrill.shape[2]) ,grid_mask, win=window, raster_image=mandrill[0])
+
+computation_dtype = np.float64
+output_dtype = np.float64
+bands = [1, 2, 3]
+array_out_path = "./coding_basic_grid_resampling_chain_array_out.tif"
+array_out_path_validate = "./coding_basic_grid_resampling_chain_array_out_validate.tif"
+#array_out_ds = 
+
+grid_mask_in_ds = rasterio.open(grid_mask_path, "r")
+grid_mask_in_band = 1
+grid_mask_in_unmasked_value = 1
+
+print("basic_grid_resampling_chain...")
+
+import datetime
+start_date = datetime.datetime.now()
+
+with rasterio.open(array_out_path, "w",  driver="GTiff", dtype=output_dtype, height=output_shape[0], width=output_shape[1], count=len(bands)) as array_out_ds:
+
+    basic_grid_resampling_chain(
+        grid_ds = grid_in_ds,
+        grid_col_ds = grid_in_col_ds,
+        grid_row_coords_band = 1,
+        grid_col_coords_band = 2,
+        grid_resolution = grid_resolution,
+        array_src_ds = array_src_ds,
+        array_src_bands = bands,
+        array_out_ds = array_out_ds,
+        interp = "bicubic",
+        nodata_out = 0,
+        window = window,
+        mask_out_ds = None,
+        mask_out_dtype = None,
+        grid_mask_in_ds = grid_mask_in_ds,
+        grid_mask_in_unmasked_value = grid_mask_in_unmasked_value,
+        grid_mask_in_band = grid_mask_in_band,
+        computation_dtype = computation_dtype,
+        geometry_origin = (0, 0),
+        #geometry = None,
+        mask_out_values = (0,1),
+        io_strip_size = 75*F, #10000,
+        io_strip_size_target = GridRIOMode.OUTPUT,
+        #tile_shape = (50, 180),
+        tile_shape = None,
+    )
+
+end_date = datetime.datetime.now()
+
+print(f"start {start_date}")
+print(f"end {end_date}")
+print(f"duration {(end_date - start_date).total_seconds()} sec")
+
+plot_image(path=array_out_path)
+
+
+start_date = datetime.datetime.now()
+out_validate = array_grid_resampling(
+                            array_in = array_src_ds.read(1).astype(np.float64),
+                            grid_row = grid_in_ds.read(1),
+                            grid_col = grid_in_ds.read(2),
+                            grid_resolution = grid_resolution,
+                            array_out = None,
+                            array_out_win = None, # gives the 2d window corresponding to the cslices
+                            nodata_out = 0, #: [Union[int, float]] = 0,
+                            array_in_origin = None,
+                            win = window, #: Optional[np.ndarray] = None,
+                            array_in_mask = None, # TODO : Optional[np.ndarray] = None,
+                            grid_mask = grid_mask_in_ds.read(1), # TO CHECK: Optional[np.ndarray] = None,
+                            grid_mask_valid_value = grid_mask_in_unmasked_value, #: Optional[int] = 1,
+                            grid_nodata = None, # TODO : manage grid_nodata input
+                            array_out_mask = None, #TODO: Optional[np.ndarray] = None,
+                            )
+with rasterio.open(array_out_path_validate, "w",  driver="GTiff", dtype=out_validate.dtype, height=out_validate.shape[0], width=out_validate.shape[1], count=out_validate.ndim) as array_out_validate_ds:
+    array_out_validate_ds.write(out_validate, 1)
+
+end_date = datetime.datetime.now()
+
+print(f"start validate {start_date}")
+print(f"end validate {end_date}")
+print(f"duration validate {(end_date - start_date).total_seconds()} sec")
+
+#plot_image(path=array_out_path_validate)

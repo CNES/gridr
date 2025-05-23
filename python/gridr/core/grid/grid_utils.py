@@ -9,7 +9,7 @@
 """
 Grid utils module
 """
-from typing import Tuple, Union, Optional
+from typing import Tuple, Union, Optional, NoReturn
 
 import numpy as np
 from rasterio.features import rasterize
@@ -20,6 +20,168 @@ from scipy.interpolate import RegularGridInterpolator
 from gridr.core.utils.array_window import (window_check, window_apply,
         window_shape, window_expand_ndim)
 from gridr.core.utils.array_utils import ArrayProfile
+
+from gridr.cdylib import (
+        PyArrayWindow2,
+        PyGridGeometriesMetricsF64,
+        py_array1_compute_resampling_grid_geometries_f64_f64,
+        )
+
+F64_F64 = (np.dtype('float64'), np.dtype('float64'))
+
+# The first element in the tuple key represents the type used for
+# PyGridGeometriesMetricsF64 members. Only float64 is considered by now.
+PY_ARRAY_COMPUTE_RESAMPLING_GRID_GEOMETRIES_FUNC = {
+    F64_F64: py_array1_compute_resampling_grid_geometries_f64_f64,
+}
+
+def array_compute_resampling_grid_geometries(
+        grid_row: np.ndarray,
+        grid_col: np.ndarray,
+        grid_resolution: Tuple[int, int],
+        win: Optional[np.ndarray] = None,
+        grid_mask: Optional[np.ndarray] = None,
+        grid_mask_valid_value: Optional[int] = 1,
+        grid_nodata: Optional[float] = None,
+        ) -> Union[PyGridGeometriesMetricsF64, None]:
+    """
+    Computes resampling grid geometries metrics from given row and column grids.
+
+    This function analyzes the validity of grid points (nodes) along rows and
+    columns to determine bounding boxes and transition matrix for resampling
+    operations on grids. It returns detailed information about the source and
+    destination grid bounds, as well as the transition matrix describing the
+    linear transformation between source and destination grids.
+
+    This method wraps a Rust function 
+    (`py_array1_compute_resampling_grid_geometries_f64_f64`) for grid metrics
+    computation.
+
+    Args:
+    -----
+        grid_row : np.ndarray
+            A 2D array representing the row coordinates of the target grid, with
+            the same shape as `grid_col`. The coordinates target row positions 
+            in the `array_in` input array.
+
+        grid_col : np.ndarray
+            A 2D array representing the column coordinates of the target grid,
+            with the same shape as `grid_row`. The coordinates target column
+            positions in the `array_in` input array.
+
+        grid_resolution : Tuple[int, int]
+            A tuple specifying the oversampling factor for the grid for rows and
+            columns. The resolution value of 1 represents full resolution, and
+            higher values indicate lower resolution grids.
+
+        win : Optional[np.ndarray], default None
+            A window (or sub-region) of the grid to limit the computation to a
+            specific target region. The window is defined as a list of tuples
+            containing the first and last indices for each dimension.
+            If `None`, the entire grid is processed.
+
+        grid_mask : Optional[np.ndarray], default None
+            An optional integer mask array for the grid. Grid cells
+            corresponding to `grid_mask_valid_value` are considered **valid**;
+            all other values indicate **invalid** cells and will `nodata_out` in
+            the output array.
+            If not provided, the entire grid is considered valid.
+            The grid mask must have the same shape as `grid_row` and `grid_col`.
+        
+        grid_mask_valid_value: Optional[int], default None
+            The value in `grid_mask` that designates a **valid** grid cell.
+            All values in `grid_mask` that differ from this will be treated as
+            **invalid**.  
+            This parameter is required if `grid_mask` is provided.
+        
+        grid_nodata: Optional[float], default None
+            The value in `grid_row` and `grid_col` to consider as **invalid**
+            cells.
+            Please note this option is exclusive with the `grid_mask`. The
+            exclusivity is managed within the bound core method.
+
+    Returns:
+    --------
+    PyGridGeometriesMetricsF64
+        A structure containing computed metrics.
+
+    Raises:
+    -------
+    Exception
+        If the `py_array1_compute_resampling_grid_geometries_f64_*` function is
+        not available for the provided input types.
+
+    Limitations:
+    ------------
+    - The method assumes that all input arrays (`grid_row`, `grid_col`, etc.)
+      are C-contiguous. If any of them are not, the method may raise an
+      assertion error.
+    - The method assumes that the grid related arrays (`grid_row`, `grid_col`, 
+      `grid_mask`) have the same shapes. Mismatched shapes between `grid_row`,
+      `grid_col`, and `grid_mask` will raise an assertion error.
+    - The `win` parameter, if provided, must be compatible with the grid shape. 
+      If `win` exceeds the bounds of the grid, an error may occur.
+    - The method does not handle invalid or missing values in the input arrays
+      or masks. 
+      Users are responsible for ensuring that any invalid or missing data is
+      appropriately handled before calling the method.
+
+    Notes:
+    ------
+    - This method serves as a preprocessing step prior to resampling raster-like
+      data onto a target coordinate grid. The resulting transition matrix
+      facilitates effective anti-aliasing management.
+    - The computed source bounds are intended to restrict the read window of the
+      input raster, optimizing data access. Similarly, the destination bounds 
+      define the output grid window, preventing unnecessary processing of nodata
+      regions.
+    - The method is designed to support tiled processing workflows by accepting 
+      an optional window parameter, enabling integration within tile-based
+      operations.
+    """
+    ret = None
+    assert(grid_row.flags.c_contiguous is True)
+    assert(grid_col.flags.c_contiguous is True)
+    
+    assert(np.all(grid_row.shape == grid_col.shape))
+    assert(len(grid_row.shape) == 2)
+    grid_shape = grid_row.shape
+    grid_row = grid_row.reshape(-1)
+    grid_col = grid_col.reshape(-1)
+    
+    py_grid_win = None
+    if win is not None:
+        py_grid_win = PyArrayWindow2(start_row=win[0][0], end_row=win[0][1],
+                start_col=win[1][0], end_col=win[1][1])
+    
+    func_types = (np.dtype('float64'), grid_row.dtype)
+        
+    # Manage grid_mask
+    if grid_mask is not None:
+        # grid mask must be c-contiguous
+        assert(grid_mask.flags.c_contiguous is True)
+        # grid mask must be encoded as unsigned 8 bits integer
+        assert(grid_mask.dtype == np.dtype('uint8'))
+        # grid mask shape must be the same has the grids
+        assert(np.all(grid_mask.shape == grid_shape))
+        # Lets flat the grid mask view
+        grid_mask = grid_mask.reshape(-1)
+        
+    try:
+        func = PY_ARRAY_COMPUTE_RESAMPLING_GRID_GEOMETRIES_FUNC[func_types]
+    except KeyError:
+        raise Exception("py_array1_compute_resampling_grid_geometries_ function"
+                f" not available for types {func_types}")
+    else:
+        ret = func( grid_row=grid_row,
+                grid_col=grid_col,
+                grid_shape=grid_shape,
+                grid_resolution=grid_resolution,
+                grid_mask=grid_mask,
+                grid_mask_valid_value=grid_mask_valid_value,
+                grid_nodata=grid_nodata,
+                grid_win=py_grid_win,)
+    return ret
 
 
 def interpolate_grid(

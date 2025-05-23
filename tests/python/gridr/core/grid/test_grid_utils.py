@@ -20,6 +20,7 @@ from scipy.interpolate import RegularGridInterpolator
 import shapely
 
 from gridr.core.grid.grid_utils import (
+        array_compute_resampling_grid_geometries,
         interpolate_grid,
         oversample_regular_grid,
         build_grid,
@@ -162,9 +163,99 @@ GRID_OUT_ARRAY_x100 = np.stack((GRID_OUT_ARRAY_ROW_x100, GRID_OUT_ARRAY_COL_x100
 assert(np.all(GRID_OUT_ARRAY_x100[:,::RESOLUTION_x100[0],::RESOLUTION_x100[1]].shape == GRID_IN_ARRAY_x100.shape))
 np.testing.assert_array_equal(GRID_OUT_ARRAY_x100[:,::RESOLUTION_x100[0],::RESOLUTION_x100[1]], GRID_IN_ARRAY_x100)
 
+# Test data for array_compute_resampling_grid_geometries
+GRIDx03_GEN_ROW_VEC = np.array((0., 1.))
+GRIDx03_GEN_COL_VEC = np.array((3., 0.))
+GRIDx03_GEN_ORIGIN = np.array((100., 200.))
+# Create index grids
+GRIDx03_ROWS_r4_c3, GRIDx03_COLS_r4_c3 = np.meshgrid(
+        np.arange(4, dtype=np.float64),
+        np.arange(3, dtype=np.float64),
+        indexing='ij')
+GRIDx03_r4_c3 = np.array(
+        (GRIDx03_GEN_ORIGIN[1] + GRIDx03_ROWS_r4_c3 * GRIDx03_GEN_ROW_VEC[1] + GRIDx03_COLS_r4_c3 * GRIDx03_GEN_COL_VEC[1],
+        GRIDx03_GEN_ORIGIN[0] + GRIDx03_ROWS_r4_c3 * GRIDx03_GEN_ROW_VEC[0] + GRIDx03_COLS_r4_c3 * GRIDx03_GEN_COL_VEC[0]))
+GRIDMASKx03_r4_c3_FULL_ZEROS = np.zeros(GRIDx03_r4_c3[0].shape, dtype=np.uint8)
+GRIDMASKx03_r4_c3_FULL_ONES = np.ones(GRIDx03_r4_c3[0].shape, dtype=np.uint8)
+GRIDMASKx03_r4_c3_ONE_ONE = np.zeros(GRIDx03_r4_c3[0].shape, dtype=np.uint8)
+GRIDMASKx03_r4_c3_ONE_ONE[1,1] = 1
+
 class TestGridUtils:
     """Test class"""
     
+    @pytest.mark.parametrize("data, expected, testing_decimal", [
+            ((GRIDx03_r4_c3, (1, 1), None, None, None, None), (object, GRIDx03_GEN_COL_VEC, GRIDx03_GEN_ROW_VEC), 6),
+            ((GRIDx03_r4_c3, (2, 3), None, None, None, None), (object, GRIDx03_GEN_COL_VEC/3., GRIDx03_GEN_ROW_VEC/2.), 6),
+            ((GRIDx03_r4_c3, (1, 1), GRIDMASKx03_r4_c3_FULL_ZEROS, 1, None, None), (None, None, None), 6),
+            ((GRIDx03_r4_c3, (1, 1), GRIDMASKx03_r4_c3_FULL_ONES, 1, None, None), (object, GRIDx03_GEN_COL_VEC, GRIDx03_GEN_ROW_VEC), 6),
+            ((GRIDx03_r4_c3, (1, 1), GRIDMASKx03_r4_c3_ONE_ONE, 1, None, None), (object, None, None), 6),
+            ((GRIDx03_r4_c3, (1, 1), GRIDMASKx03_r4_c3_FULL_ONES, 1, -999., None), (Exception, None, None), 6), # excluse mask parameters
+            ((GRIDx03_r4_c3, (1, 1), GRIDMASKx03_r4_c3_FULL_ONES.astype(np.float32), 1, None, None), (Exception, None, None), 6), # mask type
+            ((GRIDx03_r4_c3.astype(np.float32), (1, 1), None, 1, None, None), (Exception, None, None), 6), # grid type
+            ((GRIDx03_r4_c3, (1, 1), None, 1, None, np.array(((0,3),(0,2)))), (object, GRIDx03_GEN_COL_VEC, GRIDx03_GEN_ROW_VEC), 6), # check the full window
+            ((GRIDx03_r4_c3, (1, 1), None, 1, None, np.array(((0,4),(0,2)))), (ValueError, None, None), 6), # check out of bounds window
+            ((GRIDx03_r4_c3, (1, 1), None, 1, None, np.array(((0,0),(0,0)))), (object, None, None), 6), # check empty window => w1 and w2 cannot be computed
+            ])
+    def test_array_compute_resampling_grid_geometries(self, data, expected, testing_decimal):
+        """Test a regular grid interpolation with mask
+        
+        Args:
+            data : input data as a tuple (grid, resolution, mask, mask_value, mask_nodata, window)
+            expected: expected data as a tuple containing :
+                    - expected_grid_metrics indicator : None or True or Exception
+                    - the expected w1 vector
+                    - the expected w2 vector
+            testing_decimal: decimal precision used for np.testing.assert_array_almost_equal
+        """
+        # data : (grid, resolution, mask, mask_value, mask_nodata, window)
+        # expected : (grid_metrics (object or None), transition_matrix_w1, transition_matrix_w2)
+        grid, resolution, grid_mask, grid_mask_valid_value, grid_nodata, window = data
+        expected_grid_metrics, expected_w1, expected_w2 = expected
+        
+        try:
+            grid_metrics = array_compute_resampling_grid_geometries(
+                grid_row=grid[0],
+                grid_col=grid[1],
+                grid_resolution=resolution,
+                win = window,
+                grid_mask = grid_mask,
+                grid_mask_valid_value = grid_mask_valid_value,
+                grid_nodata = grid_nodata,)
+        except Exception as e:
+            try:
+                if issubclass(expected_grid_metrics, Exception):
+                    # its ok but do not go further
+                    return
+                else:
+                    raise e
+            except TypeError:
+                raise e
+        else:
+            try:
+                if issubclass(expected_grid_metrics, Exception):
+                    raise Exception("Should have raised an exception")
+            except TypeError:
+                pass
+        
+        # Check
+        if grid_metrics is not None and expected_grid_metrics is None:
+            raise Exception("Grid metrics must have be None")
+        if grid_metrics is None and expected_grid_metrics is not None:
+            raise Exception("Grid metrics must not be None")
+        else:
+            return
+            
+        if expected_w1 is not None:
+            np.testing.assert_array_almost_equal(expected_w1, grid_metrics.transition_matrix.w1, decimal=testing_decimal)
+        else:
+            assert(grid_metrics.transition_matrix.w1 is None)
+            
+        if expected_w2 is not None:
+            np.testing.assert_array_almost_equal(expected_w2, grid_metrics.transition_matrix.w2, decimal=testing_decimal)
+        else:
+            assert(grid_metrics.transition_matrix.w2 is None)
+
+
     @pytest.mark.parametrize("data, expected, testing_decimal", [
             ((GRIDx00_r4_c3, None), ((5, 2), GRIDx00_r4_c3_or5_oc2, (None, 0)), 6),
             ((GRIDx00_r4_c3, GRIDMASKx00_r4_c3), ((5, 2), GRIDx00_r4_c3_or5_oc2, GRIDMASKx00_r4_c3_or5_oc2), 6),
