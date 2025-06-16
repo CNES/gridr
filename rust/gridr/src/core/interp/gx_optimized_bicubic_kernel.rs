@@ -99,6 +99,410 @@ pub struct GxOptimizedBicubicInterpolator {
     kernel_col_size: usize,
 }
 
+impl GxOptimizedBicubicInterpolator {
+    #[inline(always)]
+    fn interpolate_nomask_unchecked<T, V>(
+        &self,
+        weights_row: &[f64],
+        weights_col: &[f64],
+        array_in: &GxArrayView<'_, T>,
+        array_out: &mut GxArrayViewMut<'_, V>,
+        out_idx: usize,
+        row_c: i64, 
+        col_c: i64,
+        )
+    where
+        T: Copy + std::ops::Mul<f64, Output=f64> + Into<f64>,
+        V: Copy + From<f64>
+    {
+        let ncol = array_in.ncol;
+        let array_in_var_size = array_in.nrow * ncol;
+        let array_out_var_size = array_out.nrow * array_out.ncol;
+        let mut arr_irow: usize;
+        let mut arr_icol: usize;
+        let mut arr_iflat: usize;
+        let mut computed: f64;
+        let mut computed_col: f64;
+        let mut array_in_var_shift: usize;
+        let mut array_out_var_shift: usize;
+        
+        // Loop on multipe variables in input array.
+        for ivar in 0..array_in.nvar {
+            computed = 0.0;
+            array_in_var_shift = ivar * array_in_var_size;
+            array_out_var_shift = ivar * array_out_var_size;
+            
+            for irow in 0..=4 {
+                computed_col = 0.0;
+                arr_irow = (row_c + irow - 2) as usize;
+                
+                for icol in 0..=4 {
+                    arr_icol = (col_c + icol - 2) as usize;
+                    
+                    // flat 1d index computation
+                    arr_iflat = array_in_var_shift + arr_irow * ncol + arr_icol;
+                    // add current weighted product
+                    computed_col += array_in.data[arr_iflat] * weights_col[4 - icol as usize];
+                }
+                computed += weights_row[4 - irow as usize] * computed_col;
+            }
+            // Write interpolated value to output buffer
+            array_out.data[out_idx + array_out_var_shift] = V::from(computed);
+        }
+    }
+    
+    /// Performs 2D interpolation without a validity mask, using a 5×5 weight window.
+    ///
+    /// This method computes an interpolated value at a given center coordinate `(row_c, col_c)`
+    /// using separable row and column weights. It processes all variable planes simultaneously.
+    ///
+    /// If any weight in the 5×5 window is non-zero and refers to a location outside the bounds
+    /// of `array_in`, then no interpolation is performed and the corresponding output values
+    /// (for all variables) are set to `nodata`.
+    ///
+    /// # Parameters
+    /// - `weights_row`: Row interpolation weights (length 5).
+    /// - `weights_col`: Column interpolation weights (length 5).
+    /// - `array_in`: Input array view (with `nvar` planes).
+    /// - `array_out`: Output array view (with `nvar` planes), must be pre-allocated.
+    /// - `out_idx`: Flat output index for the pixel to write to (same across all variables).
+    /// - `row_c`: Center row coordinate for interpolation (integer).
+    /// - `col_c`: Center column coordinate for interpolation (integer).
+    /// - `nodata`: Value to assign in the output if the interpolation would access out-of-bounds data.
+    ///
+    /// # Type Parameters
+    /// - `T`: Input scalar type (must support multiplication by `f64` and `Into<f64>`).
+    /// - `V`: Output scalar type (must support conversion from `f64` and equality testing).
+    #[inline(always)]
+    fn interpolate_nomask_partial<T, V>(
+        &self,
+        weights_row: &[f64],
+        weights_col: &[f64],
+        array_in: &GxArrayView<'_, T>,
+        array_out: &mut GxArrayViewMut<'_, V>,
+        out_idx: usize,
+        row_c: i64, 
+        col_c: i64,
+        nodata: V,
+        )
+    where
+        T: Copy + std::ops::Mul<f64, Output=f64> + Into<f64> + PartialEq,
+        V: Copy + From<f64> + PartialEq,
+    {
+        let ncol = array_in.ncol;
+        let array_in_var_size = array_in.nrow * ncol;
+        let array_out_var_size = array_out.nrow * array_out.ncol;
+        let mut arr_irow;
+        let mut arr_icol;
+        let mut arr_iflat: usize;
+        let mut computed: f64;
+        let mut computed_col: f64;
+        let mut array_in_var_shift: usize;
+        let mut array_out_var_shift: usize;
+        
+        // Pre check boundaries and weights value
+        for irow in 0..=4 {
+            if weights_row[4 - irow as usize] == 0.0 {
+                continue;
+            }
+            arr_irow = row_c + irow - 2;
+            
+            for icol in 0..=4 {
+                if weights_col[4 - icol as usize] == 0.0 {
+                    continue;
+                }
+                
+                arr_icol = col_c + icol - 2;
+                
+                if arr_irow < 0 || arr_irow >= array_in.nrow_i64 || arr_icol < 0 || arr_icol >= array_in.ncol_i64 {
+                    // If we came here the weights are both positivs, we cant
+                    // ignore that we go out of bounds as far as the validity is
+                    // concerned.
+                    for ivar in 0..array_in.nvar {
+                        array_out.data[out_idx + ivar * array_out_var_size] = nodata;
+                    }
+                    return;
+                }
+            }
+        }
+        
+        // Loop on multipe variables in input array.
+        // If a iteration condition fails it is equivalent as considering a zero
+        // for the corresponding row or column value.
+        for ivar in 0..array_in.nvar {
+            computed = 0.0;
+            array_in_var_shift = ivar * array_in_var_size;
+            array_out_var_shift = ivar * array_out_var_size;
+            
+            for irow in 0..=4 {
+                arr_irow = row_c + irow - 2;
+                if arr_irow < 0 || arr_irow >= array_in.nrow_i64 {
+                    continue;
+                }
+                computed_col = 0.0;
+                
+                for icol in 0..=4 {
+                    arr_icol = col_c + icol - 2;
+                    if arr_icol < 0 || arr_icol >= array_in.ncol_i64 {
+                        continue;
+                    }
+                    
+                    // flat 1d index computation
+                    arr_iflat = array_in_var_shift + (arr_irow as usize) * ncol + (arr_icol as usize);
+                    // add current weighted product
+                    computed_col += array_in.data[arr_iflat] * weights_col[4 - icol as usize];
+                }
+                computed += weights_row[4 - irow as usize] * computed_col;
+            }
+            // Write interpolated value to output buffer
+            array_out.data[out_idx + array_out_var_shift] = V::from(computed);
+        }
+    }
+    
+    #[inline(always)]
+    fn interpolate_masked_unchecked<T, V>(
+        &self,
+        weights_row: &[f64],
+        weights_col: &[f64],
+        array_in: &GxArrayView<'_, T>,
+        array_mask_in: &GxArrayView<'_, u8>,
+        array_out: &mut GxArrayViewMut<'_, V>,
+        array_mask_out: &mut GxArrayViewMut<'_, u8>,
+        out_idx: usize,
+        row_c: i64, 
+        col_c: i64,
+        nodata: V,
+        )
+    where
+        T: Copy + std::ops::Mul<f64, Output=f64> + Into<f64>,
+        V: Copy + From<f64>
+    {
+        let ncol = array_in.ncol;
+        let array_in_var_size = array_in.nrow * ncol;
+        let array_out_var_size = array_out.nrow * array_out.ncol;
+        let mut arr_irow: usize;
+        let mut arr_icol: usize;
+        let mut arr_iflat: usize;
+        let mut computed: f64;
+        let mut computed_col: f64;
+        let mut array_in_var_shift: usize;
+        let mut array_out_var_shift: usize;
+        
+        // Pre check mask
+        // Ignore mask value where weights are zero
+        let mut valid = 1u8;
+        for irow in 0..=4 {
+            if weights_row[4 - irow as usize] == 0.0 {
+                continue;
+            }
+            
+            arr_irow = (row_c + irow - 2) as usize;
+            for icol in 0..=4 {
+                if weights_col[4 - icol as usize] == 0.0 {
+                    continue;
+                }
+                
+                arr_icol = (col_c + icol - 2) as usize;
+                arr_iflat = arr_irow * ncol + arr_icol;
+                valid &= array_mask_in.data[arr_iflat];
+            }
+        }
+        
+        if valid == 0 {
+            for ivar in 0..array_in.nvar {
+                array_out.data[out_idx + ivar * array_out_var_size] = nodata;
+            }
+            array_mask_out.data[out_idx] = 0;
+            return;
+        }
+        
+        // Loop on multipe variables in input array.
+        for ivar in 0..array_in.nvar {
+            computed = 0.0;
+            array_in_var_shift = ivar * array_in_var_size;
+            array_out_var_shift = ivar * array_out_var_size;
+            
+            for irow in 0..=4 {
+                computed_col = 0.0;
+                arr_irow = (row_c + irow - 2) as usize;
+                
+                for icol in 0..=4 {
+                    arr_icol = (col_c + icol - 2) as usize;
+                    
+                    // flat 1d index computation
+                    arr_iflat = array_in_var_shift + arr_irow * ncol + arr_icol;
+                    // add current weighted product
+                    computed_col += array_in.data[arr_iflat] * weights_col[4 - icol as usize];
+                }
+                computed += weights_row[4 - irow as usize] * computed_col;
+            }
+            // Write interpolated value to output buffer
+            array_out.data[out_idx + array_out_var_shift] = V::from(computed);
+        }
+        array_mask_out.data[out_idx] = 1;
+    }
+    
+    /// Performs a partial weighted interpolation on a 5×5 window centered at `(row_c, col_c)`
+    /// within a multidimensional input array `array_in`, taking into account validity masks.
+    ///
+    /// # Description
+    /// - Applies a 2D interpolation using the given row and column weight vectors (`weights_row` and `weights_col`), each of length 5.
+    /// - Considers a validity mask `array_mask_in` for the input window.
+    /// - Values outside the array bounds are treated as zero if their associated weight is zero (ignored).
+    /// - If any out-of-bounds value has a non-zero weight, the interpolation is considered invalid,
+    ///   and the output is set to `nodata` with the mask marked as invalid.
+    /// - The interpolation is performed independently for each variable (dimension) in the input array.
+    /// - The result is written into `array_out` at the index `out_idx`, and the output mask is updated accordingly.
+    ///
+    /// # Parameters
+    /// - `weights_row`: Interpolation weights along the row dimension (length 5).
+    /// - `weights_col`: Interpolation weights along the column dimension (length 5).
+    /// - `array_in`: Input array view containing multiple variables and their data.
+    /// - `array_mask_in`: Validity mask corresponding to `array_in` (1 = valid, 0 = invalid).
+    /// - `array_out`: Mutable output array view to store interpolated results.
+    /// - `array_mask_out`: Mutable mask array view for the output.
+    /// - `out_idx`: 1D output index at which to write the interpolated value.
+    /// - `row_c`, `col_c`: Coordinates of the center pixel around which the 5×5 window is defined.
+    ///
+    /// # Preconditions
+    /// - Weight arrays correspond to a kernel centered on `(row_c, col_c)`.
+    /// - Input and output arrays and masks have compatible dimensions.
+    /// - The interpolation window size is fixed at 5×5.
+    ///
+    /// # Behavior
+    /// 1. Checks that all points with non-zero weights lie within the input array bounds.
+    ///    If any out-of-bounds point has a non-zero weight, interpolation is invalidated.
+    /// 2. Verifies that all these points are marked valid in `array_mask_in`.
+    /// 3. If valid, computes the weighted sum for each variable, ignoring out-of-bounds points or weights that are zero.
+    /// 4. Writes the computed interpolated values to `array_out` and sets the output mask as valid.
+    ///
+    /// # Notes
+    /// - The filter is not renormalized, meaning the sum of weights may be less than 1
+    ///   if some weights correspond to out-of-bounds points and are ignored.
+    /// - This effectively treats out-of-bounds data as zero unless their weight is non-zero,
+    ///   in which case the interpolation is invalid.
+    /// - Marked `#[inline(always)]` for optimization.
+    ///
+    /// # Example
+    /// ```ignore
+    /// self.interpolate_masked_partial(
+    ///     &weights_row,
+    ///     &weights_col,
+    ///     &array_in,
+    ///     &array_mask_in,
+    ///     &mut array_out,
+    ///     &mut array_mask_out,
+    ///     out_idx,
+    ///     row_c,
+    ///     col_c,
+    /// );
+    /// ```
+    #[inline(always)]
+    fn interpolate_masked_partial<T, V>(
+        &self,
+        weights_row: &[f64],
+        weights_col: &[f64],
+        array_in: &GxArrayView<'_, T>,
+        array_mask_in: &GxArrayView<'_, u8>,
+        array_out: &mut GxArrayViewMut<'_, V>,
+        array_mask_out: &mut GxArrayViewMut<'_, u8>,
+        out_idx: usize,
+        row_c: i64, 
+        col_c: i64,
+        nodata: V,
+        )
+    where
+        T: Copy + std::ops::Mul<f64, Output=f64> + Into<f64> + PartialEq,
+        V: Copy + From<f64> + PartialEq,
+    {
+        let ncol = array_in.ncol;
+        let array_in_var_size = array_in.nrow * ncol;
+        let array_out_var_size = array_out.nrow * array_out.ncol;
+        let mut arr_irow;
+        let mut arr_icol;
+        let mut arr_iflat: usize;
+        let mut computed: f64;
+        let mut computed_col: f64;
+        let mut array_in_var_shift: usize;
+        let mut array_out_var_shift: usize;
+        
+        // Pre check mask
+        let mut valid = 1u8;
+        //let mut partial_valid = 1u8;
+        for irow in 0..=4 {
+            if weights_row[4 - irow as usize] == 0.0 {
+                continue;
+            }
+            arr_irow = row_c + irow - 2;
+            
+            for icol in 0..=4 {
+                if weights_col[4 - icol as usize] == 0.0 {
+                    continue;
+                }
+                if arr_irow < 0 || arr_irow >= array_in.nrow_i64 {
+                    // If we came here the weights are both positivs, we cant
+                    // ignore that we go out of bounds as far as the validity is
+                    // concerned.
+                    valid = 0;
+                    break;
+                }
+                
+                arr_icol = col_c + icol - 2;
+                
+                if arr_icol < 0 || arr_icol >= array_in.ncol_i64 {
+                    // If we came here the weights are both positivs, we cant
+                    // ignore that we go out of bounds as far as the validity is
+                    // concerned.
+                    valid = 0;
+                    break;
+                }
+                arr_iflat = (arr_irow as usize) * ncol + (arr_icol as usize);
+                valid &= array_mask_in.data[arr_iflat];
+            }
+        }
+        
+        if valid == 0 {
+            for ivar in 0..array_in.nvar {
+                array_out.data[out_idx + ivar * array_out_var_size] = nodata;
+            }
+            array_mask_out.data[out_idx] = 0;
+            return;
+        }
+        
+        // Loop on multipe variables in input array.
+        // If a iteration condition fails it is equivalent as considering a zero
+        // for the corresponding row or column value.
+        for ivar in 0..array_in.nvar {
+            computed = 0.0;
+            array_in_var_shift = ivar * array_in_var_size;
+            array_out_var_shift = ivar * array_out_var_size;
+            
+            for irow in 0..=4 {
+                arr_irow = row_c + irow - 2;
+                if arr_irow < 0 || arr_irow >= array_in.nrow_i64 {
+                    continue;
+                }
+                computed_col = 0.0;
+                
+                for icol in 0..=4 {
+                    arr_icol = col_c + icol - 2;
+                    if arr_icol < 0 || arr_icol >= array_in.ncol_i64 {
+                        continue;
+                    }
+                    
+                    // flat 1d index computation
+                    arr_iflat = array_in_var_shift + (arr_irow as usize) * ncol + (arr_icol as usize);
+                    // add current weighted product
+                    computed_col += array_in.data[arr_iflat] * weights_col[4 - icol as usize];
+                }
+                computed += weights_row[4 - irow as usize] * computed_col;
+            }
+            // Write interpolated value to output buffer
+            array_out.data[out_idx + array_out_var_shift] = V::from(computed);
+        }
+    }
+}
+
 impl GxArrayViewInterpolator for GxOptimizedBicubicInterpolator
 {
     fn new() -> Self {
@@ -120,179 +524,6 @@ impl GxArrayViewInterpolator for GxOptimizedBicubicInterpolator
         let buffer: Vec<f64> = vec![0.0; self.kernel_row_size + self.kernel_col_size];
         buffer.into_boxed_slice()
     }
-    
-/*     /// weights_buffer : preallocated array of 10 elements
-    /// todo : manage mask
-    fn array1_interp2_w_mask<T, V>(
-            &self,
-            weights_buffer: &mut [f64],
-            target_row_pos: f64,
-            target_col_pos: f64,
-            out_idx: usize,
-            array_in: &GxArrayView<'_, T>,
-            nodata_out: V,
-            array_mask_in: Option<&GxArrayView<'_, u8>>,
-            array_out: &mut GxArrayViewMut<'_, V>,
-            array_mask_out: &mut Option<&mut GxArrayViewMut<'_, u8>>, 
-            ) -> Result<(), String>
-    where
-        T: Copy + PartialEq + std::ops::Mul<f64, Output=f64> + Into<f64>,
-        V: Copy + PartialEq + From<f64>,
-        //<U as Mul<f64, Output=f64>>::Output: Add,
-    {
-        // Get the nearest corresponding index corresponding to the target position 
-        let kernel_center_row: i64 = (target_row_pos + 0.5).floor() as i64;
-        let kernel_center_col: i64 = (target_col_pos + 0.5).floor() as i64;
-        let mut arr_irow;
-        let mut arr_icol;
-        let mut arr_iflat;
-        let mut computed: f64;
-        let array_in_var_size = array_in.nrow * array_in.ncol;
-        let array_out_var_size = array_out.nrow * array_out.ncol;
-        
-        // Check that all required data for interpolation is within the input
-        // array shape - assuming here the radius is 2.
-        // Here we do not need to check borders inside the inner loops.
-        // That should be the most common path.
-        if (kernel_center_row >=2)
-                && (kernel_center_row < array_in.nrow_i64-2)
-                && (kernel_center_col >= 2)
-                && (kernel_center_col < array_in.ncol_i64-2) {
-            //let kernel_center_row_as_usize = kernel_center_row as usize;
-            //let kernel_center_col_as_usize = kernel_center_col as usize;
-            let rel_row: f64 = target_row_pos - kernel_center_row as f64;
-            let rel_col: f64 = target_col_pos - kernel_center_col as f64;
-            let mut computed_col: f64;
-            let mut array_in_var_shift;
-            let mut array_out_var_shift;
-            
-            // Create slices to give to weight computation methods
-            //let kernel_weights_row_slice: &mut [f64] = &mut weights_buffer[0..5];
-            //let kernel_weights_col_slice: &mut [f64] = &mut weights_buffer[5..10];
-            let (kernel_weights_row_slice, kernel_weights_col_slice) = weights_buffer.split_at_mut(self.kernel_row_size);
-            
-            // from here - pass slice for weight computation
-            // slices are used here in order to limit buffer allocation
-            optimized_bicubic_kernel_weights(rel_row, kernel_weights_row_slice);
-            optimized_bicubic_kernel_weights(rel_col, kernel_weights_col_slice);
-            
-            // TODO 
-            let unmasked = match array_mask_in {
-                Some(mask) => {
-                    let mut counter: u8 = 0;
-                    for irow in 0..=4 {
-                        arr_irow = kernel_center_row + irow - 2;
-                        for icol in 0..=4 {
-                            arr_icol = kernel_center_col + icol - 2;
-                            arr_iflat = (arr_irow as usize)* array_in.ncol + (arr_icol as usize);
-                            counter += mask.data[arr_iflat];
-                        }
-                    }
-                    if counter == 25 {1} else {0}
-                },
-                None => 1
-            };
-            
-            // Loop on multipe variables in input array.
-            for ivar in 0..array_in.nvar {
-                computed = 0.0;
-                array_in_var_shift = ivar * array_in_var_size;
-                array_out_var_shift = ivar * array_out_var_size;
-                
-                for irow in 0..=4 {
-                    computed_col = 0.0;
-                    //arr_irow = (kernel_center_row_as_usize + irow) as i32 - 2;
-                    // Given the condition on this branch we are sure that arr_irrow is positiv
-                    arr_irow = kernel_center_row + irow - 2;
-                    
-                    for icol in 0..=4 {
-                        //arr_icol = (kernel_center_col_as_usize + icol) as i32 - 2;
-                        // Given the condition on this branch we are sure that arr_icol is positiv
-                        arr_icol = kernel_center_col + icol - 2;
-                        
-                        // flat 1d index computation
-                        arr_iflat = array_in_var_shift + (arr_irow as usize)* array_in.ncol + (arr_icol as usize);
-                        // add current weighted product
-                        computed_col += array_in.data[arr_iflat] * kernel_weights_col_slice[4 - icol as usize];
-                    }
-                    computed += kernel_weights_row_slice[4 - irow as usize] * computed_col;
-                }
-                // Write interpolated value to output buffer
-                array_out.data[out_idx + array_out_var_shift] = V::from(computed);
-            }
-        }
-        // Check the center is within the input array shape
-        // The first test has not been passed : meaning at least one border is crossed.
-        // We ensure here that the target point is within the input array shape.
-        else if (kernel_center_row >=0)
-                && (kernel_center_row < array_in.nrow_i64)
-                && (kernel_center_col >= 0)
-                && (kernel_center_col < array_in.ncol_i64) {
-            //let kernel_center_row_as_usize = kernel_center_row as usize;
-            //let kernel_center_col_as_usize = kernel_center_col as usize;
-            let rel_row: f64 = target_row_pos - kernel_center_row as f64;
-            let rel_col: f64 = target_col_pos - kernel_center_col as f64;
-            let mut computed_col: f64;
-            let mut array_in_var_shift;
-            let mut array_out_var_shift;
-            
-            // Create slices to give to weight computation methods
-            //let kernel_weights_row_slice: &mut [f64] = &mut weights_buffer[0..5];
-            //let kernel_weights_col_slice: &mut [f64] = &mut weights_buffer[5..10];
-            let (kernel_weights_row_slice, kernel_weights_col_slice) = weights_buffer.split_at_mut(self.kernel_row_size);
-            
-            // from here - pass slice for weight computation
-            // slices are used here in order to limit buffer allocation
-            optimized_bicubic_kernel_weights(rel_row, kernel_weights_row_slice);
-            optimized_bicubic_kernel_weights(rel_col, kernel_weights_col_slice);
-            
-            // if let Some(mask) = array_mask_out.as_deref_mut() {
-            //     mask.data[out_idx] = 1; // Example
-            // }
-            
-            
-            // Loop on multipe variables in input array.
-            for ivar in 0..array_in.nvar {
-                computed = 0.0;
-                array_in_var_shift = ivar * array_in_var_size;
-                array_out_var_shift = ivar * array_out_var_size;
-                
-                for irow in 0..=4 {
-                    computed_col = 0.0;
-                    //arr_irow = (kernel_center_row_as_usize + irow) as i32 - 2;
-                    arr_irow = kernel_center_row + irow - 2;
-                    //arr_irow = arr_irow.clamp(0, array_in.nrow_i64 - 1);
-
-                    // Check the data is available otherwise we do nothing.
-                    // This is equivalent than adding zero to the computed variable.
-                    if (arr_irow >= 0) && (arr_irow <= array_in.nrow_i64 - 1) {
-                    
-                        for icol in 0..=4 {
-                            //arr_icol = (kernel_center_col_as_usize + icol) as i32 - 2;
-                            arr_icol = kernel_center_col + icol - 2;
-                            //arr_icol = arr_icol.clamp(0, array_in.ncol_i64 - 1);
-
-                            if (arr_icol >= 0) && (arr_icol <= array_in.ncol_i64 - 1) {
-                                // flat 1d index computation
-                                arr_iflat = array_in_var_shift + (arr_irow as usize)* array_in.ncol + (arr_icol as usize);
-                                // add current weighted product
-                                computed_col += array_in.data[arr_iflat] * kernel_weights_col_slice[4 - icol as usize];
-                            }
-                        }
-                        computed += kernel_weights_row_slice[4 - irow as usize] * computed_col;
-                    }
-                }
-                // Write interpolated value to output buffer
-                array_out.data[out_idx + array_out_var_shift] = V::from(computed);
-            }
-        } else {
-            for ivar in 0..array_in.nvar {                
-                // Write nodata value to output buffer
-                array_out.data[out_idx + ivar * array_out_var_size] = nodata_out;
-            }
-        }
-        Ok(())
-    } */
     
     /// weights_buffer : preallocated array of 10 elements
     /// todo : manage mask
@@ -316,10 +547,7 @@ impl GxArrayViewInterpolator for GxOptimizedBicubicInterpolator
         // Get the nearest corresponding index corresponding to the target position 
         let kernel_center_row: i64 = (target_row_pos + 0.5).floor() as i64;
         let kernel_center_col: i64 = (target_col_pos + 0.5).floor() as i64;
-        let mut arr_irow;
-        let mut arr_icol;
-        let mut arr_iflat;
-        let mut computed: f64;
+ 
         let array_in_var_size = array_in.nrow * array_in.ncol;
         let array_out_var_size = array_out.nrow * array_out.ncol;
         
@@ -331,17 +559,10 @@ impl GxArrayViewInterpolator for GxOptimizedBicubicInterpolator
                 && (kernel_center_row < array_in.nrow_i64-2)
                 && (kernel_center_col >= 2)
                 && (kernel_center_col < array_in.ncol_i64-2) {
-            //let kernel_center_row_as_usize = kernel_center_row as usize;
-            //let kernel_center_col_as_usize = kernel_center_col as usize;
             let rel_row: f64 = target_row_pos - kernel_center_row as f64;
             let rel_col: f64 = target_col_pos - kernel_center_col as f64;
-            let mut computed_col: f64;
-            let mut array_in_var_shift;
-            let mut array_out_var_shift;
             
             // Create slices to give to weight computation methods
-            //let kernel_weights_row_slice: &mut [f64] = &mut weights_buffer[0..5];
-            //let kernel_weights_col_slice: &mut [f64] = &mut weights_buffer[5..10];
             let (kernel_weights_row_slice, kernel_weights_col_slice) = weights_buffer.split_at_mut(self.kernel_row_size);
             
             // from here - pass slice for weight computation
@@ -349,33 +570,7 @@ impl GxArrayViewInterpolator for GxOptimizedBicubicInterpolator
             optimized_bicubic_kernel_weights(rel_row, kernel_weights_row_slice);
             optimized_bicubic_kernel_weights(rel_col, kernel_weights_col_slice);
             
-            // Loop on multipe variables in input array.
-            for ivar in 0..array_in.nvar {
-                computed = 0.0;
-                array_in_var_shift = ivar * array_in_var_size;
-                array_out_var_shift = ivar * array_out_var_size;
-                
-                for irow in 0..=4 {
-                    computed_col = 0.0;
-                    //arr_irow = (kernel_center_row_as_usize + irow) as i32 - 2;
-                    // Given the condition on this branch we are sure that arr_irrow is positiv
-                    arr_irow = kernel_center_row + irow - 2;
-                    
-                    for icol in 0..=4 {
-                        //arr_icol = (kernel_center_col_as_usize + icol) as i32 - 2;
-                        // Given the condition on this branch we are sure that arr_icol is positiv
-                        arr_icol = kernel_center_col + icol - 2;
-                        
-                        // flat 1d index computation
-                        arr_iflat = array_in_var_shift + (arr_irow as usize)* array_in.ncol + (arr_icol as usize);
-                        // add current weighted product
-                        computed_col += array_in.data[arr_iflat] * kernel_weights_col_slice[4 - icol as usize];
-                    }
-                    computed += kernel_weights_row_slice[4 - irow as usize] * computed_col;
-                }
-                // Write interpolated value to output buffer
-                array_out.data[out_idx + array_out_var_shift] = V::from(computed);
-            }
+            self.interpolate_nomask_unchecked(kernel_weights_row_slice, kernel_weights_col_slice, array_in, array_out, out_idx, kernel_center_row, kernel_center_col);
         }
         // Check the center is within the input array shape
         // The first test has not been passed : meaning at least one border is crossed.
@@ -384,17 +579,10 @@ impl GxArrayViewInterpolator for GxOptimizedBicubicInterpolator
                 && (kernel_center_row < array_in.nrow_i64)
                 && (kernel_center_col >= 0)
                 && (kernel_center_col < array_in.ncol_i64) {
-            //let kernel_center_row_as_usize = kernel_center_row as usize;
-            //let kernel_center_col_as_usize = kernel_center_col as usize;
             let rel_row: f64 = target_row_pos - kernel_center_row as f64;
             let rel_col: f64 = target_col_pos - kernel_center_col as f64;
-            let mut computed_col: f64;
-            let mut array_in_var_shift;
-            let mut array_out_var_shift;
             
             // Create slices to give to weight computation methods
-            //let kernel_weights_row_slice: &mut [f64] = &mut weights_buffer[0..5];
-            //let kernel_weights_col_slice: &mut [f64] = &mut weights_buffer[5..10];
             let (kernel_weights_row_slice, kernel_weights_col_slice) = weights_buffer.split_at_mut(self.kernel_row_size);
             
             // from here - pass slice for weight computation
@@ -402,45 +590,8 @@ impl GxArrayViewInterpolator for GxOptimizedBicubicInterpolator
             optimized_bicubic_kernel_weights(rel_row, kernel_weights_row_slice);
             optimized_bicubic_kernel_weights(rel_col, kernel_weights_col_slice);
             
-            // if let Some(mask) = array_mask_out.as_deref_mut() {
-            //     mask.data[out_idx] = 1; // Example
-            // }
-            
-            
-            // Loop on multipe variables in input array.
-            for ivar in 0..array_in.nvar {
-                computed = 0.0;
-                array_in_var_shift = ivar * array_in_var_size;
-                array_out_var_shift = ivar * array_out_var_size;
-                
-                for irow in 0..=4 {
-                    computed_col = 0.0;
-                    //arr_irow = (kernel_center_row_as_usize + irow) as i32 - 2;
-                    arr_irow = kernel_center_row + irow - 2;
-                    //arr_irow = arr_irow.clamp(0, array_in.nrow_i64 - 1);
+            self.interpolate_nomask_partial(kernel_weights_row_slice, kernel_weights_col_slice, array_in, array_out, out_idx, kernel_center_row, kernel_center_col, nodata_out);
 
-                    // Check the data is available otherwise we do nothing.
-                    // This is equivalent than adding zero to the computed variable.
-                    if (arr_irow >= 0) && (arr_irow <= array_in.nrow_i64 - 1) {
-                    
-                        for icol in 0..=4 {
-                            //arr_icol = (kernel_center_col_as_usize + icol) as i32 - 2;
-                            arr_icol = kernel_center_col + icol - 2;
-                            //arr_icol = arr_icol.clamp(0, array_in.ncol_i64 - 1);
-
-                            if (arr_icol >= 0) && (arr_icol <= array_in.ncol_i64 - 1) {
-                                // flat 1d index computation
-                                arr_iflat = array_in_var_shift + (arr_irow as usize)* array_in.ncol + (arr_icol as usize);
-                                // add current weighted product
-                                computed_col += array_in.data[arr_iflat] * kernel_weights_col_slice[4 - icol as usize];
-                            }
-                        }
-                        computed += kernel_weights_row_slice[4 - irow as usize] * computed_col;
-                    }
-                }
-                // Write interpolated value to output buffer
-                array_out.data[out_idx + array_out_var_shift] = V::from(computed);
-            }
         } else {
             for ivar in 0..array_in.nvar {                
                 // Write nodata value to output buffer
@@ -449,7 +600,6 @@ impl GxArrayViewInterpolator for GxOptimizedBicubicInterpolator
         }
         Ok(())
     }
-
 }
 
 

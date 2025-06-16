@@ -1130,7 +1130,7 @@ with rasterio.open(array_in_path, "w",
 grid_in_ds = rasterio.open(grid_path, "r")
 grid_in_col_ds = grid_in_ds
 array_src_ds = rasterio.open(array_in_path, "r")
-F=100
+F=1
 oversampling_row, oversampling_col = (10*F, 10*F)
 
 full_output_shape = grid_full_resolution_shape(shape=(grid_in_ds.height, grid_in_ds.width), resolution= (oversampling_row, oversampling_col))
@@ -1191,8 +1191,8 @@ with rasterio.open(array_out_path, "w",  driver="GTiff", dtype=output_dtype, hei
         mask_out_values = (0,1),
         io_strip_size = 75*F, #10000,
         io_strip_size_target = GridRIOMode.OUTPUT,
-        #tile_shape = (50, 180),
-        tile_shape = None,
+        tile_shape = (50, 180),
+        #tile_shape = None,
     )
 
 end_date = datetime.datetime.now()

@@ -729,7 +729,7 @@ mod gx_grid_resampling_test {
         let mut array_out = GxArrayViewMut::new(&mut data_out, 1, nrow_out, ncol_out);
         let grid_checker = NoCheckGridMeshValidator{};
         
-        let _ = array1_grid_resampling::<f64, i8, f64, f64, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(&interp,
+        let _ = array1_grid_resampling::<f64, f64, f64, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(&interp,
                 &grid_checker, //grid_validity_checker
                 &array_in,
                 &array_grid_row_in, //grid_row_array: &GxArrayView<'_, U>,
@@ -816,7 +816,7 @@ mod gx_grid_resampling_test {
         let mut array_out = GxArrayViewMut::new(&mut data_out, 1, nrow_out, ncol_out);
         let grid_checker = InvalidValueGridMeshValidator{invalid_value: grid_nodata, epsilon: 1e-10};
         
-        let _ = array1_grid_resampling::<f64, i8, f64, f64, GxOptimizedBicubicInterpolator, InvalidValueGridMeshValidator>(&interp,
+        let _ = array1_grid_resampling::<f64, f64, f64, GxOptimizedBicubicInterpolator, InvalidValueGridMeshValidator>(&interp,
                 &grid_checker, //grid_validity_checker
                 &array_in,
                 &array_grid_row_in, //grid_row_array: &GxArrayView<'_, U>,
@@ -933,7 +933,7 @@ mod gx_grid_resampling_test {
         let mut array_out = GxArrayViewMut::new(&mut data_out, 1, nrow_out, ncol_out);
         let grid_checker = MaskGridMeshValidator{ mask_view: &mask_view, valid_value: grid_mask_valid_value };
         
-        let _ = array1_grid_resampling::<f64, i8, f64, f64, GxOptimizedBicubicInterpolator, MaskGridMeshValidator>(&interp,
+        let _ = array1_grid_resampling::<f64, f64, f64, GxOptimizedBicubicInterpolator, MaskGridMeshValidator>(&interp,
                 &grid_checker, //grid_validity_checker
                 &array_in,
                 &array_grid_row_in, //grid_row_array: &GxArrayView<'_, U>,
@@ -1027,7 +1027,7 @@ mod gx_grid_resampling_test {
         let grid_checker = NoCheckGridMeshValidator{};
         //let win = GxArrayWindow(
         
-        let _ = array1_grid_resampling::<f64, i8, f64, f64, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(&interp,
+        let _ = array1_grid_resampling::<f64, f64, f64, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(&interp,
                 &grid_checker, //grid_validity_checker
                 &array_in,
                 &array_grid_row_in, //grid_row_array: &GxArrayView<'_, U>,
@@ -1091,7 +1091,7 @@ mod gx_grid_resampling_test {
         let mut array_out = GxArrayViewMut::new(&mut data_out, 1, nrow_out, ncol_out);
         let grid_checker = NoCheckGridMeshValidator{};
         
-        let _ = array1_grid_resampling::<f64, i8, f64, f64, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(&interp,
+        let _ = array1_grid_resampling::<f64, f64, f64, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(&interp,
                 &grid_checker, //grid_validity_checker
                 &array_in,
                 &array_grid_row_in, //grid_row_array: &GxArrayView<'_, U>,
@@ -1172,7 +1172,7 @@ mod gx_grid_resampling_test {
         let grid_checker = NoCheckGridMeshValidator{};
         
         // Run resampling on full grid
-        let _ = array1_grid_resampling::<f64, i8, f64, f64, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(&interp,
+        let _ = array1_grid_resampling::<f64, f64, f64, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(&interp,
                 &grid_checker, //grid_validity_checker
                 &array_in,
                 &array_grid_row_in, //grid_row_array: &GxArrayView<'_, U>,
@@ -1190,7 +1190,7 @@ mod gx_grid_resampling_test {
                 );
         
         // Run resampling on window
-        let _ = array1_grid_resampling::<f64, i8, f64, f64, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(&interp,
+        let _ = array1_grid_resampling::<f64, f64, f64, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(&interp,
                 &grid_checker, //grid_validity_checker
                 &array_in,
                 &array_grid_row_in, //grid_row_array: &GxArrayView<'_, U>,
@@ -1279,7 +1279,7 @@ mod gx_grid_resampling_test {
         let grid_checker = NoCheckGridMeshValidator{};
         
         // Run resampling on full grid
-        let _ = array1_grid_resampling::<f64, i8, f64, f64, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(&interp,
+        let _ = array1_grid_resampling::<f64, f64, f64, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(&interp,
                 &grid_checker, //grid_validity_checker
                 &array_in,
                 &array_grid_row_in, //grid_row_array: &GxArrayView<'_, U>,
@@ -1297,7 +1297,7 @@ mod gx_grid_resampling_test {
                 );
         
         // Run resampling on window 
-        let _ = array1_grid_resampling::<f64, i8, f64, f64, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(&interp,
+        let _ = array1_grid_resampling::<f64, f64, f64, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(&interp,
                 &grid_checker, //grid_validity_checker
                 &array_in,
                 &array_grid_row_in, //grid_row_array: &GxArrayView<'_, U>,

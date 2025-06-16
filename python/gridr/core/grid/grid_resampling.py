@@ -26,7 +26,7 @@ from gridr.cdylib import (
         py_array1_grid_resampling_f64,
         )
 
-F64_U8_F64_F64 = (np.dtype('float64'), np.dtype('float64'), np.dtype('float64'))
+F64_F64_F64 = (np.dtype('float64'), np.dtype('float64'), np.dtype('float64'))
 
 PY_ARRAY_GRID_RESAMPLING_FUNC = {
     F64_F64_F64: py_array1_grid_resampling_f64,
