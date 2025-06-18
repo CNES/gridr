@@ -1191,8 +1191,8 @@ with rasterio.open(array_out_path, "w",  driver="GTiff", dtype=output_dtype, hei
         mask_out_values = (0,1),
         io_strip_size = 75*F, #10000,
         io_strip_size_target = GridRIOMode.OUTPUT,
-        tile_shape = (50, 180),
-        #tile_shape = None,
+        #tile_shape = (50, 180),
+        tile_shape = None,
     )
 
 end_date = datetime.datetime.now()

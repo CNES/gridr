@@ -128,7 +128,7 @@ where
                     &mut array_out_arrayview, //ima_out
                     nodata_out, //nodata_val_out
                     None, //ima_mask_in
-                    &mut None, //ima_mask_out
+                    None, //ima_mask_out
                     rs_grid_win.as_ref(), //grid_win
                     rs_out_win.as_ref(), //out_win
                     origin_row_bias, // ima_in_origin_row
@@ -157,7 +157,7 @@ where
                     &mut array_out_arrayview, //ima_out
                     nodata_out, //nodata_val_out
                     None, //ima_mask_in
-                    &mut None, //ima_mask_out
+                    None, //ima_mask_out
                     rs_grid_win.as_ref(), //grid_win
                     rs_out_win.as_ref(), //out_win
                     origin_row_bias, // ima_in_origin_row
@@ -185,7 +185,7 @@ where
                     &mut array_out_arrayview, //ima_out
                     nodata_out, //nodata_val_out
                     None, //ima_mask_in
-                    &mut None, //ima_mask_out
+                    None, //ima_mask_out
                     rs_grid_win.as_ref(), //grid_win
                     rs_out_win.as_ref(), //out_win
                     origin_row_bias, // ima_in_origin_row

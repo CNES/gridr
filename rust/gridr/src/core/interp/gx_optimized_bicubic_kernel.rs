@@ -1,7 +1,7 @@
 #![warn(missing_docs)]
 //! Crate doc
 use crate::core::gx_array::{GxArrayView, GxArrayViewMut};
-use super::gx_array_view_interp::{GxArrayViewInterpolator};
+use super::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewInterpolationContextTrait, GxArrayViewInterpolatorBoundsCheckStrategy, GxArrayViewInterpolatorInputMaskStrategy, GxArrayViewInterpolatorOutputMaskStrategy};
 
 #[inline(always)]
 fn optimized_bicubic_kernel_weights_compute_func1(x: f64) -> f64 {
@@ -100,6 +100,56 @@ pub struct GxOptimizedBicubicInterpolator {
 }
 
 impl GxOptimizedBicubicInterpolator {
+    
+    /// Performs a fast 2D interpolation without bounds checking or validity masking.
+    ///
+    /// This method computes an interpolated value at a given center coordinate `(row_c, col_c)`
+    /// using separable 5×5 interpolation weights provided for rows and columns. The interpolation
+    /// is applied independently across all variable planes (`nvar`) in the input array.
+    ///
+    /// The function assumes that all positions required for the 5×5 stencil (centered on
+    /// `(row_c, col_c)`) are **within the bounds** of the input array. No checks are performed
+    /// on the validity or boundaries of the input indices. If this assumption is violated,
+    /// the behavior is undefined and may result in a panic or memory corruption.
+    ///
+    /// This method is designed for performance-critical inner loops where the caller guarantees
+    /// safe access patterns, typically after a validity check has already been performed upstream.
+    ///
+    /// # Parameters
+    /// - `weights_row`: Row-wise interpolation weights (length = 5, indexed as `weights_row[4 - irow]`).
+    /// - `weights_col`: Column-wise interpolation weights (length = 5, indexed as `weights_col[4 - icol]`).
+    /// - `array_in`: Input array view with shape `[nvar, nrow, ncol]`, flattened as a 1D array.
+    /// - `array_out`: Output array view with shape `[nvar, nrow, ncol]`, flattened as a 1D array.
+    /// - `out_idx`: Flat index in the output array where the interpolated result should be written,
+    ///              for the current pixel (same for all variables).
+    /// - `row_c`: Integer row coordinate of the interpolation center.
+    /// - `col_c`: Integer column coordinate of the interpolation center.
+    ///
+    /// # Type Parameters
+    /// - `T`: Scalar type of the input array, must support `Copy`, `Into<f64>`, and `f64` multiplication.
+    /// - `V`: Scalar type of the output array, must support `Copy` and `From<f64>`.
+    ///
+    /// # Safety
+    /// This method does not perform any boundary checks. The caller must ensure that all computed
+    /// indices `row_c + irow - 2` and `col_c + icol - 2` are within the bounds of `array_in`.
+    /// Violating this precondition results in undefined behavior.
+    ///
+    /// # Example
+    /// ```ignore
+    /// interpolator.interpolate_nomask_unchecked(
+    ///     weights_row,
+    ///     weights_col,
+    ///     &input_array,
+    ///     &mut output_array,
+    ///     out_index,
+    ///     row_center,
+    ///     col_center,
+    /// );
+    /// ```
+    ///
+    /// # See Also
+    /// - [`interpolate_nomask_partial`](Self::interpolate_nomask_partial): Safe version that performs bounds checking.
+    /// - [`interpolate_masked`](...): Variant that handles a validity mask or nodata values.
     #[inline(always)]
     fn interpolate_nomask_unchecked<T, V>(
         &self,
@@ -174,12 +224,13 @@ impl GxOptimizedBicubicInterpolator {
     /// - `T`: Input scalar type (must support multiplication by `f64` and `Into<f64>`).
     /// - `V`: Output scalar type (must support conversion from `f64` and equality testing).
     #[inline(always)]
-    fn interpolate_nomask_partial<T, V>(
+    fn interpolate_nomask_partial<T, V, N>(
         &self,
         weights_row: &[f64],
         weights_col: &[f64],
         array_in: &GxArrayView<'_, T>,
         array_out: &mut GxArrayViewMut<'_, V>,
+        output_mask_strategy: &mut N,
         out_idx: usize,
         row_c: i64, 
         col_c: i64,
@@ -188,6 +239,7 @@ impl GxOptimizedBicubicInterpolator {
     where
         T: Copy + std::ops::Mul<f64, Output=f64> + Into<f64> + PartialEq,
         V: Copy + From<f64> + PartialEq,
+        N: GxArrayViewInterpolatorOutputMaskStrategy,
     {
         let ncol = array_in.ncol;
         let array_in_var_size = array_in.nrow * ncol;
@@ -221,6 +273,7 @@ impl GxOptimizedBicubicInterpolator {
                     for ivar in 0..array_in.nvar {
                         array_out.data[out_idx + ivar * array_out_var_size] = nodata;
                     }
+                    output_mask_strategy.set_value(out_idx, 0);
                     return;
                 }
             }
@@ -257,25 +310,90 @@ impl GxOptimizedBicubicInterpolator {
             // Write interpolated value to output buffer
             array_out.data[out_idx + array_out_var_shift] = V::from(computed);
         }
+        output_mask_strategy.set_value(out_idx, 1);
     }
     
+    /// Performs a fast 2D interpolation with a validity mask, without bounds checking.
+    ///
+    /// This method computes interpolated values at a given center coordinate `(row_c, col_c)`
+    /// using separable 5×5 weights. It operates on multi-variable input data with an associated
+    /// binary validity mask (`array_mask_in`). The interpolation is only performed if **all**
+    /// relevant mask values under non-zero weights are valid (i.e., non-zero); otherwise, a
+    /// `nodata` value is written to the output, and the corresponding output mask is cleared.
+    ///
+    /// This method assumes that all indices involved in the 5×5 interpolation stencil are within
+    /// bounds. No bounds checking is performed. This function is designed for performance-critical
+    /// code where the caller guarantees valid indexing, typically after pre-checking or clipping.
+    ///
+    /// # Parameters
+    /// - `weights_row`: Row-direction interpolation weights (length = 5, accessed as `weights_row[4 - irow]`).
+    /// - `weights_col`: Column-direction interpolation weights (length = 5, accessed as `weights_col[4 - icol]`).
+    /// - `array_in`: Input data array with shape `[nvar, nrow, ncol]`, flattened to 1D.
+    /// - `array_mask_in`: Binary mask array (`u8`, 0 = invalid, 1 = valid) of shape `[nrow, ncol]`.
+    /// - `array_out`: Output array view of shape `[nvar, nrow, ncol]`, flattened to 1D.
+    /// - `array_mask_out`: Output binary mask array (`u8`, same layout as `array_mask_in`).
+    /// - `out_idx`: Flat index at which to write the output value(s) and mask.
+    /// - `row_c`: Row index of the interpolation center.
+    /// - `col_c`: Column index of the interpolation center.
+    /// - `nodata`: Value to write to the output array if the mask is invalid (for all variables).
+    ///
+    /// # Type Parameters
+    /// - `T`: Scalar type of the input array. Must implement `Copy`, `Into<f64>`, and `Mul<f64, Output=f64>`.
+    /// - `V`: Scalar type of the output array. Must implement `Copy` and `From<f64>`.
+    ///
+    /// # Behavior
+    /// - If all relevant mask values are `1`, interpolation is performed normally.
+    /// - If any mask value under a non-zero weight is `0`, interpolation is skipped:
+    ///     - `nodata` is written to all output variables at `out_idx`.
+    ///     - The output mask at `out_idx` is set to `0`.
+    ///
+    /// # Safety
+    /// This method does not perform bounds checks. The caller must ensure that all computed
+    /// indices `row_c + irow - 2` and `col_c + icol - 2` are valid for both data and mask arrays.
+    /// Accessing out-of-bounds data results in undefined behavior.
+    ///
+    /// # Example
+    /// ```ignore
+    /// interpolator.interpolate_masked_unchecked(
+    ///     weights_row,
+    ///     weights_col,
+    ///     &input_array,
+    ///     &input_mask,
+    ///     &mut output_array,
+    ///     &mut output_mask,
+    ///     out_index,
+    ///     row_center,
+    ///     col_center,
+    ///     nodata_value,
+    /// );
+    /// ```
+    ///
+    /// # See Also
+    /// - [`interpolate_nomask_unchecked`](Self::interpolate_nomask_unchecked): Faster variant without a validity mask.
+    /// - [`interpolate_masked_partial`](...): Safe version with bounds checking and masking.
     #[inline(always)]
-    fn interpolate_masked_unchecked<T, V>(
+    fn interpolate_masked_unchecked<T, V, IC>(
         &self,
         weights_row: &[f64],
         weights_col: &[f64],
         array_in: &GxArrayView<'_, T>,
-        array_mask_in: &GxArrayView<'_, u8>,
+        //input_mask_strategy: &M,
+        //array_mask_in: &GxArrayView<'_, u8>,
         array_out: &mut GxArrayViewMut<'_, V>,
-        array_mask_out: &mut GxArrayViewMut<'_, u8>,
+        //output_mask_strategy: &mut N,
+        //array_mask_out: &mut GxArrayViewMut<'_, u8>,
         out_idx: usize,
         row_c: i64, 
         col_c: i64,
         nodata: V,
+        context: &mut IC,
         )
     where
         T: Copy + std::ops::Mul<f64, Output=f64> + Into<f64>,
-        V: Copy + From<f64>
+        V: Copy + From<f64>,
+        IC: GxArrayViewInterpolationContextTrait,
+        //M: GxArrayViewInterpolatorInputMaskStrategy,
+        //N: GxArrayViewInterpolatorOutputMaskStrategy,
     {
         let ncol = array_in.ncol;
         let array_in_var_size = array_in.nrow * ncol;
@@ -304,7 +422,7 @@ impl GxOptimizedBicubicInterpolator {
                 
                 arr_icol = (col_c + icol - 2) as usize;
                 arr_iflat = arr_irow * ncol + arr_icol;
-                valid &= array_mask_in.data[arr_iflat];
+                valid &= context.input_mask().is_valid(arr_iflat);
             }
         }
         
@@ -312,7 +430,7 @@ impl GxOptimizedBicubicInterpolator {
             for ivar in 0..array_in.nvar {
                 array_out.data[out_idx + ivar * array_out_var_size] = nodata;
             }
-            array_mask_out.data[out_idx] = 0;
+            context.output_mask().set_value(out_idx, 0);
             return;
         }
         
@@ -339,7 +457,7 @@ impl GxOptimizedBicubicInterpolator {
             // Write interpolated value to output buffer
             array_out.data[out_idx + array_out_var_shift] = V::from(computed);
         }
-        array_mask_out.data[out_idx] = 1;
+        context.output_mask().set_value(out_idx, 1);
     }
     
     /// Performs a partial weighted interpolation on a 5×5 window centered at `(row_c, col_c)`
@@ -398,22 +516,28 @@ impl GxOptimizedBicubicInterpolator {
     /// );
     /// ```
     #[inline(always)]
-    fn interpolate_masked_partial<T, V>(
+    fn interpolate_masked_partial<T, V, IC>(
         &self,
         weights_row: &[f64],
         weights_col: &[f64],
         array_in: &GxArrayView<'_, T>,
-        array_mask_in: &GxArrayView<'_, u8>,
+        //input_mask_strategy: &M,
+        //array_mask_in: &GxArrayView<'_, u8>,
         array_out: &mut GxArrayViewMut<'_, V>,
-        array_mask_out: &mut GxArrayViewMut<'_, u8>,
+        //output_mask_strategy: &mut N,
+        //array_mask_out: &mut GxArrayViewMut<'_, u8>,
         out_idx: usize,
         row_c: i64, 
         col_c: i64,
         nodata: V,
+        context: &mut IC,
         )
     where
         T: Copy + std::ops::Mul<f64, Output=f64> + Into<f64> + PartialEq,
         V: Copy + From<f64> + PartialEq,
+        IC: GxArrayViewInterpolationContextTrait,
+        //M: GxArrayViewInterpolatorInputMaskStrategy,
+        //N: GxArrayViewInterpolatorOutputMaskStrategy,
     {
         let ncol = array_in.ncol;
         let array_in_var_size = array_in.nrow * ncol;
@@ -457,7 +581,7 @@ impl GxOptimizedBicubicInterpolator {
                     break;
                 }
                 arr_iflat = (arr_irow as usize) * ncol + (arr_icol as usize);
-                valid &= array_mask_in.data[arr_iflat];
+                valid &= context.input_mask().is_valid(arr_iflat);
             }
         }
         
@@ -465,7 +589,8 @@ impl GxOptimizedBicubicInterpolator {
             for ivar in 0..array_in.nvar {
                 array_out.data[out_idx + ivar * array_out_var_size] = nodata;
             }
-            array_mask_out.data[out_idx] = 0;
+            context.output_mask().set_value(out_idx, 0);
+            //array_mask_out.data[out_idx] = 0;
             return;
         }
         
@@ -500,6 +625,7 @@ impl GxOptimizedBicubicInterpolator {
             // Write interpolated value to output buffer
             array_out.data[out_idx + array_out_var_shift] = V::from(computed);
         }
+        context.output_mask().set_value(out_idx, 1);
     }
 }
 
@@ -527,21 +653,24 @@ impl GxArrayViewInterpolator for GxOptimizedBicubicInterpolator
     
     /// weights_buffer : preallocated array of 10 elements
     /// todo : manage mask
-    fn array1_interp2<T, V>(
+    fn array1_interp2<T, V, IC>(
             &self,
             weights_buffer: &mut [f64],
             target_row_pos: f64,
             target_col_pos: f64,
             out_idx: usize,
             array_in: &GxArrayView<'_, T>,
-            nodata_out: V,
-            array_mask_in: Option<&GxArrayView<'_, u8>>,
             array_out: &mut GxArrayViewMut<'_, V>,
-            array_mask_out: &mut Option<&mut GxArrayViewMut<'_, u8>>, 
+            nodata_out: V,
+            context: &mut IC,
+            //array_mask_in: &GxArrayView<'_, u8>,
+            //array_mask_out: &mut GxArrayViewMut<'_, u8>, 
             ) -> Result<(), String>
     where
         T: Copy + PartialEq + std::ops::Mul<f64, Output=f64> + Into<f64>,
         V: Copy + PartialEq + From<f64>,
+        IC: GxArrayViewInterpolationContextTrait,
+        
         //<U as Mul<f64, Output=f64>>::Output: Add,
     {
         // Get the nearest corresponding index corresponding to the target position 
@@ -551,61 +680,92 @@ impl GxArrayViewInterpolator for GxOptimizedBicubicInterpolator
         let array_in_var_size = array_in.nrow * array_in.ncol;
         let array_out_var_size = array_out.nrow * array_out.ncol;
         
-        // Check that all required data for interpolation is within the input
-        // array shape - assuming here the radius is 2.
-        // Here we do not need to check borders inside the inner loops.
-        // That should be the most common path.
-        if (kernel_center_row >=2)
-                && (kernel_center_row < array_in.nrow_i64-2)
-                && (kernel_center_col >= 2)
-                && (kernel_center_col < array_in.ncol_i64-2) {
-            let rel_row: f64 = target_row_pos - kernel_center_row as f64;
-            let rel_col: f64 = target_col_pos - kernel_center_col as f64;
-            
-            // Create slices to give to weight computation methods
-            let (kernel_weights_row_slice, kernel_weights_col_slice) = weights_buffer.split_at_mut(self.kernel_row_size);
-            
-            // from here - pass slice for weight computation
-            // slices are used here in order to limit buffer allocation
-            optimized_bicubic_kernel_weights(rel_row, kernel_weights_row_slice);
-            optimized_bicubic_kernel_weights(rel_col, kernel_weights_col_slice);
-            
-            self.interpolate_nomask_unchecked(kernel_weights_row_slice, kernel_weights_col_slice, array_in, array_out, out_idx, kernel_center_row, kernel_center_col);
-        }
-        // Check the center is within the input array shape
-        // The first test has not been passed : meaning at least one border is crossed.
-        // We ensure here that the target point is within the input array shape.
-        else if (kernel_center_row >=0)
-                && (kernel_center_row < array_in.nrow_i64)
-                && (kernel_center_col >= 0)
-                && (kernel_center_col < array_in.ncol_i64) {
-            let rel_row: f64 = target_row_pos - kernel_center_row as f64;
-            let rel_col: f64 = target_col_pos - kernel_center_col as f64;
-            
-            // Create slices to give to weight computation methods
-            let (kernel_weights_row_slice, kernel_weights_col_slice) = weights_buffer.split_at_mut(self.kernel_row_size);
-            
-            // from here - pass slice for weight computation
-            // slices are used here in order to limit buffer allocation
-            optimized_bicubic_kernel_weights(rel_row, kernel_weights_row_slice);
-            optimized_bicubic_kernel_weights(rel_col, kernel_weights_col_slice);
-            
-            self.interpolate_nomask_partial(kernel_weights_row_slice, kernel_weights_col_slice, array_in, array_out, out_idx, kernel_center_row, kernel_center_col, nodata_out);
-
-        } else {
-            for ivar in 0..array_in.nvar {                
-                // Write nodata value to output buffer
-                array_out.data[out_idx + ivar * array_out_var_size] = nodata_out;
+        // After compilation that test will have no cost in monomorphic created
+        // method
+        if IC::BoundsCheck::do_check() {
+            // Check that all required data for interpolation is within the input
+            // array shape - assuming here the radius is 2.
+            // Here we do not need to check borders inside the inner loops.
+            // That should be the most common path.
+            if (kernel_center_row >=2)
+                    && (kernel_center_row < array_in.nrow_i64-2)
+                    && (kernel_center_col >= 2)
+                    && (kernel_center_col < array_in.ncol_i64-2) {
+                let rel_row: f64 = target_row_pos - kernel_center_row as f64;
+                let rel_col: f64 = target_col_pos - kernel_center_col as f64;
+                
+                // Create slices to give to weight computation methods
+                let (kernel_weights_row_slice, kernel_weights_col_slice) = weights_buffer.split_at_mut(self.kernel_row_size);
+                
+                // from here - pass slice for weight computation
+                // slices are used here in order to limit buffer allocation
+                optimized_bicubic_kernel_weights(rel_row, kernel_weights_row_slice);
+                optimized_bicubic_kernel_weights(rel_col, kernel_weights_col_slice);
+                
+                
+                if context.input_mask().is_enabled() {
+                    /* self.interpolate_masked_unchecked(kernel_weights_row_slice, kernel_weights_col_slice,
+                            array_in, input_mask, array_out, output_mask, out_idx,
+                            kernel_center_row, kernel_center_col, nodata_out); */
+                    self.interpolate_masked_unchecked(kernel_weights_row_slice, kernel_weights_col_slice,
+                            array_in, array_out, out_idx,
+                            kernel_center_row, kernel_center_col, nodata_out, context);
+                }
+                else {
+                    self.interpolate_nomask_unchecked(kernel_weights_row_slice, kernel_weights_col_slice,
+                            array_in, array_out, out_idx, kernel_center_row, kernel_center_col);
+                }
             }
+            // Check the center is within the input array shape
+            // The first test has not been passed : meaning at least one border is crossed.
+            // We ensure here that the target point is within the input array shape.
+            else if (kernel_center_row >=0)
+                    && (kernel_center_row < array_in.nrow_i64)
+                    && (kernel_center_col >= 0)
+                    && (kernel_center_col < array_in.ncol_i64) {
+                let rel_row: f64 = target_row_pos - kernel_center_row as f64;
+                let rel_col: f64 = target_col_pos - kernel_center_col as f64;
+                
+                // Create slices to give to weight computation methods
+                let (kernel_weights_row_slice, kernel_weights_col_slice) = weights_buffer.split_at_mut(self.kernel_row_size);
+                
+                // from here - pass slice for weight computation
+                // slices are used here in order to limit buffer allocation
+                optimized_bicubic_kernel_weights(rel_row, kernel_weights_row_slice);
+                optimized_bicubic_kernel_weights(rel_col, kernel_weights_col_slice);
+                
+                if context.input_mask().is_enabled() {
+                    /* self.interpolate_masked_partial(kernel_weights_row_slice, kernel_weights_col_slice,
+                            array_in, input_mask, array_out, output_mask, out_idx,
+                            kernel_center_row, kernel_center_col, nodata_out); */
+                    self.interpolate_masked_partial(kernel_weights_row_slice, kernel_weights_col_slice,
+                            array_in, array_out, out_idx,
+                            kernel_center_row, kernel_center_col, nodata_out, context);
+                }
+                else {
+                    self.interpolate_nomask_partial(kernel_weights_row_slice, kernel_weights_col_slice,
+                            array_in, array_out, context.output_mask(), out_idx,
+                            kernel_center_row, kernel_center_col, nodata_out);
+                }
+
+            } else {
+                for ivar in 0..array_in.nvar {                
+                    // Write nodata value to output buffer
+                    array_out.data[out_idx + ivar * array_out_var_size] = nodata_out;
+                }
+            }
+        } else {
         }
         Ok(())
     }
+
 }
 
 
 #[cfg(test)]
 mod gx_optimized_bicubic_kernel_tests {
     use super::*;
+    use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolationContext, DefaultCtx};
     
     /// Checks if two slices of f64 values are approximately equal within a given tolerance.
     ///
@@ -688,15 +848,18 @@ mod gx_optimized_bicubic_kernel_tests {
         let array_in = GxArrayView::new(&data_in, 1, 5, 5);
         let mut array_out = GxArrayViewMut::new(&mut data_out, 1, 1, 3);
         let interp = GxOptimizedBicubicInterpolator::new();
-        
+
         let mut weights = interp.allocate_kernel_buffer();
+        
+        // Default context
+        let mut context = DefaultCtx::default();
         
         // Test idendity
         // Expect : 10.
         let mut x = 2.;
         let mut y = 2.;
         let mut out_idx = 1;
-        let _ = interp.array1_interp2::<f64, f64>(&mut weights, y, x, out_idx, &array_in, 0., None, &mut array_out, &mut None);
+        let _ = interp.array1_interp2::<f64, f64, DefaultCtx>(&mut weights, y, x, out_idx, &array_in, &mut array_out, 0., &mut context);
         assert_eq!(array_out.data, [-9., 10., -9.]);
         
         // Target x = 1.75 y = 2.5
@@ -704,7 +867,7 @@ mod gx_optimized_bicubic_kernel_tests {
         x = 1.75;
         y = 2.5;
         out_idx = 0;
-        let _ = interp.array1_interp2::<f64, f64>(&mut weights, y, x, out_idx, &array_in, 0., None, &mut array_out, &mut None);
+        let _ = interp.array1_interp2::<f64, f64, DefaultCtx>(&mut weights, y, x, out_idx, &array_in, &mut array_out, 0., &mut context);
         assert_eq!(array_out.data, [4.58203125, 10., -9.]);
     }
 }
