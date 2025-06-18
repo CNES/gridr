@@ -680,6 +680,9 @@ impl GxArrayViewInterpolator for GxOptimizedBicubicInterpolator
         let array_in_var_size = array_in.nrow * array_in.ncol;
         let array_out_var_size = array_out.nrow * array_out.ncol;
         
+        // Consider mask valid (if any)
+        context.output_mask().set_value(out_idx, 1);
+        
         // After compilation that test will have no cost in monomorphic created
         // method
         if IC::BoundsCheck::do_check() {
@@ -753,6 +756,7 @@ impl GxArrayViewInterpolator for GxOptimizedBicubicInterpolator
                     // Write nodata value to output buffer
                     array_out.data[out_idx + ivar * array_out_var_size] = nodata_out;
                 }
+                context.output_mask().set_value(out_idx, 0);
             }
         } else {
         }

@@ -5,7 +5,7 @@ use pyo3::exceptions::PyValueError;
 //use ndarray;
 //use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArrayDyn, PyArrayMethods};
 //use numpy::{PyArray1, PyArrayDyn, PyArrayMethods};
-use numpy::{PyArray1, PyArrayMethods, Element};
+use numpy::{PyArray1, PyReadwriteArray1, PyArrayMethods, Element};
 /// We tell here what module/functions we use from the pure rust library (lib.rs)
 use crate::{assert_options_exclusive};
 use crate::core::gx_array::{GxArrayWindow, GxArrayView, GxArrayViewMut};
@@ -81,6 +81,32 @@ where
         None => (None, None),
     };
     
+    // Prepare optional input validity mask to pass to the `array1_grid_resampling`
+    // method.
+    let mask_in_array_view: Option<GxArrayView<u8>>;
+    let mask_in_view;
+    mask_in_array_view = match array_in_mask {
+        Some(a_mask_in_array_view) => {
+            mask_in_view = a_mask_in_array_view.readonly();
+            let mask_in_slice = mask_in_view.as_slice()?;
+            Some(GxArrayView::new(mask_in_slice, 1, array_in_shape.1, array_in_shape.2))
+        },
+        None => {
+            None
+        }
+    };
+    
+    // Prepare optional output validity mask to pass to the `array1_grid_resampling`
+    // method.
+    let mut mask_out_array_view: Option<GxArrayViewMut<u8>> = None;
+    let mut mask_out_view: PyReadwriteArray1<u8>;
+    //let mask_out_slice: &mut [u8];
+
+    if let Some(bound_mask) = array_out_mask {
+        mask_out_view = bound_mask.readwrite();
+        let mask_out_slice = mask_out_view.as_slice_mut().expect("Failed to get slice");
+        mask_out_array_view = Some(GxArrayViewMut::new(mask_out_slice, 1, array_out_shape.1, array_out_shape.2));
+    }
     
     // Manage the grid validator mode through a the `grid_validator_flag` variable.
     // - 0 : that value corresponds to the use of a NoCheckGridMeshValidator, ie
@@ -127,8 +153,8 @@ where
                     grid_resolution.1, //grid_col_oversampling
                     &mut array_out_arrayview, //ima_out
                     nodata_out, //nodata_val_out
-                    None, //ima_mask_in
-                    None, //ima_mask_out
+                    mask_in_array_view.as_ref(), //ima_mask_in
+                    mask_out_array_view.as_mut(), //ima_mask_out
                     rs_grid_win.as_ref(), //grid_win
                     rs_out_win.as_ref(), //out_win
                     origin_row_bias, // ima_in_origin_row
@@ -156,8 +182,8 @@ where
                     grid_resolution.1, //grid_col_oversampling
                     &mut array_out_arrayview, //ima_out
                     nodata_out, //nodata_val_out
-                    None, //ima_mask_in
-                    None, //ima_mask_out
+                    mask_in_array_view.as_ref(), //ima_mask_in
+                    mask_out_array_view.as_mut(), //ima_mask_out
                     rs_grid_win.as_ref(), //grid_win
                     rs_out_win.as_ref(), //out_win
                     origin_row_bias, // ima_in_origin_row
@@ -184,8 +210,8 @@ where
                     grid_resolution.1, //grid_col_oversampling
                     &mut array_out_arrayview, //ima_out
                     nodata_out, //nodata_val_out
-                    None, //ima_mask_in
-                    None, //ima_mask_out
+                    mask_in_array_view.as_ref(), //ima_mask_in
+                    mask_out_array_view.as_mut(), //ima_mask_out
                     rs_grid_win.as_ref(), //grid_win
                     rs_out_win.as_ref(), //out_win
                     origin_row_bias, // ima_in_origin_row

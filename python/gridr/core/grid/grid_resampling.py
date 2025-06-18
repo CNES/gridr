@@ -46,8 +46,8 @@ def array_grid_resampling(
         grid_mask: Optional[np.ndarray] = None,
         grid_mask_valid_value: Optional[int] = 1,
         grid_nodata: Optional[float] = None,
-        array_out_mask: Optional[np.ndarray] = None,
-        ) -> Union[np.ndarray, NoReturn]:
+        array_out_mask: Optional[Union[np.ndarray, bool]] = None,
+        ) -> Tuple[Union[np.ndarray, NoReturn], Union[np.ndarray, NoReturn]]:
     """
     Resamples an input array based on target grid coordinates, applying an
     optional bilinear interpolation for low resolution grids.
@@ -143,7 +143,9 @@ def array_grid_resampling(
         array_out_mask : Optional[np.ndarray], default None
             A mask for the output array that indicates where the resampled
             values should be stored. 
-            If not provided, the entire output array is assumed to be valid.
+            If True, a new array will be allocated. The shape of the output
+            array is consistent with the array_out shape.
+            If not provided or not True, the entire output array is assumed to be valid.
 
     Returns:
     --------
@@ -189,7 +191,7 @@ def array_grid_resampling(
     grid_resolution = (2, 2)
     array_out = None
 
-    result = array_grid_resampling(
+    result, _ = array_grid_resampling(
         array_in=array_in, 
         grid_row=grid_row, 
         grid_col=grid_col, 
@@ -208,6 +210,7 @@ def array_grid_resampling(
       system.
     """
     ret = None
+    ret_mask = None
     assert(array_in.flags.c_contiguous is True)
     assert(grid_row.flags.c_contiguous is True)
     assert(grid_col.flags.c_contiguous is True)
@@ -263,9 +266,33 @@ def array_grid_resampling(
                 start_row=array_out_win[0][0], end_row=array_out_win[0][1],
                 start_col=array_out_win[1][0], end_col=array_out_win[1][1])
     
+    # Manage optional input mask
     array_in_mask_dtype = np.dtype('uint8')
     if array_in_mask is not None:
         array_in_mask_dtype = array_in_mask.dtype
+        # check shape
+        assert(array_in_mask.dtype == np.dtype('uint8'))
+        assert(array_in_mask.shape[0] == array_in_shape[1])
+        assert(array_in_mask.shape[1] == array_in_shape[2])
+        # reshape
+        array_in_mask = array_in_mask.reshape(-1)
+        
+    # Manage optional output mask
+    if array_out_mask is not None:
+        try:
+            assert(array_out_mask.dtype == np.dtype('uint8'))
+            assert(array_out_mask.shape[0] == array_out_shape[1])
+            assert(array_out_mask.shape[1] == array_out_shape[2])
+            array_out_mask = array_out_mask.reshape(-1)
+        except AttributeError:
+            # Not None and not a numpy array due to exception
+            # Test if True
+            if array_out_mask is True:
+                array_out_mask = np.empty(array_out_shape[1:], dtype=np.uint8,
+                        order='C').reshape(-1)
+                ret_mask = array_out_mask
+            else:
+                array_out_mask = None
     
     func_types = (array_in.dtype, array_out.dtype, grid_row.dtype)
     
@@ -298,13 +325,15 @@ def array_grid_resampling(
                 array_out_shape=array_out_shape,
                 nodata_out=nodata_out,
                 array_in_origin=array_in_origin,
-                array_in_mask=None,
+                array_in_mask=array_in_mask,
                 grid_mask=grid_mask,
                 grid_mask_valid_value=grid_mask_valid_value,
                 grid_nodata=grid_nodata,
-                array_out_mask=None,
+                array_out_mask=array_out_mask,
                 grid_win=py_grid_win,
                 out_win=py_array_out_win,)
     if ret is not None:
         ret = ret.reshape(array_out_shape).squeeze()
-    return ret
+    if ret_mask is not None:
+        ret_mask = ret_mask.reshape(array_out_shape[1:])
+    return ret, ret_mask
