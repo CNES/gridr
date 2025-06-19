@@ -52,8 +52,7 @@
 //!   for when each may be used.
 use crate::core::gx_array::{GxArrayWindow, GxArrayView, GxArrayViewMut};
 //use crate::core::interp::gx_optimized_bicubic_kernel::{array1_optimized_bicubic_interp2};
-use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewInterpolationContextTrait, GxArrayViewInterpolationContext, NoInputMask, BinaryInputMask, NoOutputMask, BinaryOutputMask, NoBoundsCheck, BoundsCheck, OutputMaskStrategy, InputMaskStrategy};
-
+use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewInterpolationContextTrait, GxArrayViewInterpolationContext, NoInputMask, BinaryInputMask, NoOutputMask, BinaryOutputMask, NoBoundsCheck, BoundsCheck, OutputMaskStrategy, InputMaskStrategy, GxArrayViewInterpolatorOutputMaskStrategy};
 //use crate::core::interp::gx_optimized_bicubic_kernel::{GxOptimizedBicubicInterpolator};
 //use crate::{assert_options_match};
 use crate::core::gx_errors::GxError;

@@ -143,9 +143,10 @@ def array_grid_resampling(
         array_out_mask : Optional[np.ndarray], default None
             A mask for the output array that indicates where the resampled
             values should be stored. 
-            If True, a new array will be allocated. The shape of the output
-            array is consistent with the array_out shape.
-            If not provided or not True, the entire output array is assumed to be valid.
+            If True, a new array will be allocated and initialy filled with 0.
+            The shape of the output array is consistent with the array_out shape.
+            If not provided or not True, the entire output array is assumed to
+            be valid.
 
     Returns:
     --------
@@ -288,7 +289,7 @@ def array_grid_resampling(
             # Not None and not a numpy array due to exception
             # Test if True
             if array_out_mask is True:
-                array_out_mask = np.empty(array_out_shape[1:], dtype=np.uint8,
+                array_out_mask = np.zeros(array_out_shape[1:], dtype=np.uint8,
                         order='C').reshape(-1)
                 ret_mask = array_out_mask
             else:
