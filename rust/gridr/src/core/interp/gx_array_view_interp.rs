@@ -49,11 +49,9 @@ use crate::core::gx_array::{GxArrayView, GxArrayViewMut};
 ///   (useful to avoid unnecessary checks).
 pub trait GxArrayViewInterpolatorInputMaskStrategy {
     /// Returns whether the point at index `idx` is valid (1) or invalid (0).
-    #[inline(always)]
     fn is_valid(&self, idx: usize) -> u8;
     
     /// Returns true if the input mask strategy is enabled.
-    #[inline(always)]
     fn is_enabled(&self) -> bool;
 }
 
@@ -117,11 +115,9 @@ pub enum InputMaskStrategy<'a> {
 /// - `set_value(idx, value)` to set a mask value at the given index.
 pub trait GxArrayViewInterpolatorOutputMaskStrategy {   
     /// Returns true if the output mask strategy is enabled.
-    #[inline(always)]
     fn is_enabled(&self) -> bool;
     
     // Sets a mask value at the given index.
-    #[inline(always)]
     fn set_value(&mut self, idx: usize, value: u8);
 }
 
@@ -184,7 +180,6 @@ pub enum OutputMaskStrategy<'a> {
 /// The `do_check()` method is static, enabling the compiler to optimize away
 /// the checks if disabled.
 pub trait GxArrayViewInterpolatorBoundsCheckStrategy {
-    #[inline(always)]
     fn do_check() -> bool;
 }
 
@@ -245,11 +240,9 @@ pub trait GxArrayViewInterpolationContextTrait {
     type BoundsCheck: GxArrayViewInterpolatorBoundsCheckStrategy;
 
     /// Returns a reference to the input mask strategy.
-    #[inline(always)]
     fn input_mask(&self) -> &Self::InputMask;
     
     /// Returns a mutable reference to the output mask strategy.
-    #[inline(always)]
     fn output_mask(&mut self) -> &mut Self::OutputMask;
 }
 

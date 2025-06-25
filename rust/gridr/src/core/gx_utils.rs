@@ -29,7 +29,7 @@
 /// let d: f64 = c.to_f64();
 /// ```
 pub trait GxToF64 {
-    #[inline]
+    
     fn to_f64(self) -> f64;
 }
 

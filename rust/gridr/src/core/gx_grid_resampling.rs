@@ -52,7 +52,8 @@
 //!   for when each may be used.
 use crate::core::gx_array::{GxArrayWindow, GxArrayView, GxArrayViewMut};
 //use crate::core::interp::gx_optimized_bicubic_kernel::{array1_optimized_bicubic_interp2};
-use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewInterpolationContextTrait, GxArrayViewInterpolationContext, NoInputMask, BinaryInputMask, NoOutputMask, BinaryOutputMask, NoBoundsCheck, BoundsCheck, OutputMaskStrategy, InputMaskStrategy, GxArrayViewInterpolatorOutputMaskStrategy};
+//use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewInterpolationContextTrait, GxArrayViewInterpolationContext, NoInputMask, BinaryInputMask, NoOutputMask, BinaryOutputMask, NoBoundsCheck, BoundsCheck, OutputMaskStrategy, InputMaskStrategy, GxArrayViewInterpolatorOutputMaskStrategy};
+use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewInterpolationContextTrait, GxArrayViewInterpolationContext, NoInputMask, BinaryInputMask, NoOutputMask, BinaryOutputMask, BoundsCheck};
 //use crate::core::interp::gx_optimized_bicubic_kernel::{GxOptimizedBicubicInterpolator};
 //use crate::{assert_options_match};
 use crate::core::gx_errors::GxError;
@@ -162,6 +163,9 @@ where
     /// to a predefined `invalid_value`. If any of the relevant nodes are invalid,
     /// the cell is rejected (returns `false`).
     ///
+    /// A cell's node must be actively involved in the targeted interpolation, meaning its associated weight must be
+    /// non-zero, to be included in the validity check.
+    ///
     /// This method delegates node-level checks to `is_invalid`.
     ///
     /// # Type Parameters
@@ -183,17 +187,18 @@ where
         match (mesh.grid_row_oversampling, mesh.grid_col_oversampling) {
             // Both are different from 1
             (r, c) if r != 1 && c != 1 => {
-                if self.is_invalid(mesh.node1, &grid_view) ||
-                        self.is_invalid(mesh.node2, &grid_view) ||
-                        self.is_invalid(mesh.node3, &grid_view) ||
-                        self.is_invalid(mesh.node4, &grid_view) {
+                if ((mesh.gmi_w1 > 0) && self.is_invalid(mesh.node1, &grid_view)) ||
+                        ((mesh.gmi_w2 > 0) && self.is_invalid(mesh.node2, &grid_view)) ||
+                        ((mesh.gmi_w3 > 0) && self.is_invalid(mesh.node3, &grid_view)) ||
+                        ((mesh.gmi_w4 > 0) && self.is_invalid(mesh.node4, &grid_view)) {
                     return false;
                 }
                 true
             },                    
-            // Only rows are oversampled
+            // Only rows are oversampled (note : changed node3 to node4)
             (r, 1) if r != 1 => {
-                if self.is_invalid(mesh.node1, &grid_view) || self.is_invalid(mesh.node3, &grid_view) {
+                if ((mesh.gmi_w1 > 0) && self.is_invalid(mesh.node1, &grid_view)) || 
+                        ((mesh.gmi_w4 > 0) && self.is_invalid(mesh.node4, &grid_view)) {
                     return false;
                 }
                 true
@@ -201,7 +206,8 @@ where
 
             // Only columns are oversampled
             (1, c) if c != 1 => {
-                if self.is_invalid(mesh.node1, &grid_view) || self.is_invalid(mesh.node2, &grid_view) {
+                if ((mesh.gmi_w1 > 0) && self.is_invalid(mesh.node1, &grid_view)) ||
+                        ((mesh.gmi_w2 > 0) && self.is_invalid(mesh.node2, &grid_view)) {
                     return false;
                 }
                 true
@@ -218,6 +224,10 @@ where
 /// This implementation of `GridMeshValidator` checks an auxiliary mask array to determine
 /// whether a grid cell is valid. If any node in the mesh does not correspond to the `valid_value`
 /// value, the cell is considered invalid.
+///
+///
+/// A cell's node must be actively involved in the targeted interpolation, meaning its associated weight must be
+/// non-zero, to be included in the validity check.
 ///
 /// This is commonly used for excluding regions via precomputed masks (e.g., land/sea masks).
 ///
@@ -240,17 +250,17 @@ where
     {
         let mask = &self.mask_view.data;
         
-        let node1_valid = mask[mesh.node1] == self.valid_value;
-        let node2_valid = mask[mesh.node2] == self.valid_value;
-        let node3_valid = mask[mesh.node3] == self.valid_value;
-        let node4_valid = mask[mesh.node4] == self.valid_value;
+        let node1_valid = (mesh.gmi_w1 == 0) || (mask[mesh.node1] == self.valid_value);
+        let node2_valid = (mesh.gmi_w2 == 0) || (mask[mesh.node2] == self.valid_value);
+        let node3_valid = (mesh.gmi_w3 == 0) || (mask[mesh.node3] == self.valid_value);
+        let node4_valid = (mesh.gmi_w4 == 0) || (mask[mesh.node4] == self.valid_value);
 
         match (mesh.grid_row_oversampling, mesh.grid_col_oversampling) {
             // Both are different from 1
             (r, c) if r != 1 && c != 1 => node1_valid && node2_valid && node3_valid && node4_valid,
 
-            // Only rows are oversampled
-            (r, 1) if r != 1 => node1_valid && node3_valid,
+            // Only rows are oversampled (note : changed node3 to node4)
+            (r, 1) if r != 1 => node1_valid && node4_valid,
 
             // Only columns are oversampled
             (1, c) if c != 1 => node1_valid && node2_valid,
@@ -294,7 +304,16 @@ where
 /// - `grid_ncol`: Total number of columns in the parent source grid.
 /// - `grid_row_oversampling`: The grid's oversampling for rows.
 /// - `grid_col_oversampling`: The grid's oversampling for columns.
-/// - `window_src`: The window applied on the source grid to restrict the region of interpolation.
+/// - `window_src`: The window applied on the native source grid to restrict the region of interpolation.
+/// - `window_rel`: The window applied on the `window_src` restricted grid to define the oversampled production window. It is mainly used to set the starting positions.
+/// - `gmi_col_idx` : The current column index within a mesh
+/// - `gmi_col_idx_t` : The current column index complement within a mesh
+/// - `gmi_row_idx` : The current row index within a mesh
+/// - `gmi_row_idx_t` : The current row index complement within a mesh
+/// - `gmi_w1` : The current non-normalized integer weight associated to `node1`
+/// - `gmi_w2` : The current non-normalized integer weight associated to `node2`
+/// - `gmi_w3` : The current non-normalized integer weight associated to `node3`
+/// - `gmi_w4` : The current non-normalized integer weight associated to `node4`
 ///
 /// # Usage
 ///
@@ -314,6 +333,15 @@ pub struct GridMesh<'a> {
     grid_row_oversampling: usize,
     grid_col_oversampling: usize,
     window_src: &'a GxArrayWindow, 
+    window_rel: &'a GxArrayWindow,
+    gmi_col_idx: usize,
+    gmi_col_idx_t: usize,
+    gmi_row_idx: usize,
+    gmi_row_idx_t: usize,
+    gmi_w1: usize,
+    gmi_w2: usize,
+    gmi_w3: usize,
+    gmi_w4: usize,
 }
 
 impl<'a> GridMesh<'a> {
@@ -329,6 +357,7 @@ impl<'a> GridMesh<'a> {
     /// - `grid_row_oversampling`: The grid's oversampling for rows.
     /// - `grid_col_oversampling`: The grid's oversampling for columns.
     /// - `window_src`: A reference to a window on the source grid defining the region to iterate over.
+    /// - `window_rel`: A reference to a window on the oversampled grid defining the region to iterate over.
     ///
     /// # Returns
     ///
@@ -339,10 +368,26 @@ impl<'a> GridMesh<'a> {
             grid_ncol: usize,
             grid_row_oversampling: usize,
             grid_col_oversampling: usize,
-            window_src: &'a GxArrayWindow
+            window_src: &'a GxArrayWindow,
+            window_rel: &'a GxArrayWindow,
         ) -> Self
     {
         let node1 = window_src.start_row * grid_ncol + window_src.start_col;
+        
+        // The init idx is given by the relative position in the source window.
+        let gmi_row_idx: usize = window_rel.start_row;
+        let gmi_col_idx: usize = window_rel.start_col;
+        
+        // Complement of the relative position in current grid mesh 
+        let gmi_col_idx_t: usize = grid_col_oversampling - gmi_col_idx;
+        let gmi_row_idx_t: usize = grid_row_oversampling - gmi_row_idx;
+        
+        
+        let gmi_w1: usize = gmi_col_idx_t * gmi_row_idx_t;
+        let gmi_w2: usize = gmi_col_idx * gmi_row_idx_t;
+        let gmi_w3: usize = gmi_col_idx * gmi_row_idx;
+        let gmi_w4: usize = gmi_col_idx_t * gmi_row_idx;
+        
         Self {
             node1: node1,
             node2: node1 + 1,
@@ -352,7 +397,26 @@ impl<'a> GridMesh<'a> {
             grid_ncol: grid_ncol,
             grid_row_oversampling: grid_row_oversampling,
             grid_col_oversampling: grid_col_oversampling,
-            window_src: window_src }
+            window_src: window_src,
+            window_rel: window_rel,
+            gmi_col_idx: gmi_col_idx,
+            gmi_col_idx_t: gmi_col_idx_t,
+            gmi_row_idx: gmi_row_idx,
+            gmi_row_idx_t: gmi_row_idx_t,
+            gmi_w1: gmi_w1,
+            gmi_w2: gmi_w2,
+            gmi_w3: gmi_w3,
+            gmi_w4: gmi_w4,
+            }
+    }
+    
+    // Update current weights
+    #[inline]
+    pub fn update_weights(&mut self) {
+        self.gmi_w1 = self.gmi_col_idx_t * self.gmi_row_idx_t;
+        self.gmi_w2 = self.gmi_col_idx * self.gmi_row_idx_t;
+        self.gmi_w3 = self.gmi_col_idx * self.gmi_row_idx;
+        self.gmi_w4 = self.gmi_col_idx_t * self.gmi_row_idx;
     }
     
     /// Advances the mesh one column to the right within the current row of the grid.
@@ -401,6 +465,115 @@ impl<'a> GridMesh<'a> {
             self.node4 = self.node1;
             self.node3 = self.node2;
         }
+    }
+    
+    /// Advances the current position within the interpolation grid.
+    ///
+    /// This is the core method invoked by the main interpolation loop to traverse the grid's mesh.
+    /// It manages both the global output position and the relative position within the current
+    /// grid cell's oversampled mesh.
+    ///
+    /// # Arguments
+    ///
+    /// * `grid_row_idx`: The current row index in the input grid iteration.
+    /// * `grid_col_idx`: The current column index in the input grid iteration.
+    /// * `out_col_idx`: The current column index within the *output* row being generated.
+    /// * `windowed_out_idx`: The absolute index for output buffer assignment within the current window.
+    /// * `window_out_idx_jump`: The index increment required when moving to the next output row.
+    /// * `ncol_out`: The total number of columns in an output row.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing the updated indices:
+    /// `(grid_row_idx, grid_col_idx, out_col_idx, windowed_out_idx)`
+    ///
+    /// # Behavior
+    ///
+    /// This method progresses the interpolation by:
+    /// 1. Incrementing the global output column index (`out_col_idx`) and the windowed output index (`windowed_out_idx`).
+    /// 2. Advancing the relative column index (`gmi_col_idx`) within the current mesh cell.
+    /// 3. If all columns within the current mesh cell's oversampling are processed:
+    ///    - Resets `gmi_col_idx` to 0.
+    ///    - Increments the input grid's column index (`grid_col_idx`).
+    ///    - Calls `self.next_src_col()` to update the source nodes for the next input column.
+    /// 4. If the end of the current output row (`ncol_out`) is reached:
+    ///    - Resets `out_col_idx` to 0.
+    ///    - Updates `windowed_out_idx` to point to the start of the next row's window.
+    ///    - Resets `grid_col_idx` to the starting column of the current processing window (`self.window_src.start_col`).
+    ///    - Resets `gmi_col_idx` to the starting relative column of the mesh window (`self.window_rel.start_col`).
+    ///    - Increments the relative row index (`gmi_row_idx`) within the current mesh cell.
+    ///    - If all rows within the current mesh cell's oversampling are processed:
+    ///        - Resets `gmi_row_idx` to 0.
+    ///        - Increments the input grid's row index (`grid_row_idx`).
+    ///    - Calls `self.next_src_row()` to update the source nodes for the next input row.
+    ///    - Updates the complement of the relative mesh row index (`self.gmi_row_idx_t`).
+    /// 5. Updates the complement of the relative mesh column index (`self.gmi_col_idx_t`).
+    #[inline]
+    pub fn next(&mut self,
+            grid_row_idx: usize,
+            grid_col_idx: usize,
+            out_col_idx: usize,
+            windowed_out_idx: usize,
+            window_out_idx_jump: usize,
+            ncol_out: usize,
+    ) -> (usize, usize, usize, usize)
+    {
+        let mut grid_row_idx = grid_row_idx;
+        let mut grid_col_idx = grid_col_idx;
+        // Global output : go next output column
+        let mut out_col_idx = out_col_idx + 1;
+        let mut windowed_out_idx = windowed_out_idx + 1;
+        
+        // Advance to the next column within the current mesh interpolation cell
+        self.gmi_col_idx += 1;
+        
+        // Check if all columns in the current mesh oversampling have been processed
+        if self.gmi_col_idx == self.grid_col_oversampling {
+            // Current row within mesh oversampling is done.
+            // Warning : we cant go to next mesh on the same row if the current mesh is the last one
+            // Go to next mesh on the same line
+            // - reset relative mesh column index
+            self.gmi_col_idx = 0;
+            // - increment column index relative to input grid
+            grid_col_idx += 1;
+            // - shift all nodes to right - the method takes care of the last mesh border
+            self.next_src_col(grid_col_idx);
+        }
+        
+        // Test if current output row is done
+        if out_col_idx == ncol_out {
+            
+            // Reset output column index to 0
+            out_col_idx = 0;
+            windowed_out_idx += window_out_idx_jump;
+            
+            // Reset column index relative to input grid
+            grid_col_idx = self.window_src.start_col;
+            
+            // Reset relative mesh column index
+            self.gmi_col_idx = self.window_rel.start_col;
+            
+            // Increment relative mesh row index
+            self.gmi_row_idx += 1;
+            
+            // Test if row oversampling in current mesh is done.
+            if self.gmi_row_idx == self.grid_row_oversampling {
+                // Reset mesh relative row index
+                self.gmi_row_idx = 0;
+                // Increment row index relative to input grid
+                grid_row_idx += 1;
+            }
+            
+            // Update interpolation nodes - going next src row
+            self.next_src_row(grid_row_idx);
+            
+            // Update mesh relative row index complement
+            self.gmi_row_idx_t = self.grid_row_oversampling - self.gmi_row_idx;
+        }
+        // Update mesh relative col index complement
+        self.gmi_col_idx_t = self.grid_col_oversampling - self.gmi_col_idx;
+        
+        (grid_row_idx, grid_col_idx, out_col_idx, windowed_out_idx)
     }
 } 
 
@@ -693,6 +866,7 @@ where
     // - gmi_{row|col}_idx can be set in [0, grid_{row|col}_oversampling[
     // - the init values (first iteration) are taken from the grid_window_rel
     
+    /*
     // The init idx is given by the relative position in the source window.
     let mut gmi_row_idx: usize = grid_window_rel.start_row;
     let mut gmi_col_idx: usize = grid_window_rel.start_col;
@@ -700,9 +874,11 @@ where
     // Complement of the relative position in current grid mesh 
     let mut gmi_col_idx_t: usize = grid_col_oversampling - gmi_col_idx;
     let mut gmi_row_idx_t: usize = grid_row_oversampling - gmi_row_idx;
-        
+    */
+    
     // Init the mesh used for grid values bilinear interpolation.
-    let mut gmi_mesh = GridMesh::new(grid_row_array.nrow, grid_row_array.ncol, grid_row_oversampling, grid_col_oversampling, &grid_window_src);
+    let mut gmi_mesh = GridMesh::new(grid_row_array.nrow, grid_row_array.ncol, grid_row_oversampling,
+            grid_col_oversampling, &grid_window_src, &grid_window_rel);
     
     // Mesh interpolation norm factor
     let gmi_norm_factor: f64 = (grid_col_oversampling * grid_row_oversampling) as f64;
@@ -716,20 +892,28 @@ where
     let mut windowed_out_idx: usize = out_window.start_row * ima_out.ncol + out_window.start_col;
     // Compute the shift to apply to go to next row first col
     // Please note we substract 1 here just because the jump is applied in the loop after a +1 addition
-    let mut window_out_idx_jump: usize = ima_out.ncol - out_window.end_col + out_window.start_col - 1;
+    let window_out_idx_jump: usize = ima_out.ncol - out_window.end_col + out_window.start_col - 1;
     let ima_out_var_size: usize = ima_out.nrow * ima_out.ncol;
         
     for mut out_idx in 0..size_out {
+        
+        gmi_mesh.update_weights();
         
         // Here we call the validity checker for each oversampled index.
         // We may improve this loop by jumping to the next mesh directly
         if grid_validity_checker.validate(&mut gmi_mesh, &mut out_idx, &grid_row_array) {
         
             // Bilinear grid interpolation with oversampling
+            /*
             let gmi_w1: f64 = (gmi_col_idx_t * gmi_row_idx_t) as f64;
             let gmi_w2: f64 = (gmi_col_idx * gmi_row_idx_t) as f64;
             let gmi_w3: f64 = (gmi_col_idx * gmi_row_idx) as f64;
             let gmi_w4: f64 = (gmi_col_idx_t * gmi_row_idx) as f64;
+            */
+            let gmi_w1: f64 = gmi_mesh.gmi_w1 as f64;
+            let gmi_w2: f64 = gmi_mesh.gmi_w2 as f64;
+            let gmi_w3: f64 = gmi_mesh.gmi_w3 as f64;
+            let gmi_w4: f64 = gmi_mesh.gmi_w4 as f64;
             
             // Perform the interpolation on column + apply origin bias
             let grid_col_val: f64 = (
@@ -772,7 +956,9 @@ where
             }
         }
         // Prepare next iteration
-        
+        (grid_row_idx, grid_col_idx, out_col_idx, windowed_out_idx) = gmi_mesh.next(grid_row_idx,
+                grid_col_idx, out_col_idx, windowed_out_idx, window_out_idx_jump, ncol_out);
+        /*
         // Global output : go next output column
         out_col_idx += 1;
         windowed_out_idx += 1;
@@ -828,6 +1014,7 @@ where
         }
         // Update mesh relative col index complement
         gmi_col_idx_t = grid_col_oversampling - gmi_col_idx;
+        */
     }
     Ok(())
 }
