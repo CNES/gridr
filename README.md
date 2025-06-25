@@ -2,7 +2,7 @@
 <a target="_blank" href="https://gitlab.cnes.fr/gridr/gridr">
 <picture>
   <img
-    src="./doc/images/gridr.png"
+    src="./doc/images/gridr_logo.svg"
     alt="GRIDR"
     width="40%"
   />
