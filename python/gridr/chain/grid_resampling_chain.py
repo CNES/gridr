@@ -13,7 +13,6 @@ Module for a Grid and Mask creation chain
 TMP : PYTHONPATH=${PWD}/python:$PYTHONPATH python python/gridr/chain/grid_resampling_chain.py
 """
 
-print("import begin")
 import itertools
 from enum import IntEnum
 from functools import partial
@@ -48,15 +47,12 @@ from gridr.core.grid.grid_resampling import array_grid_resampling
 
 from gridr.scaling.shmutils import (SharedMemoryArray, shmarray_wrap,
         create_and_register_sma)
-print("import end 1")
 
 # TODELETE FROM HERE
 import matplotlib
 import matplotlib.pyplot as plt
 from gridr.misc.mandrill import mandrill
 import sys
-print("import end 2")
-#sys.exit(0)
 
 class GridRIOMode(IntEnum):
     """Define the backend to use for rasterize.
@@ -216,6 +212,7 @@ def basic_grid_resampling_array(
         sma_out_buffer: SharedMemoryArray,
         out_win: np.ndarray,
         nodata_out: Optional[Union[int, float]],
+        sma_out_mask_buffer: Optional[SharedMemoryArray],
         logger_msg_prefix: str,
         logger: logging.Logger,
         ):
@@ -312,6 +309,10 @@ def basic_grid_resampling_array(
         nodata_out : scalar
             NoData value to fill the output if the grid metrics are invalid or if 
             no valid data points can be found.
+        
+        sma_out_mask_buffer: Optional[np.ndarray or shared memory array
+            Optional output array (or shared memory buffer) where output mask 
+            will be written.
 
         logger_msg_prefix : str
             Prefix to prepend to all logger messages, useful for debugging and 
@@ -359,7 +360,7 @@ def basic_grid_resampling_array(
     
         array_src_win_read_shape = window_shape(array_src_win_read)
         
-        # memory required
+        # memory required - for array_src
         DEBUG( "Computing required memory for array source read" )
         array_src_win_memory = 0
         
@@ -369,8 +370,29 @@ def basic_grid_resampling_array(
             array_src_win_memory += array_src_win_band_memory
             DEBUG( f"memory needed for array_src_win + margin band {band}: "
                     f"{array_src_win_band_memory} bytes" )
+                
+        # memory required - for array_src_mask
         
-        DEBUG( f"total memory needed for array_src_win + margin : "
+        DEBUG( "Computing required memory for array source mask read" )
+        
+        array_src_mask_win_memory = 0
+        array_src_mask_dtype = np.uint8
+        if array_src_mask_ds is not None:
+            array_src_mask_dtype = np.dtype(array_src_mask_ds.dtypes[array_src_mask_band-1])
+            array_src_mask_win_memory = array_src_mask_dtype.itemsize * \
+                    np.prod(np.diff(array_src_win_read, axis=1))
+            DEBUG( f"Memory required for array_src_mask_win + margin : "
+                    f"{array_src_mask_win_memory} bytes" )
+                    
+            array_src_win_memory += array_src_mask_win_memory
+        
+        else:
+            DEBUG( "No available mask for array source\n"  )
+        
+        DEBUG( "Memory required for array_src_mask + margin : "
+                f"{array_src_mask_win_memory} bytes")
+        
+        DEBUG( f"Total memory required for array_src_win and mask : "
                 f"{array_src_win_memory} bytes" )
         
         # The `tile_read_buffer_shape` corresponds to the shape of the buffer
@@ -386,6 +408,14 @@ def basic_grid_resampling_array(
         #cstrip_read_buffer = np.zeros(cstrip_read_buffer_shape, dtype=array_src_profile.dtype, )
         array_src_read_buffer = np.zeros(array_src_read_buffer_shape, dtype=np.float64 )
         
+        # Manage the mask assuming here the same shape as image
+        # Default value to 0 in order to init as not valid
+        # Here we init in all cases (array_src_mask_ds given or not)
+        array_src_mask_read_buffer_shape = window_shape(array_src_win_marged)
+        array_src_mask_read_buffer = np.zeros(array_src_mask_read_buffer_shape,
+                dtype=array_src_mask_dtype)
+        
+        
         # Read the source array.
         # - Due to "virtual" margins we have to compute the correct indices in 
         #   the tile_read_buffer that will hold the 
@@ -393,6 +423,10 @@ def basic_grid_resampling_array(
         DEBUG( 'Reading tiles...' )
         
         get_read_buffer_indices = lambda b, p, s: tuple((b, 
+               slice(p[0][0], p[0][0] + s[0], None),
+               slice(p[1][0], p[1][0] + s[1], None),))
+               
+        get_mask_read_buffer_indices = lambda p, s: tuple(( 
                slice(p[0][0], p[0][0] + s[0], None),
                slice(p[1][0], p[1][0] + s[1], None),))
         
@@ -417,8 +451,38 @@ def basic_grid_resampling_array(
                     f"- source window : {array_src_win_read} "
                     f"- target indices : {indices} [DONE]" )
             
-            # TODO : implement edge management. For now we leave it 
-            # as it is considering the init zero value.
+        # Manage mask
+        if array_src_mask_ds:
+            indices = get_mask_read_buffer_indices(pad,
+                    array_src_win_read_shape)
+                
+            DEBUG( f"Reading source window for source mask "
+                f"- source window : {array_src_win_read} "
+                f"- target indices : {indices} ..." )
+                    
+            array_src_mask_read_buffer[indices] = array_src_mask_ds.read(array_src_mask_band,
+                    window = as_rio_window(array_src_win_read)
+                    ).astype(array_src_mask_dtype)
+                
+            DEBUG( f"Reading source window for source mask "
+                    f"- source window : {array_src_win_read} "
+                    f"- target indices : {indices} [DONE]" )
+            
+        else:
+            # TODO : should we activate this code only if there is pad ?
+            
+            # The mask was not given but we can still fill the mask buffer
+            # to be valid on indices where we can read data VS virtual margins.
+            indices = get_mask_read_buffer_indices(pad,
+                    array_src_win_read_shape)
+            
+            array_src_mask_read_buffer[indices] = 1
+        
+        # TODO : here we could update the array mask with the rasterization of 
+        #        a geometry
+            
+        # TODO : implement edge management. For now we leave it 
+        # as it is considering the init zero value.
         
         # The grid stores absolute source coordinates. However, when operating
         # on a localized sub-region of the raster, we must compensate for the
@@ -440,13 +504,14 @@ def basic_grid_resampling_array(
         # TODO/TOCHECK We may reset the sma_w_array_buffer.array if the cslices
         # is limited (not the case for now)
         
-        # TODO : MANAGE array_src_mask_ds
-        array_in_mask = None
+        array_in_mask = array_src_mask_read_buffer
         
-        # TODO : MANAGE array_out_mask
-        array_out_mask = None
-        
-        # Call the resampling method
+        # array_out_mask
+        array_out_mask = sma_out_mask_buffer.array if sma_out_mask_buffer is not None else None
+                
+        # Call the resampling method - this method returns a tuple containing
+        # the output array and the output mask.
+        # Here both are returned as None as the buffer are given as input
         _ = array_grid_resampling(
                 array_in = array_src_read_buffer, # thats the previously read buffer
                 grid_row = grid_arr[0], # the grid rows
@@ -468,8 +533,12 @@ def basic_grid_resampling_array(
         # Write NODATA
         win_slice = window_indices(out_win, reset_origin=False)
         # Add the band axis.
-        win_slice = (slice(None, None),) + ctile_slice
-        sma_out_buffer.array[win_slice] = nodata_out
+        win_slice3 = (slice(None, None),) + win_slice
+        sma_out_buffer.array[win_slice3] = nodata_out
+        
+        # If mask out - set all to no valid (0)
+        if sma_out_mask_buffer is not None:
+            sma_out_mask_buffer.array[win_slice] = 0
 
 
 def basic_grid_resampling_chain(
@@ -481,6 +550,8 @@ def basic_grid_resampling_chain(
         
         array_src_ds: rasterio.io.DatasetReader,
         array_src_bands: Union[int, List[int]],
+        array_src_mask_ds: Optional[rasterio.io.DatasetReader],
+        array_src_mask_band: Optional[int],
         
         array_out_ds: rasterio.io.DatasetWriter,
 
@@ -491,7 +562,6 @@ def basic_grid_resampling_chain(
         window: np.ndarray, 
     
         mask_out_ds: rasterio.io.DatasetWriter,
-        mask_out_dtype: Union[np.dtypes.Int8DType, np.dtypes.UInt8DType],
         
         grid_mask_in_ds: Optional[rasterio.io.DatasetReader],
         grid_mask_in_unmasked_value: Optional[int],
@@ -502,7 +572,6 @@ def basic_grid_resampling_chain(
         geometry_origin: Optional[Tuple[float, float]],
         #geometry: Optional[Union[shapely.geometry.Polygon,
         #        List[shapely.geometry.Polygon], shapely.geometry.MultiPolygon]],
-        mask_out_values: Optional[Tuple[int, int]] = (0,1),
         
         io_strip_size: int = DEFAULT_IO_STRIP_SIZE,
         io_strip_size_target: GridRIOMode = GridRIOMode.INPUT,
@@ -624,7 +693,7 @@ def basic_grid_resampling_chain(
             grid_row_ds.dtypes[grid_row_coords_band-1])
     
     # TO_CHECK
-    # Create shared memory array for mask
+    # Create shared memory array for grid mask
     sma_in_buffer_grid_mask = None
     if grid_mask_in_ds is not None:
         sma_in_buffer_grid_mask = register_sma(read_grid_buffer_shape,
@@ -645,15 +714,25 @@ def basic_grid_resampling_chain(
     # The computation is performed using the chunk_windows.
     # - nrow x ncol : from max full res grid strip size
     # - ndim : from the number of bands to process
-    write_buffer_shape = np.max(np.asarray([window_shape(chunk_win)
+    write_buffer_shape2 = np.max(np.asarray([window_shape(chunk_win)
             for chunk_win in chunk_windows]), axis=0)
-    write_buffer_shape = np.insert(write_buffer_shape, 0, len(array_src_bands))
+    write_buffer_shape = np.insert(write_buffer_shape2, 0, len(array_src_bands))
     
     # Create shared memory array for output
     logger.debug(f"Create write array buffer with shape {write_buffer_shape}")
     sma_w_array_buffer = register_sma(write_buffer_shape,
             np.dtype(array_out_ds.dtypes[0]))
     logger.debug(f"Create write array buffer with shape {write_buffer_shape} DONE")
+
+    # Manage output mask
+    sma_w_mask_buffer = None
+    if mask_out_ds is not None:
+        mask_out_dtype = np.dtype(mask_out_ds.dtypes[0])
+        # Create shared memory array for output mask
+        logger.debug(f"Create write mask buffer with shape {write_buffer_shape2}")
+        sma_w_mask_buffer = register_sma(write_buffer_shape2, mask_out_dtype)
+        logger.debug(f"Create write mask buffer with shape {write_buffer_shape2} DONE")
+    
 
     # Define here the margins required by interpolation
     # TODO : make it generic / for now set the 2 margin for bicubic interp
@@ -813,13 +892,14 @@ def basic_grid_resampling_chain(
                             grid_mask_in_unmasked_value=grid_mask_in_unmasked_value,
                             array_src_ds=array_src_ds,
                             array_src_bands=array_src_bands,
-                            array_src_mask_ds=None, #TODO
-                            array_src_mask_band=None, #TODO
+                            array_src_mask_ds=array_src_mask_ds, 
+                            array_src_mask_band=array_src_mask_band, 
                             oversampled_grid_win=ctile_grid_win,
                             margin=margin,
                             sma_out_buffer=sma_w_array_buffer,
                             out_win=ctile_win,
                             nodata_out=nodata_out,
+                            sma_out_mask_buffer=sma_w_mask_buffer,
                             logger_msg_prefix=f"Chunk {chunk_idx} - tile {ctile} - ",
                             logger=logger,
                             )
@@ -838,13 +918,14 @@ def basic_grid_resampling_chain(
                         grid_mask_in_unmasked_value=grid_mask_in_unmasked_value,
                         array_src_ds=array_src_ds,
                         array_src_bands=array_src_bands,
-                        array_src_mask_ds=None, #TODO
-                        array_src_mask_band=None, #TODO
+                        array_src_mask_ds=array_src_mask_ds, #TODO
+                        array_src_mask_band=array_src_mask_band, #TODO
                         oversampled_grid_win=win_rel,
                         margin=margin,
                         sma_out_buffer=sma_w_array_buffer,
                         out_win=cslices_as_win,
                         nodata_out=nodata_out,
+                        sma_out_mask_buffer=sma_w_mask_buffer,
                         logger_msg_prefix=f"Chunk {chunk_idx} - ",
                         logger=logger,
                         )
@@ -858,9 +939,12 @@ def basic_grid_resampling_chain(
                 
             # Set mask to no valid
             if mask_out_ds is not None:
-                raise NotImplementedError
+                logger.debug(f"Chunk {chunk_idx} - write mask for full strip...")
+                
+                mask_out_ds.write(sma_w_mask_buffer.array[cslices], 1,
+                        window=as_rio_window(cstrip_target_win))
 
-
+                logger.debug(f"Chunk {chunk_idx} - write mask ends.")
     except:
         raise
 
@@ -1083,6 +1167,9 @@ roi = np.array(((10,40),(5,100)))
 grid_mask = np.ones(grid_row.shape, dtype=np.uint8)
 grid_mask[np.logical_and(np.logical_and(grid_row >= roi[0][0], grid_row <= roi[0][1]), np.logical_and(grid_col >= roi[1][0], grid_col <= roi[1][1]))] = 0
 
+array_in_mask = np.ones(mandrill[0].shape, dtype=np.uint8)
+masked_pos = (60,160)
+array_in_mask[*masked_pos] = 0
 
 
 # write grid on disk
@@ -1127,11 +1214,28 @@ with rasterio.open(array_in_path, "w",
     array_in_ds.write(mandrill[2], 3)
     array_in_ds = None
     
+# write array_in_mask on disk
+array_in_mask_path = "./image_mask_in.tif"
+with rasterio.open(array_in_mask_path, "w",
+                        driver="GTiff",
+                        dtype=array_in_mask.dtype,
+                        height=array_in_mask.shape[0],
+                        width=array_in_mask.shape[1],
+                        count=1,
+                        nbits=1, #=> not working for int8 (only for uint8)
+                        ) as array_in_mask_ds:
+    array_in_mask_ds.write(array_in_mask, 1)
+    array_in_mask_ds = None
+    
 grid_in_ds = rasterio.open(grid_path, "r")
 grid_in_col_ds = grid_in_ds
 array_src_ds = rasterio.open(array_in_path, "r")
 F=1
 oversampling_row, oversampling_col = (10*F, 10*F)
+
+array_src_mask_ds = None
+if True:
+    array_src_mask_ds = rasterio.open(array_in_mask_path, "r")
 
 full_output_shape = grid_full_resolution_shape(shape=(grid_in_ds.height, grid_in_ds.width), resolution= (oversampling_row, oversampling_col))
 print("grid in shape", (grid_in_ds.height, grid_in_ds.width))
@@ -1154,6 +1258,7 @@ computation_dtype = np.float64
 output_dtype = np.float64
 bands = [1, 2, 3]
 array_out_path = "./coding_basic_grid_resampling_chain_array_out.tif"
+mask_out_path = "./coding_basic_grid_resampling_chain_array_out_mask.tif"
 array_out_path_validate = "./coding_basic_grid_resampling_chain_array_out_validate.tif"
 #array_out_ds = 
 
@@ -1166,7 +1271,8 @@ print("basic_grid_resampling_chain...")
 import datetime
 start_date = datetime.datetime.now()
 
-with rasterio.open(array_out_path, "w",  driver="GTiff", dtype=output_dtype, height=output_shape[0], width=output_shape[1], count=len(bands)) as array_out_ds:
+with rasterio.open(array_out_path, "w",  driver="GTiff", dtype=output_dtype, height=output_shape[0], width=output_shape[1], count=len(bands)) as array_out_ds, \
+        rasterio.open(mask_out_path, "w", driver="GTiff", dtype=np.uint8, height=output_shape[0], width=output_shape[1], count=1, nbits=1) as mask_out_ds:
 
     basic_grid_resampling_chain(
         grid_ds = grid_in_ds,
@@ -1176,19 +1282,19 @@ with rasterio.open(array_out_path, "w",  driver="GTiff", dtype=output_dtype, hei
         grid_resolution = grid_resolution,
         array_src_ds = array_src_ds,
         array_src_bands = bands,
+        array_src_mask_ds = array_src_mask_ds,
+        array_src_mask_band = 1,
         array_out_ds = array_out_ds,
         interp = "bicubic",
         nodata_out = 0,
         window = window,
-        mask_out_ds = None,
-        mask_out_dtype = None,
+        mask_out_ds = mask_out_ds,
         grid_mask_in_ds = grid_mask_in_ds,
         grid_mask_in_unmasked_value = grid_mask_in_unmasked_value,
         grid_mask_in_band = grid_mask_in_band,
         computation_dtype = computation_dtype,
         geometry_origin = (0, 0),
         #geometry = None,
-        mask_out_values = (0,1),
         io_strip_size = 75*F, #10000,
         io_strip_size_target = GridRIOMode.OUTPUT,
         #tile_shape = (50, 180),
@@ -1202,10 +1308,11 @@ print(f"end {end_date}")
 print(f"duration {(end_date - start_date).total_seconds()} sec")
 
 plot_image(path=array_out_path)
+plot_image(path=mask_out_path)
 
 
 start_date = datetime.datetime.now()
-out_validate = array_grid_resampling(
+out_validate, out_mask_validate = array_grid_resampling(
                             array_in = array_src_ds.read(1).astype(np.float64),
                             grid_row = grid_in_ds.read(1),
                             grid_col = grid_in_ds.read(2),
