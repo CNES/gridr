@@ -25,10 +25,10 @@ from scipy.interpolate import RegularGridInterpolator
 
 from gridr.core.grid.grid_commons import grid_full_resolution_shape
 from gridr.chain.grid_mask_chain import (
-        GridRIOMode,
         build_mask_chain,
         build_grid_mask_chain,
         )
+from gridr.io.common import GridRIOMode
 
 
 ALOGGER = logging.getLogger(__name__)

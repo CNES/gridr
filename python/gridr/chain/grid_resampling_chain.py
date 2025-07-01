@@ -324,7 +324,7 @@ def basic_grid_resampling_array(
         array_src_profile_2d = ArrayProfile(
             shape=(array_src_ds.height, array_src_ds.width),
             ndim=2,
-            dtype=np.dtype(array_src_ds.dtypes[array_src_bands[0]]))
+            dtype=np.dtype(array_src_ds.dtypes[array_src_bands[0]-1]))
         
         array_src_win_read, \
             array_src_win_marged,\
@@ -621,7 +621,7 @@ def basic_grid_resampling_chain(
     # The window contains the first and last index for each axis
     if window is None:
         logger.debug("No window given : the full grid is considered as window")
-        window = np.array(((0, full_shape_out[0]-1), (0, full_shape_out[1])))
+        window = np.array(((0, full_shape_out[0]-1), (0, full_shape_out[1]-1)))
     
     # If the window is given we have to check that it lies in the grid
     elif not window_check(full_profile_out, window):
