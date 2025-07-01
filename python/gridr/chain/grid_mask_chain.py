@@ -10,8 +10,6 @@
 Module for a Grid and Mask creation chain
 # @doc
 """
-
-from enum import IntEnum
 from functools import partial
 import logging
 from pathlib import Path
@@ -36,14 +34,10 @@ from gridr.core.grid.grid_rasterize import (grid_rasterize,
         GridRasterizeAlg, ShapelyPredicate)
 from gridr.core.grid.grid_mask import build_mask
 from gridr.core.grid.grid_utils import build_grid
+from gridr.io.common import GridRIOMode
 from gridr.scaling.shmutils import (SharedMemoryArray, shmarray_wrap,
         create_and_register_sma)
 
-class GridRIOMode(IntEnum):
-    """Define the backend to use for rasterize.
-    """
-    INPUT = 1
-    OUTPUT = 2
 
 DEFAULT_IO_STRIP_SIZE = 1000
 DEFAULT_CPU_TILE_SHAPE = (1000, 1000)
