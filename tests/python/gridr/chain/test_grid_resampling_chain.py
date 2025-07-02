@@ -135,7 +135,7 @@ class TestGridResamplingChain:
                 array_mask_in_path = Path(output_dir) / "array_mask_in.tif"
                 array_mask = np.ones(shape2(array_in), dtype=np.uint8) * UNMASKED_VALUE
                 for pos in array_in_mask_positions:
-                    array_mask[*pos] = MASKED_VALUE
+                    array_mask[pos[0], pos[1]] = MASKED_VALUE
                 write_array(array_mask, np.uint8, array_mask_in_path)
             
             full_output_shape = grid_full_resolution_shape(shape=grid_row.shape, resolution=grid_resolution)
