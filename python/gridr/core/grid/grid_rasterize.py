@@ -188,6 +188,9 @@ def grid_rasterize(
     considered in the geometry with regards to the optional chosen predicate.
     Otherwise the mask will contain 1.
     
+    If the geometry is empty, ie there is no polygons defined, the mask will be
+    all set to 0 by convention.
+    
     Args:
         grid_coords: grid corresponding coordinates. If not given they are
                 computed with shape, origin and resolution arguments.

@@ -197,6 +197,9 @@ def basic_grid_resampling_array(
         array_src_bands: Union[int, List[int]],
         array_src_mask_ds: Optional[rasterio.io.DatasetReader],
         array_src_mask_band: Optional[int],
+        array_src_geometry_origin = Optional[Tuple[float, float]],
+        array_src_geometry = Optional[Union[shapely.geometry.Polygon,
+                List[shapely.geometry.Polygon], shapely.geometry.MultiPolygon]],
         oversampled_grid_win: np.ndarray,
         margin: np.ndarray,
         sma_out_buffer: SharedMemoryArray,
@@ -279,6 +282,30 @@ def basic_grid_resampling_array(
 
         array_src_mask_band : int
             Band index to read from `array_src_mask_ds` for the source mask.
+        
+        array_src_geometry_origin : Optional[Tuple[float, float]]
+            This optional parameter specifies the origin convention for the
+            `array_src_geometry` definition.
+            GridR uses a (0, 0) image coordinate system to adress the first
+            pixel of the `array_src` raster. This parameter allows you to align
+            the `array_src_geometry` definition with GridR's convention, 
+            ensuring proper spatial referencing.
+            Please note, its internal usage is solely for modifying
+            `array_src_geometry`.
+        
+        array_src_geometry : Optional[ shapely.geometry.Polygon or 
+                List[shapely.geometry.Polygon] or shapely.geometry.MultiPolygon]
+            This optional parameter defines the unmasked geometry within the 
+            `array_src` domain. The union of the provided geometries is used to
+            create a validity mask. Pixels (or points) falling within this union
+            are considered unmasked (valid), while those outside are considered
+            masked (invalid).
+            If provided, a rasterization of this geometry is performed locally 
+            on the current array_src raster window. This generated mask is then 
+            merged with any additional raster mask supplied via the 
+            `array_src_mask_ds` dataset.
+            The rasterization itself is delegated to the `build_mask` gridr's
+            core method.
 
         oversampled_grid_win : np.ndarray
             Target window for resampling, defined in full-resolution coordinates,
@@ -447,8 +474,8 @@ def basic_grid_resampling_array(
                 DEBUG( f"Reading source window for source band {band_in} "
                         f"- source window : {array_src_win_read} "
                         f"- target indices : {indices} [DONE]" )
-                
-            # Manage mask
+            
+            # Manage raster mask
             if array_src_mask_ds:
                 indices = get_mask_read_buffer_indices(pad,
                         array_src_win_read_shape)
@@ -497,6 +524,26 @@ def basic_grid_resampling_array(
             array_src_origin = (
                     pad[0][0] - array_src_win_read[0][0],
                     pad[1][0] - array_src_win_read[1][0])
+            
+            # Manage geometry mask
+            if array_src_geometry is not None:
+                
+                # We have to define the rasterization mesh so that is will be 
+                # aligned with array_in_mask and the optional array_src_mask.
+                # Here the rasterize grid is given by :
+                # - its origin : `array_src_origin`
+                # - its shape : 
+                
+                # ┌────────────────────────────────────────────────────────────┐
+                # │ WARNING :                                                  │
+                # │                                                            │ 
+                # │ The build_mask core method adopts a different convention : │ 
+                # │ - 0 is considered valid and 1 is considered invalid.       │
+                # │ TODO : we may need to change this in the future !!!        │
+                # └────────────────────────────────────────────────────────────┘
+                
+                # TODO FROM HERE
+                pass
             
             # TODO/TOCHECK We may reset the sma_w_array_buffer.array if the cslices
             # is limited (not the case for now)
@@ -565,8 +612,12 @@ def basic_grid_resampling_chain(
         grid_mask_in_band: Optional[int],
         
         computation_dtype: np.dtype,
+        
+        array_src_geometry_origin = Optional[Tuple[float, float]],
+        array_src_geometry = Optional[Union[shapely.geometry.Polygon,
+                List[shapely.geometry.Polygon], shapely.geometry.MultiPolygon]],
     
-        geometry_origin: Optional[Tuple[float, float]],
+        #geometry_origin: Optional[Tuple[float, float]],
         #geometry: Optional[Union[shapely.geometry.Polygon,
         #        List[shapely.geometry.Polygon], shapely.geometry.MultiPolygon]],
         
@@ -755,8 +806,8 @@ def basic_grid_resampling_chain(
             # - cslices_as_win : current strip slices converted to a window
             # - cslices_write : current strip slice to adress the whole output 
             #       dataset for IO write operation
-            # - cgeometry_origin : the shifted geometry origin corresponding to
-            #       the strip.
+            ## - cgeometry_origin : the shifted geometry origin corresponding to
+            ##       the strip.
             cshape = window_shape(chunk_win)
             cslices = window_indices(chunk_win, reset_origin=True)
             cslices_as_win = window_from_indices(cslices, cshape)
@@ -789,9 +840,9 @@ def basic_grid_resampling_chain(
                                 0:cread_shape[1]])
                 cread_grid_mask_arr = sma_in_buffer_grid_mask.array[0:cread_shape[0], 0:cread_shape[1]]
 
-            # Shift geometry origin for the strip
-            cgeometry_origin = (geometry_origin[0] + chunk_win[0][0],
-                    geometry_origin[1] + chunk_win[1][0])
+            ## Shift geometry origin for the strip
+            #cgeometry_origin = (geometry_origin[0] + chunk_win[0][0],
+            #        geometry_origin[1] + chunk_win[1][0])
             
             logger.debug(f"Chunk {chunk_idx} - shape : {cshape}")
             logger.debug(f"Chunk {chunk_idx} - grid read shape : {cread_shape}")
@@ -855,15 +906,15 @@ def basic_grid_resampling_chain(
                     #        the chunk index convention to the window index
                     #        convention ; with no origin shift) relative to
                     #        the current chunk
-                    # - ctile_geometry_origin : the shifted geometry origin
-                    #        corresponding to the current tile.
+                    ## - ctile_geometry_origin : the shifted geometry origin
+                    ##        corresponding to the current tile.
                     # - ctile_grid_win : the full-resolution window within the 
                     #       current chunk's grid that corresponds to the active
                     #       tile.
                     ctile_origin = chunk_win[..., 0]
                     ctile_win = window_from_chunk(chunk=ctile, origin=None)
-                    ctile_geometry_origin = (cgeometry_origin[0] + ctile_win[0][0],
-                            cgeometry_origin[1] + ctile_win[1][0])
+                    #ctile_geometry_origin = (cgeometry_origin[0] + ctile_win[0][0],
+                    #        cgeometry_origin[1] + ctile_win[1][0])
                                                 
                     # Calculate the full-resolution window within the current
                     # chunk's grid that corresponds to the active tile. The tile

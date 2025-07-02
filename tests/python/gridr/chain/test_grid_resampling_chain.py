@@ -32,6 +32,64 @@ from gridr.misc.mandrill import mandrill
 UNMASKED_VALUE=1
 MASKED_VALUE=0
 
+class SafeContext:
+    """
+    A context manager designed to safely wrap another resource,
+    especially useful for optional resources that might be None.
+
+    If the wrapped resource is None, __enter__ will return None,
+    and __exit__ will perform no action.
+    If the wrapped resource is a valid context manager (implements __enter__/__exit__),
+    it will delegate to that resource's methods.
+    Otherwise, if the resource is not None but not a context manager,
+    it will simply return the resource itself in __enter__ and do nothing in __exit__.
+    """
+    def __init__(self, resource):
+        """
+        Initializes the SafeContext with the given resource.
+
+        Args:
+            resource: The resource to be managed. This can be a context manager
+                      (like a file object or rasterio.DataSetReader), or None,
+                      or any other object.
+        """
+        self._resource = resource
+
+    def __enter__(self):
+        """
+        Enters the runtime context related to this object.
+
+        Returns:
+            The managed resource, or None if the initial resource was None,
+            or if the resource is not a context manager.
+        """
+        if self._resource is not None:
+            # If the resource has an __enter__ method, call it
+            if hasattr(self._resource, '__enter__'):
+                return self._resource.__enter__()
+            else:
+                # If it's not None but not a context manager, return it directly
+                return self._resource
+        return None # Return None if the initial resource was None
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Exits the runtime context related to this object.
+        Ensures proper cleanup of the wrapped resource if it's a context manager.
+
+        Args:
+            exc_type: Exception type if an exception occurred within the 'with' block.
+            exc_val: Exception value if an exception occurred.
+            exc_tb: Traceback if an exception occurred.
+
+        Returns:
+            None or a boolean indicating whether the exception was handled.
+        """
+        if self._resource is not None and hasattr(self._resource, '__exit__'):
+            # If the resource has an __exit__ method, call it
+            return self._resource.__exit__(exc_type, exc_val, exc_tb)
+        # Otherwise, do nothing for None resources or non-context managers
+        return None # Explicitly return None if no exception was handled by the wrapped resource
 
 def create_grid(nrow, ncol, origin_pos, origin_node, v_row_y, v_row_x, v_col_y, v_col_x, grid_dtype):
     """
@@ -71,30 +129,45 @@ def shape2(array):
         return (array.shape[1], array.shape[2])
     else:
         return array.shape
-        
+
+def open_raster_or_none(apath, *args, **kwargs):
+    if apath is None:
+        return apath
+    else:
+        return rasterio.open(apath, *args, **kwargs)
 
 class TestGridResamplingChain:
     """Test class"""
     
     @pytest.mark.parametrize("array_in, array_in_mask_positions, array_in_bands", [
             (mandrill[0], None, [1,]),
+            (mandrill, None, [1,2,3]),
             (mandrill[0], [(60, 160),], [1,])])
     @pytest.mark.parametrize("array_in_dtype", [(np.float64)])
-    @pytest.mark.parametrize("grid_shape, grid_vec_row, grid_vec_col, grid_origin_pos, grid_origin_node, grid_dtype, grid_mask", [
-            ((50, 40), (5.2, 1.2), (-2.7, 7.1), (0.3, 0.2), (0., 0.), np.float64, True),
-            ((50, 40), (5.2, 1.2), (-2.7, 7.1), (0.3, 0.2), (0., 0.), np.float64, False)])
-    @pytest.mark.parametrize("grid_resolution", [(10, 10),])
+    @pytest.mark.parametrize("grid_vec_row, grid_vec_col, grid_origin_pos, grid_origin_node, grid_dtype, grid_mask", [
+            ((5.2, 1.2), (-2.7, 7.1), (0.3, 0.2), (0., 0.), np.float64, True),
+            ((5.2, 1.2), (-2.7, 7.1), (0.3, 0.2), (0., 0.), np.float64, False)])
+    @pytest.mark.parametrize("grid_shape, grid_resolution, window", [
+            ((50, 40), (10, 10), None),])
+    @pytest.mark.parametrize("mask_out", [True, False])
     #@pytest.mark.parametrize("grid_resolution", [(3, 4),])
-    #@pytest.mark.parametrize("io_strip_size", [100, 1000, 10000])
-    #@pytest.mark.parametrize("io_strip_size_target", [GridRIOMode.INPUT, GridRIOMode.OUTPUT])
+    @pytest.mark.parametrize("io_strip_size, io_strip_size_target, tile_shape", [
+        (100, GridRIOMode.OUTPUT, None),
+        (100, GridRIOMode.OUTPUT, (80, 200)),
+        (100, GridRIOMode.INPUT, (80, 200)),
+        (100, GridRIOMode.OUTPUT, (100, 200)),
+        (100, GridRIOMode.OUTPUT, (102, 200)),
+        (1000, GridRIOMode.OUTPUT, (1000, 200)),
+        (1000, GridRIOMode.OUTPUT, (1000, 1000))])
     #@pytest.mark.parametrize("ncpu", [1, 2])
     #@pytest.mark.parametrize("cpu_tile_shape", [(1000,1000),])
     #@pytest.mark.parametrize("computation_dtype", [DTYPE_00,])
     def test_build_mask_chain(self,
             request,
             array_in, array_in_mask_positions, array_in_bands, array_in_dtype,
-            grid_shape, grid_vec_row, grid_vec_col, grid_origin_pos, grid_origin_node, grid_dtype, grid_mask,
-            grid_resolution,
+            grid_vec_row, grid_vec_col, grid_origin_pos, grid_origin_node, grid_dtype, grid_mask,
+            grid_shape, grid_resolution, window, mask_out,
+            io_strip_size, io_strip_size_target, tile_shape,
             ):
         """Test the grid_resampling_chain - compare results with results in the core method
         """
@@ -104,9 +177,13 @@ class TestGridResamplingChain:
         output_dir = tempfile.mkdtemp(suffix=test_id, prefix=None, dir=None)
         array_in_path = Path(output_dir) / "array_in.tif"
         grid_in_path = Path(output_dir) / "grid_in.tif"
+        array_out_path = Path(output_dir) / "array_out.tif"
         grid_mask_in_path = None
         array_mask_in_path = None
+        array_mask_out_path = None
         
+        computation_dtype = np.float64
+        output_dtype = np.float64
         
         try:
             # Write input array
@@ -138,23 +215,34 @@ class TestGridResamplingChain:
                     array_mask[pos[0], pos[1]] = MASKED_VALUE
                 write_array(array_mask, np.uint8, array_mask_in_path)
             
+            # compute window and output shape
             full_output_shape = grid_full_resolution_shape(shape=grid_row.shape, resolution=grid_resolution)
-            array_out_path = Path(output_dir) / "array_out.tif"
-            computation_dtype = np.float64
-            output_dtype = np.float64
-            
-            output_shape = full_output_shape
-            window = None
             if window is None:
                 window = np.array(((0, full_output_shape[0]-1), (0, full_output_shape[1]-1)))
-            output_shape = window[:,1] - window[:,0] + 1
+                output_shape = full_output_shape
+            else:
+                output_shape = window[:,1] - window[:,0] + 1
             
+            array_out_open_kwargs = {"driver": "GTiff", "dtype": output_dtype,
+                        "height": output_shape[0], "width": output_shape[1], "count":len(array_in_bands) }
+            
+            # Check if we want a mask out
+            mask_out_open_kwargs = {}
+            if mask_out:
+                array_mask_out_path = Path(output_dir) / "array_mask_out.tif"
+                mask_out_open_kwargs = {"driver": "GTiff", "dtype": np.uint8,
+                        "height": output_shape[0], "width": output_shape[1], "count":1, "nbits":1 }
+
+            
+            array_out_validate, mask_out_validate = None, None
             F=1
             with rasterio.open(grid_in_path, 'r') as grid_in_ds, \
                     rasterio.open(array_in_path, 'r') as array_in_ds, \
-                    rasterio.open(array_out_path, "w",  driver="GTiff", dtype=output_dtype,
-                            height=output_shape[0], width=output_shape[1],
-                            count=len(array_in_bands)) as array_out_ds:
+                    rasterio.open(array_out_path, "w", **array_out_open_kwargs) as array_out_ds, \
+                    SafeContext(open_raster_or_none(grid_mask_in_path)) as grid_mask_in_ds, \
+                    SafeContext(open_raster_or_none(array_mask_in_path)) as array_mask_in_ds, \
+                    SafeContext(open_raster_or_none(array_mask_out_path, "w", **mask_out_open_kwargs)) as array_mask_out_ds:
+                
                 basic_grid_resampling_chain(
                     grid_ds = grid_in_ds,
                     grid_col_ds = grid_in_ds,
@@ -164,25 +252,54 @@ class TestGridResamplingChain:
                     array_src_ds = array_in_ds,
                     array_src_bands = array_in_bands,
                     
-                    array_src_mask_ds = None,
+                    array_src_mask_ds = array_mask_in_ds,
                     array_src_mask_band = 1,
+                    
                     array_out_ds = array_out_ds,
                     interp = "bicubic",
                     nodata_out = 0,
                     window = window,
-                    mask_out_ds = None,
-                    grid_mask_in_ds = None,
+                    
+                    mask_out_ds = array_mask_out_ds,
+                    grid_mask_in_ds = grid_mask_in_ds,
                     grid_mask_in_unmasked_value = UNMASKED_VALUE,
                     grid_mask_in_band = 1,
                     computation_dtype = computation_dtype,
-                    geometry_origin = (0, 0),
-                    #geometry = None,
-                    io_strip_size = 75*F, #10000,
-                    io_strip_size_target = GridRIOMode.OUTPUT,
-                    #tile_shape = (50, 180),
-                    tile_shape = None,
+                    #grid_geometry_origin = (0, 0),
+                    io_strip_size = io_strip_size, #10000,
+                    io_strip_size_target = io_strip_size_target,
+                    tile_shape = tile_shape,
                 )
-
+            
+                # Compute the same thing with the core method
+                array_out_validate, mask_out_validate = array_grid_resampling(
+                        array_in = np.asarray([ array_in_ds.read(b).astype(np.float64) for b in array_in_bands]),
+                        grid_row = grid_in_ds.read(1),
+                        grid_col = grid_in_ds.read(2),
+                        grid_resolution = grid_resolution,
+                        array_out = None,
+                        array_out_win = None,
+                        nodata_out = 0,
+                        array_in_origin = None,
+                        win = window,
+                        array_in_mask = array_mask_in_ds.read(1) if array_mask_in_ds else None,
+                        grid_mask = grid_mask_in_ds.read(1) if grid_mask_in_ds else None,
+                        grid_mask_valid_value = UNMASKED_VALUE,
+                        grid_nodata = None,
+                        array_out_mask = mask_out,)
+            
+            with rasterio.open(array_out_path, "r") as array_out_ds, \
+                    SafeContext(open_raster_or_none(array_mask_out_path, "r")) as array_mask_out_ds:
+                        
+                np.testing.assert_allclose(np.squeeze(array_out_ds.read()), array_out_validate, rtol=1e-7, atol=1e-8,
+                        err_msg="Output image computed with the basic_grid_resampling_chain differs"
+                                "from the image computed with the corresponding core method")
+                
+                if mask_out:
+                    np.testing.assert_array_equal(np.squeeze(array_mask_out_ds.read()), mask_out_validate,
+                            err_msg="Output mask computed with the basic_grid_resampling_chain differs"
+                                    "from the mask computed with the corresponding core method")
+                        
         finally:
             # Clear
             os.unlink(array_in_path)
@@ -192,305 +309,7 @@ class TestGridResamplingChain:
                 os.unlink(grid_mask_in_path)
             if array_mask_in_path:
                 os.unlink(array_mask_in_path)
+            if array_mask_out_path:
+                os.unlink(array_mask_out_path)
             os.rmdir(output_dir)
         
-        # mask_in_ds = None
-        # mask_in_tmp = None
-        # output_dir = None
-        # mask_out = None
-        # try:
-            # output_dir = tempfile.mkdtemp(suffix=test_id, prefix=None, dir=None)
-            # mask_out = Path(output_dir) / "mask_out.tif"
-            
-            # # First write input mask on disk
-            # if mask_data_in is not None:
-                # mask_in_tmp = Path(output_dir) / "mask_in_tmp.tif"
-                # with rasterio.open(mask_in_tmp, "w",
-                        # driver="GTiff",
-                        # dtype=mask_data_in.dtype,
-                        # height=mask_data_in.shape[0],
-                        # width=mask_data_in.shape[1],
-                        # count=1,
-                        # #nbits=1, => not working for int8 (only for uint8)
-                        # ) as mask_in_ds:
-                    # mask_in_ds.write(mask_data_in, 1)
-                # mask_in_ds = None
-            
-            # shape_out = grid_full_resolution_shape(shape=shape, resolution=resolution)
-            
-            # with rasterio.open(mask_in_tmp, "r") as mask_in_ds:
-                # with rasterio.open(mask_out, "w",
-                        # driver="GTiff",
-                        # dtype=np.uint8,
-                        # height=shape_out[0],
-                        # width=shape_out[1],
-                        # count=1,
-                        # nbits=1) as mask_out_ds:
-                    # # Create output raster ds
-                    # build_mask_chain(shape=shape, resolution=resolution,
-                            # mask_out_ds=mask_out_ds, mask_out_dtype=np.uint8,
-                            # mask_in_ds=mask_in_ds, mask_in_unmasked_value=MASK_IN_UNMASKED_VALUE,
-                            # mask_in_band=1, geometry_origin=(0.5,0.5),
-                            # geometry=None, rasterize_kwargs=None,
-                            # mask_out_values = MASK_OUT_VALUES, io_strip_size=io_strip_size,
-                            # io_strip_size_target=io_strip_size_target,
-                            # ncpu=ncpu, cpu_tile_shape = cpu_tile_shape,
-                            # computation_dtype=computation_dtype)
-            
-        # except Exception as e:
-            # raise
-            # if isinstance(e, expected):
-                # pass
-            # else:
-                # raise
-        # else:
-            # try:
-                # if issubclass(expected, BaseException):
-                    # raise Exception(f"The test should have raised an exceptionof type {expected}")
-            # except TypeError:
-                # pass
-            
-            # # check
-            # with rasterio.open(mask_out, "r") as mask_out_ds:
-                # mask_out_data = mask_out_ds.read(1)
-                # #test = mask_out_data == mask_data_out_expected
-                # #where_fail = np.where(test == False)
-                # #raise Exception(where_fail)
-                # np.testing.assert_array_equal(mask_out_data, mask_data_out_expected)
-            
-        # finally:
-            # if mask_in_tmp:
-                # os.unlink(mask_in_tmp)
-            # if mask_out:
-                # os.unlink(mask_out)
-            # if output_dir:
-                # os.rmdir(output_dir)
-            # # Check
-    
-    
-    
-    # @pytest.mark.parametrize("data, expected", [
-            # (BUILD_MASK_DATA_01, BUILD_MASK_EXPECTED_01),
-            # ])
-    # @pytest.mark.parametrize("io_strip_size", [100, 1000, 10000])
-    # @pytest.mark.parametrize("io_strip_size_target", [GridRIOMode.INPUT, GridRIOMode.OUTPUT])
-    # @pytest.mark.parametrize("ncpu", [1, 2])
-    # @pytest.mark.parametrize("cpu_tile_shape", [(1000,1000),])
-    # @pytest.mark.parametrize("computation_dtype", [DTYPE_00,])
-    # def test_build_mask_chain_no_mask_in(self,
-            # request,
-            # data,
-            # expected,
-            # io_strip_size,
-            # io_strip_size_target,
-            # ncpu,
-            # cpu_tile_shape,
-            # computation_dtype,
-            # ):
-        # """Test the grid_mask_chain
-        
-        # Args:
-            # data : input data as a tuple containing all the arguments
-            # expected: expected data
-        # """
-        # test_id = request.node.nodeid.split('::')[-1].replace('[','-').replace(']','')
-        # shape, resolution, _ = data
-        # mask_data_out_expected = expected
-
-        # mask_in_ds = None
-        # output_dir = None
-        # mask_out = None
-        # try:
-            # output_dir = tempfile.mkdtemp(suffix=test_id, prefix=None, dir=None)
-            # mask_out = Path(output_dir) / "mask_out.tif"
-            # shape_out = grid_full_resolution_shape(shape=shape, resolution=resolution)
-            
-            # with rasterio.open(mask_out, "w",
-                    # driver="GTiff",
-                    # dtype=np.uint8,
-                    # height=shape_out[0],
-                    # width=shape_out[1],
-                    # count=1,
-                    # nbits=1) as mask_out_ds:
-                # # Create output raster ds
-                # build_mask_chain(shape=shape, resolution=resolution,
-                            # mask_out_ds=mask_out_ds, mask_out_dtype=np.uint8,
-                            # mask_in_ds=None, mask_in_unmasked_value=None,
-                            # mask_in_band=None, geometry_origin=(0.5,0.5),
-                            # geometry=None, rasterize_kwargs=None,
-                            # mask_out_values = MASK_OUT_VALUES, io_strip_size=io_strip_size,
-                            # io_strip_size_target=io_strip_size_target,
-                            # ncpu=ncpu, cpu_tile_shape = cpu_tile_shape,
-                            # computation_dtype=computation_dtype)
-            
-        # except Exception as e:
-            # raise
-            # if isinstance(e, expected):
-                # pass
-            # else:
-                # raise
-        # else:
-            # try:
-                # if issubclass(expected, BaseException):
-                    # raise Exception(f"The test should have raised an exceptionof type {expected}")
-            # except TypeError:
-                # pass
-            
-            # # check
-            # with rasterio.open(mask_out, "r") as mask_out_ds:
-                # mask_out_data = mask_out_ds.read(1)
-                # # We gave no input mask : all should be unmasked
-                # np.testing.assert_array_equal(mask_out_data, MASK_OUT_VALUES[0])
-            
-        # finally:
-            # if mask_out:
-                # os.unlink(mask_out)
-            # if output_dir:
-                # os.rmdir(output_dir)
-
-
-    
-    # @pytest.mark.parametrize("data, expected", [
-            # (BUILD_GRID_MASK_DATA_01, BUILD_GRID_MASK_EXPECTED_01),
-            # ])
-    # @pytest.mark.parametrize("io_strip_size", [100, 1000, 10000])
-    # @pytest.mark.parametrize("io_strip_size_target", [GridRIOMode.INPUT, GridRIOMode.OUTPUT])
-    # @pytest.mark.parametrize("ncpu", [1, 2])
-    # @pytest.mark.parametrize("cpu_tile_shape", [(10,10), (1000,1000),])
-    # @pytest.mark.parametrize("computation_dtype", [DTYPE_00,])
-    # @pytest.mark.parametrize("merge_mask_grid", [None, GRID_MASK_VALUE_00])
-    # def test_build_grid_mask_chain(self,
-            # request,
-            # data,
-            # expected,
-            # io_strip_size,
-            # io_strip_size_target,
-            # ncpu,
-            # cpu_tile_shape,
-            # computation_dtype,
-            # merge_mask_grid,
-            # ):
-        # """Test the grid_mask_chain
-        
-        # Args:
-            # data : input data as a tuple containing all the arguments
-            # expected: expected data
-        # """
-        # test_id = request.node.nodeid.split('::')[-1].replace('[','-').replace(']','')
-        # shape, resolution, grid_data_in, mask_data_in = data
-        # grid_data_out_expected, mask_data_out_expected, grid_data_out_expected_w_mask = expected
-        
-        # if merge_mask_grid is not None:
-            # grid_data_out_expected = grid_data_out_expected_w_mask
-        # #mask_data_out_expected = expected
-        # #assert(mask_data_out_expected.ndim == 2)
-        # grid_in_ds = None
-        # mask_in_ds = None
-        # mask_in_tmp = None
-        # output_dir = None
-        # mask_out = None
-        # grid_out= None
-        # try:
-            # output_dir = tempfile.mkdtemp(suffix=test_id, prefix=None, dir=None)
-            # grid_out = Path(output_dir) / "grid_out.tif"
-            # mask_out = Path(output_dir) / "mask_out.tif"
-            
-            # # First write inputs on disk
-            # #-------------------------------------------------------------------
-            # grid_in_tmp = Path(output_dir) / "grid_in_tmp.tif"
-            # with rasterio.open(grid_in_tmp, "w",
-                    # driver="GTiff", dtype=grid_data_in.dtype,
-                    # height=grid_data_in.shape[1], width=grid_data_in.shape[2],
-                    # count=2) as grid_in_ds:
-                # grid_in_ds.write(grid_data_in[0], 1)
-                # grid_in_ds.write(grid_data_in[1], 2)
-            # grid_in_ds = None
-            
-            # # Write input mask
-            # if mask_data_in is not None:
-                # mask_in_tmp = Path(output_dir) / "mask_in_tmp.tif"
-                # with rasterio.open(mask_in_tmp, "w",
-                        # driver="GTiff",
-                        # dtype=mask_data_in.dtype,
-                        # height=mask_data_in.shape[0],
-                        # width=mask_data_in.shape[1],
-                        # count=1,
-                        # #nbits=1, => not working for int8 (only for uint8)
-                        # ) as mask_in_ds:
-                    # mask_in_ds.write(mask_data_in, 1)
-                # mask_in_ds = None
-            
-            # shape_out = grid_full_resolution_shape(shape=shape, resolution=resolution)
-            
-            # grid_in_ds = rasterio.open(grid_in_tmp, "r")
-            # mask_in_ds = rasterio.open(mask_in_tmp, "r")
-            
-            # open_kwargs = {"driver": "GTiff", "height":shape_out[0], "width":shape_out[1]}
-            # with rasterio.open(grid_in_tmp, "r") as grid_in_ds, \
-                    # rasterio.open(mask_in_tmp, "r") as mask_in_ds, \
-                    # rasterio.open(grid_out, "w", dtype=computation_dtype, count=2, **open_kwargs) as grid_out_ds, \
-                    # rasterio.open(mask_out, "w", dtype=np.uint8, count=1, nbits=1, **open_kwargs) as mask_out_ds:
-                
-                # # Create output raster ds
-                # build_grid_mask_chain(
-                    # resolution=resolution, 
-                    # grid_in_ds=grid_in_ds,
-                    # grid_in_col_ds=None,
-                    # grid_in_row_coords_band=1,
-                    # grid_in_col_coords_band=2,
-                    # grid_out_ds=grid_out_ds,
-                    # grid_out_col_ds=None,
-                    # grid_out_row_coords_band=1,
-                    # grid_out_col_coords_band=2,
-                    # mask_out_ds=mask_out_ds,
-                    # mask_out_dtype=np.uint8,
-                    # mask_in_ds=mask_in_ds, mask_in_unmasked_value=MASK_IN_UNMASKED_VALUE,
-                    # mask_in_band=1, geometry_origin=(0.5,0.5),
-                    # geometry=None, rasterize_kwargs=None,
-                    # mask_out_values = MASK_OUT_VALUES,
-                    # merge_mask_grid = merge_mask_grid,
-                    # io_strip_size=io_strip_size,
-                    # io_strip_size_target=io_strip_size_target,
-                    # ncpu=ncpu, cpu_tile_shape = cpu_tile_shape,
-                    # computation_dtype=computation_dtype)
-                    
-        # except Exception as e:
-            # raise
-            # if isinstance(e, expected):
-                # pass
-            # else:
-                # raise
-        # else:
-            # try:
-                # if issubclass(expected, BaseException):
-                    # raise Exception(f"The test should have raised an exceptionof type {expected}")
-            # except TypeError:
-                # pass
-            
-            # with rasterio.open(grid_out, "r") as grid_out_ds:
-                # grid_out_data_row = grid_out_ds.read(1)
-                # grid_out_data_col = grid_out_ds.read(2)
-                # np.testing.assert_array_equal(grid_out_data_col, grid_data_out_expected[1])
-                # np.testing.assert_array_equal(grid_out_data_row, grid_data_out_expected[0])
-            
-            # # check
-            # with rasterio.open(mask_out, "r") as mask_out_ds:
-                # mask_out_data = mask_out_ds.read(1)
-                # #test = mask_out_data == mask_data_out_expected
-                # #where_fail = np.where(test == False)
-                # #raise Exception(where_fail)
-                # np.testing.assert_array_equal(mask_out_data, mask_data_out_expected)
-            
-        # finally:
-            # if grid_in_tmp:
-                # os.unlink(grid_in_tmp)
-            # if mask_in_tmp:
-                # os.unlink(mask_in_tmp)
-            # if grid_out:
-                # os.unlink(grid_out)
-            # if mask_out:
-                # os.unlink(mask_out)
-            # if output_dir:
-                # os.rmdir(output_dir)
-            # # Check
-
