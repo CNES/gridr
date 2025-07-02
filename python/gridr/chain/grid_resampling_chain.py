@@ -764,10 +764,11 @@ def basic_grid_resampling_chain(
             # Read the grid mask data if given
             cread_grid_mask_arr = None
             if sma_in_buffer_grid_mask is not None:
-                cread_grid_mask_arr = grid_mask_in_ds.read(grid_mask_in_band,
+                _ = grid_mask_in_ds.read(grid_mask_in_band,
                         window = as_rio_window(win_read),
                         out=sma_in_buffer_grid_mask.array[0:cread_shape[0],
                                 0:cread_shape[1]])
+                cread_grid_mask_arr = sma_in_buffer_grid_mask.array[0:cread_shape[0], 0:cread_shape[1]]
 
             # Shift geometry origin for the strip
             cgeometry_origin = (geometry_origin[0] + chunk_win[0][0],
