@@ -53,7 +53,7 @@
 use crate::core::gx_array::{GxArrayWindow, GxArrayView, GxArrayViewMut};
 //use crate::core::interp::gx_optimized_bicubic_kernel::{array1_optimized_bicubic_interp2};
 //use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewInterpolationContextTrait, GxArrayViewInterpolationContext, NoInputMask, BinaryInputMask, NoOutputMask, BinaryOutputMask, NoBoundsCheck, BoundsCheck, OutputMaskStrategy, InputMaskStrategy, GxArrayViewInterpolatorOutputMaskStrategy};
-use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewInterpolationContextTrait, GxArrayViewInterpolationContext, NoInputMask, BinaryInputMask, NoOutputMask, BinaryOutputMask, BoundsCheck};
+use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewInterpolationContextTrait, GxArrayViewInterpolationContext, GxArrayViewInterpolatorOutputMaskStrategy, NoInputMask, BinaryInputMask, NoOutputMask, BinaryOutputMask, BoundsCheck};
 //use crate::core::interp::gx_optimized_bicubic_kernel::{GxOptimizedBicubicInterpolator};
 //use crate::{assert_options_match};
 use crate::core::gx_errors::GxError;
@@ -949,11 +949,12 @@ where
                     );
         } else {
             // do something
-            for ivar in 0..ima_in.nvar {                
+            for ivar in 0..ima_in.nvar {
                 // Write nodata value to output buffer
                 //ima_out.data[out_idx + ivar * size_out] = nodata_val_out;
                 ima_out.data[windowed_out_idx + ivar * ima_out_var_size] = nodata_val_out;
             }
+            context.output_mask().set_value(windowed_out_idx, 0);
         }
         // Prepare next iteration
         (grid_row_idx, grid_col_idx, out_col_idx, windowed_out_idx) = gmi_mesh.next(grid_row_idx,
