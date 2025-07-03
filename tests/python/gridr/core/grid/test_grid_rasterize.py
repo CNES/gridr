@@ -364,7 +364,8 @@ class TestGridRasterize:
             ALG_RASTERIZE_SHAPELY_COVERS,
             ALG_RASTERIZE_SHAPELY_INTERSECTS,
             ALG_RASTERIZE_SHAPELY_CONTAINS])
-    def test_shapely_rasterize(self, data, expected, alg_param, testing_decimal):
+    @pytest.mark.parametrize("inner", [0, 1])
+    def test_shapely_rasterize(self, data, expected, alg_param, testing_decimal, inner):
         """Test a regular grid interpolation with mask
         
         Args:
@@ -382,7 +383,9 @@ class TestGridRasterize:
         except KeyError:
             # test results not defined for this predicate
             return
-            
+        
+        outer = 0 if inner else 1
+        
         mask = None
         expected_dtype = None
         expected_output_id = None
@@ -392,7 +395,7 @@ class TestGridRasterize:
         else:
             expected_dtype = dtype
         try:
-            mask = rasterize_polygons_shapely(polygons, grid_coords, shape, origin, resolution, predicate, output, dtype)
+            mask = rasterize_polygons_shapely(polygons, inner, outer, grid_coords, shape, origin, resolution, predicate, output, dtype)
             if output is not None:
                 mask = output
         except Exception as e:
@@ -407,6 +410,13 @@ class TestGridRasterize:
             except TypeError:
                 pass
             # Check
+            if inner == 1:
+                expected_mask_inv = None
+                if expected_mask.dtype == bool:
+                    expected_mask_inv = np.invert(expected_mask)
+                else:
+                    expected_mask_inv = np.where(expected_mask, 0, 1)
+                expected_mask = expected_mask_inv
             np.testing.assert_array_almost_equal(mask, expected_mask, decimal=testing_decimal)
             assert(mask.dtype == expected_dtype)
             #if expected_output_id is not None:
@@ -422,7 +432,8 @@ class TestGridRasterize:
             ])
     @pytest.mark.parametrize("alg_param", [
             ALG_RASTERIZE_RASTERIO_RASTERIZE,])
-    def test_rasterio_rasterize(self, data, expected, alg_param, testing_decimal):
+    @pytest.mark.parametrize("inner", [0, 1])
+    def test_rasterio_rasterize(self, data, expected, alg_param, testing_decimal, inner):
         """Test a regular grid interpolation with mask
         
         Args:
@@ -435,6 +446,8 @@ class TestGridRasterize:
         # alg_params :
         # expected_mask contains either the nominal output or the exception
         expected_mask = expected[GridRasterizeAlg.RASTERIO_RASTERIZE]
+        
+        outer = 0 if inner else 1
         
         mask = None
         expected_dtype = None
@@ -454,6 +467,8 @@ class TestGridRasterize:
                     origin=origin,
                     resolution=resolution,
                     polygons=polygons,
+                    inner_value=inner,
+                    outer_value=outer,
                     output=output,
                     dtype=dtype,
                     )
@@ -472,6 +487,13 @@ class TestGridRasterize:
             except TypeError:
                 pass
             # Check
+            if inner == 1:
+                expected_mask_inv = None
+                if expected_mask.dtype == bool:
+                    expected_mask_inv = np.invert(expected_mask)
+                else:
+                    expected_mask_inv = np.where(expected_mask, 0, 1)
+                expected_mask = expected_mask_inv
             np.testing.assert_array_almost_equal(mask, expected_mask, decimal=testing_decimal)
             assert(mask.dtype == expected_dtype)
             
@@ -498,7 +520,8 @@ class TestGridRasterize:
     @pytest.mark.parametrize("alg_param", [
             ALG_RASTERIZE_SHAPELY_COVERS,
             ALG_RASTERIZE_RASTERIO_RASTERIZE])
-    def test_grid_rasterize(self, data, expected, alg_param, testing_decimal):
+    @pytest.mark.parametrize("inner", [0, 1])
+    def test_grid_rasterize(self, data, expected, alg_param, testing_decimal, inner):
         """Test a regular grid interpolation with mask
         
         Args:
@@ -513,6 +536,9 @@ class TestGridRasterize:
                 
         win = None #TO BE TESTED
         reduce = False
+        
+        outer = 0 if inner else 1
+        
         # expected_mask contains either the nominal output or the exception
         if alg == GridRasterizeAlg.SHAPELY:
             try:
@@ -541,6 +567,9 @@ class TestGridRasterize:
                     origin=origin,
                     resolution=resolution,
                     win=win,
+                    inner_value=inner,
+                    outer_value=outer,
+                    default_value=0,
                     geometry=polygons,
                     geometry_buffer_dst=geometry_buffer,
                     alg=alg_param['alg'],
@@ -562,6 +591,14 @@ class TestGridRasterize:
             except TypeError:
                 pass
             # Check
+            
+            if inner == 1:
+                expected_mask_inv = None
+                if expected_mask.dtype == bool:
+                    expected_mask_inv = np.invert(expected_mask)
+                else:
+                    expected_mask_inv = np.where(expected_mask, 0, 1)
+                expected_mask = expected_mask_inv
             np.testing.assert_array_almost_equal(mask, expected_mask, decimal=testing_decimal)
             assert(mask.dtype == expected_dtype)
             

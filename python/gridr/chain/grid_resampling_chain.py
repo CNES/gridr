@@ -23,6 +23,7 @@ from typing import Union, NoReturn, Optional, Tuple, List, Dict
 import numpy as np
 import rasterio
 from rasterio.windows import Window
+import shapely
 
 from gridr.cdylib import PyGridGeometriesMetricsF64
 from gridr.core.utils import chunks
@@ -197,8 +198,8 @@ def basic_grid_resampling_array(
         array_src_bands: Union[int, List[int]],
         array_src_mask_ds: Optional[rasterio.io.DatasetReader],
         array_src_mask_band: Optional[int],
-        array_src_geometry_origin = Optional[Tuple[float, float]],
-        array_src_geometry = Optional[Union[shapely.geometry.Polygon,
+        array_src_geometry_origin: Optional[Tuple[float, float]],
+        array_src_geometry: Optional[Union[shapely.geometry.Polygon,
                 List[shapely.geometry.Polygon], shapely.geometry.MultiPolygon]],
         oversampled_grid_win: np.ndarray,
         margin: np.ndarray,
@@ -613,9 +614,9 @@ def basic_grid_resampling_chain(
         
         computation_dtype: np.dtype,
         
-        array_src_geometry_origin = Optional[Tuple[float, float]],
-        array_src_geometry = Optional[Union[shapely.geometry.Polygon,
-                List[shapely.geometry.Polygon], shapely.geometry.MultiPolygon]],
+        array_src_geometry_origin: Optional[Tuple[float, float]] = None,
+        array_src_geometry: Optional[Union[shapely.geometry.Polygon,
+                List[shapely.geometry.Polygon], shapely.geometry.MultiPolygon]] = None,
     
         #geometry_origin: Optional[Tuple[float, float]],
         #geometry: Optional[Union[shapely.geometry.Polygon,
@@ -942,7 +943,9 @@ def basic_grid_resampling_chain(
                             array_src_ds=array_src_ds,
                             array_src_bands=array_src_bands,
                             array_src_mask_ds=array_src_mask_ds, 
-                            array_src_mask_band=array_src_mask_band, 
+                            array_src_mask_band=array_src_mask_band,
+                            array_src_geometry_origin=array_src_geometry_origin,
+                            array_src_geometry=array_src_geometry,
                             oversampled_grid_win=ctile_grid_win,
                             margin=margin,
                             sma_out_buffer=sma_w_array_buffer,
@@ -969,6 +972,8 @@ def basic_grid_resampling_chain(
                         array_src_bands=array_src_bands,
                         array_src_mask_ds=array_src_mask_ds, #TODO
                         array_src_mask_band=array_src_mask_band, #TODO
+                        array_src_geometry_origin=array_src_geometry_origin,
+                        array_src_geometry=array_src_geometry,
                         oversampled_grid_win=win_rel,
                         margin=margin,
                         sma_out_buffer=sma_w_array_buffer,

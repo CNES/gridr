@@ -29,6 +29,10 @@ from gridr.core.grid.grid_commons import (grid_regular_coords_1d,
 
 DFLT_GEOMETRY_BUFFER_DISTANCE = 1e-6
 
+# Define a type alias for geometry input
+GeometryType = Union[ shapely.geometry.Polygon, List[shapely.geometry.Polygon],
+        shapely.geometry.MultiPolygon]
+
 
 class GridRasterizeAlg(IntEnum):
     """Define the backend to use for rasterize.
@@ -76,8 +80,7 @@ def _grid_rasterize_check_params(
         origin: Optional[Tuple[float, float]],
         resolution: Optional[Tuple[int, int]],
         win: Optional[np.ndarray],
-        geometry: Union[shapely.geometry.Polygon,
-                List[shapely.geometry.Polygon], shapely.geometry.MultiPolygon],
+        geometry: Optional[GeometryType],
         output: Optional[np.ndarray] = None,
         dtype: Optional[np.dtype] = None,
         reduce: bool = False,
@@ -174,8 +177,10 @@ def grid_rasterize(
         origin: Optional[Tuple[float, float]],
         resolution: Optional[Tuple[int, int]],
         win: Optional[np.ndarray],
-        geometry: Union[shapely.geometry.Polygon,
-                List[shapely.geometry.Polygon], shapely.geometry.MultiPolygon],
+        inner_value: int,
+        outer_value: int,
+        default_value: int,
+        geometry: GeometryType,
         geometry_buffer_dst: Optional[float] = DFLT_GEOMETRY_BUFFER_DISTANCE,
         alg: GridRasterizeAlg = GridRasterizeAlg.RASTERIO_RASTERIZE,
         output: Optional[np.ndarray] = None,
@@ -183,13 +188,17 @@ def grid_rasterize(
         reduce: bool = False,
         **kwargs_alg,
         ) -> Union[np.ndarray, np.uint8]:
-    """Rasterize a geometry on a grid as a binary mask.
-    The mask will contains 0 if the corresponding grid's pixel centroïd is 
-    considered in the geometry with regards to the optional chosen predicate.
-    Otherwise the mask will contain 1.
-    
-    If the geometry is empty, ie there is no polygons defined, the mask will be
-    all set to 0 by convention.
+    """
+    Generates a raster mask based on the spatial relationship between grid cell
+    centroids and the input geometry.
+
+    Each pixel in the output raster will be set to `inner_value` if its 
+    corresponding grid cell centroid is considered to be within the geometry, 
+    according to the optionally specified predicate.
+    Otherwise, the mask pixel will be set to `outer_value`.
+
+    If the input geometry is empty (e.g., no polygons are defined), the entire
+    mask will be populated with `default_value`.
     
     Args:
         grid_coords: grid corresponding coordinates. If not given they are
@@ -208,6 +217,10 @@ def grid_rasterize(
                 in regards to the given coordinates.
                 e.g. for a dimension 2 : 
                 ((first_row, last_row), (first_col, last_col))
+        inner_value: The value to use for the interior of the union of polygons.
+        outer_value: The value to use for the exterior of the union of polygons.
+        default_value: The value to use to fill the output if no polygons is
+                given.
         geometry: geometry to rasterize on the grid. This can be either a
                 simple Polygon, a MultiPolygon or a list of Polygons.
         geometry_buffer_dst: an optional distance to apply to dilate (positive)
@@ -261,7 +274,8 @@ def grid_rasterize(
             if output is None:
                 kwgs["dtype"] = dtype
             raster = rasterize_polygons_rasterio_rasterize(shape, origin,
-                    resolution, polygons, output, **kwgs)
+                    resolution, polygons, inner_value, outer_value, output,
+                    **kwgs)
         
         elif alg == GridRasterizeAlg.SHAPELY:
             kwgs = {}
@@ -284,26 +298,34 @@ def grid_rasterize(
                 kwgs["dtype"] = dtype
             # Call the rasterize method
             raster = rasterize_polygons_shapely(polygons=polygons, 
+                    inner_value=inner_value, outer_value=outer_value,
                     grid_coords=grid_coords, output=output, **kwgs)
+        
+        else:
+            raise ValueError(f"Unknown 'alg' {kwargs_alg}")
+        
         if reduce:
-            if np.all(raster==0):
-                raster = 0 # pylint: disable=R0204
-            elif np.all(raster!=0):
-                raster = 1 # pylint: disable=R0204
+            if np.all(raster==inner_value):
+                raster = inner_value # pylint: disable=R0204
+            elif np.all(raster!=inner_value):
+                raster = outer_value # pylint: disable=R0204
     else:
         if reduce:
-            raster = 0 # pylint: disable=R0204
+            raster = default_value # pylint: disable=R0204
         else:
             if output:
-                output[:,:] = 0
+                output[:,:] = default_value
             else:
-                raster = np.zeros(shape_out, dtype=dtype)
+                raster = np.empty(shape_out, dtype=dtype)
+                raster[:, :] = default_value
         
     return raster
 
 
 def rasterize_polygons_shapely(
         polygons: List[shapely.geometry.Polygon],
+        inner_value: int,
+        outer_value: int,
         grid_coords:Optional[Union[np.ndarray, Tuple[np.ndarray]]] = None,
         shape: Optional[Tuple[float, float]] = None,
         origin: Optional[Tuple[float, float]] = None,
@@ -312,13 +334,17 @@ def rasterize_polygons_shapely(
         output: Optional[np.ndarray] = None,
         dtype: Optional[np.dtype] = None,
         ) -> np.ndarray:
-    """Rasterize list of polygons on a grid as a binary mask using shapely.
+    """Rasterize list of polygons on a grid as a binary raster using shapely.
     
-    The mask will contains 0 if the corresponding grid's pixel centroïd is 
-    considered in the geometry with regards to the optional chosen predicate.
-    Otherwise the mask will contain 1.
+    The raster's pixels will contain `inner_value` if the corresponding grid's 
+    pixel centroïd is considered in the geometry with regards to the optional 
+    chosen predicate.
+    Otherwise the raster's pixels will contain `outer_value`.
     
     Args:
+        polygons: geometry to rasterize on the grid given as a list of polygons.
+        inner_value: The value to use for the interior of the union of polygons.
+        outer_value: The value to use for the exterior of the union of polygons.
         grid_coords: coordinates of pixel centers given as a 3d array or a tuple
                 of 2 2d arrays/
                 First axis contains index for columns and rows coordinates.
@@ -328,7 +354,6 @@ def rasterize_polygons_shapely(
                 origin's column coordinate)
         resolution: grid resolution as a tuple of integer (row resolution,
                 columns resolution)
-        polygons: geometry to rasterize on the grid given as a list of polygons.
         output: if not None, the result will be put in output. Not working if
                 reduce is set to true. If a window is defined the output must be
                 the exact same size.
@@ -374,6 +399,22 @@ def rasterize_polygons_shapely(
     _ = [shapely.prepare(polygon) for polygon in polygons]
     
     # TODO : STRrtree
+    if inner_value not in [0, 1]:
+        raise ValueError("The argument 'inner_value' must have a binary value "
+                "(0 or 1)")
+    
+    if outer_value not in [0, 1]:
+        raise ValueError("The argument 'inner_value' must have a binary value "
+                "(0 or 1)")
+    
+    if inner_value == outer_value:
+        raise ValueError("The argument 'inner_value' and 'outer_value' must be "
+                "different")
+    
+    # Here we adopt the shapely convention :
+    # - 0 is used for the exterior
+    # - 1 is used for the interior
+    # A final inversion is performed in case inner_value is 0
     
     # Init mask
     if output is not None:
@@ -397,14 +438,24 @@ def rasterize_polygons_shapely(
             mask |= shapely.intersects(polygon, points)
         
     if output is not None:
+        # Invert the mask if inner_value is 1
         if output.dtype == bool:
-            np.invert(output, out=output)
+            if inner_value == 0:
+                np.invert(output, out=output)
+            else:
+                # convert in bool
+                output[:,:] = output.astype(np.bool)
         else:
-            output[:,:] = np.where(output,0,1)
-        # No return
+            if inner_value == 0:
+                output[:,:] = np.where(output,0,1)
+            # No return
         mask = None
     else:
-        mask = (~mask).reshape(xx.shape).astype(dtype)
+        # Invert the mask if inner_value is 1
+        if inner_value == 0:
+            mask = (~mask).reshape(xx.shape).astype(dtype)
+        else:
+            mask = mask.reshape(xx.shape).astype(dtype)
     
     return mask
 
@@ -414,6 +465,8 @@ def rasterize_polygons_rasterio_rasterize(
         origin: Tuple[float, float],
         resolution: Tuple[float, float],
         polygons: List[shapely.geometry.Polygon],
+        inner_value: int,
+        outer_value: int,
         output: Optional[np.ndarray] = None,
         dtype: Optional[np.dtype] = None,
         ) -> Union[np.ndarray, int]:
@@ -434,14 +487,15 @@ def rasterize_polygons_rasterio_rasterize(
                 in the image coordinates reference system used by the geometry.
         resolution: the grid relative pixel size towards the geometry 
                 coordinate reference system.
-        polygons: list of polygons. Exterior of the union of polygons with be 
-                masked.
+        polygons: list of polygons.
                 The polygons coordinates must be defined in the same reference
                 frame as that intrinsic to the image targeted by the raster, 
                 considering the scale factor (resolution) and with a possible
                 shift of its origin.
                 The coordinates of the polygons are here supposed to be given
                 following the standard (x: col, y: row) order.
+        inner_value: The value to use for the interior of the union of polygons.
+        outer_value: The value to use for the exterior of the union of polygons.
         output: if not None, the result will be put in output. Not working if
                 reduce is set to true. If a window is defined the output must be
                 the exact same size.
@@ -485,11 +539,11 @@ def rasterize_polygons_rasterio_rasterize(
             'shapes': polygons,
             'transform': transform,
             'all_touched': False,
-            'default_value': 0,
-            'fill': 1}
+            'default_value': inner_value,
+            'fill': outer_value}
     if output is not None:
         # reset output with fill value
-        output[:,:] = 1
+        output[:,:] = outer_value
         kwargs['out'] = output
     else:
         kwargs['out_shape'] = (shape[0], shape[1])

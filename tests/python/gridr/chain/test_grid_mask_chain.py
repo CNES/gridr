@@ -29,8 +29,8 @@ from gridr.chain.grid_mask_chain import (
         build_grid_mask_chain,
         )
 
-MASK_IN_UNMASKED_VALUE = 0
-MASK_OUT_VALUES = (0, 1)
+MASK_IN_UNMASKED_VALUE = 0 # Non conventional for test
+MASK_OUT_VALUES = (0, 1) # non conventional for test
 
 # Define test data
 DTYPE_00 = np.float32
@@ -200,7 +200,7 @@ class TestGridMaskChain:
                             mask_out_ds=mask_out_ds, mask_out_dtype=np.uint8,
                             mask_in_ds=mask_in_ds, mask_in_unmasked_value=MASK_IN_UNMASKED_VALUE,
                             mask_in_band=1, geometry_origin=(0.5,0.5),
-                            geometry=None, rasterize_kwargs=None,
+                            geometry_pair=None, rasterize_kwargs=None,
                             mask_out_values = MASK_OUT_VALUES, io_strip_size=io_strip_size,
                             io_strip_size_target=io_strip_size_target,
                             ncpu=ncpu, cpu_tile_shape = cpu_tile_shape,
@@ -286,7 +286,7 @@ class TestGridMaskChain:
                             mask_out_ds=mask_out_ds, mask_out_dtype=np.uint8,
                             mask_in_ds=None, mask_in_unmasked_value=None,
                             mask_in_band=None, geometry_origin=(0.5,0.5),
-                            geometry=None, rasterize_kwargs=None,
+                            geometry_pair=None, rasterize_kwargs=None,
                             mask_out_values = MASK_OUT_VALUES, io_strip_size=io_strip_size,
                             io_strip_size_target=io_strip_size_target,
                             ncpu=ncpu, cpu_tile_shape = cpu_tile_shape,
@@ -415,7 +415,7 @@ class TestGridMaskChain:
                     mask_out_dtype=np.uint8,
                     mask_in_ds=mask_in_ds, mask_in_unmasked_value=MASK_IN_UNMASKED_VALUE,
                     mask_in_band=1, geometry_origin=(0.5,0.5),
-                    geometry=None, rasterize_kwargs=None,
+                    geometry_pair=None, rasterize_kwargs=None,
                     mask_out_values = MASK_OUT_VALUES,
                     merge_mask_grid = merge_mask_grid,
                     io_strip_size=io_strip_size,

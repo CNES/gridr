@@ -1,6 +1,6 @@
 # coding: utf8
 #
-# Copyright (c) 2024 Centre National d'Etudes Spatiales (CNES).
+# Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
 # This file is part of GRIDR
 # (see https://gitlab.cnes.fr/gridr/gridr).
@@ -21,107 +21,162 @@ from gridr.core.utils.array_utils import ArrayProfile
 from gridr.core.utils.array_window import (window_shape, window_check,
         window_apply)
 from gridr.core.grid.grid_utils import oversample_regular_grid
-from gridr.core.grid.grid_rasterize import (grid_rasterize,
+from gridr.core.grid.grid_rasterize import (GeometryType, grid_rasterize,
         GridRasterizeAlg, ShapelyPredicate)
 
+class Validity(IntEnum):
+    """Define the GridR convention regarding validity
+    """
+    INVALID = 0
+    VALID = 1
 
 def build_mask(
         shape: Tuple[int, int],
         resolution: Tuple[int, int],
         out: np.ndarray,
         geometry_origin: Tuple[float, float],
-        geometry: Optional[Union[shapely.geometry.Polygon,
-                List[shapely.geometry.Polygon], shapely.geometry.MultiPolygon]],
+        geometry_pair: Tuple[Optional[GeometryType], Optional[GeometryType]],
         mask_in: Optional[np.ndarray],
         mask_in_target_win: np.ndarray,
         mask_in_resolution: Optional[Tuple[int, int]],
         oversampling_dtype: np.dtype,
-        mask_in_binary_threshold: float = 1e-3,
+        mask_in_binary_threshold: float = 0.999,
         rasterize_kwargs: Optional[Dict] = None,
+        init_out: bool = False,
         ) -> Optional[np.ndarray]:
-    """Create a binary mask that will be associated to a grid.
+    """Create a binary mask associated with a grid.
+
+    This method operates solely on raster data and does not perform I/O.
+    It combines information from two distinct mask types to build a binary
+    raster mask at a target resolution (currently only full resolution,
+    i.e., (1,1), is implemented).
+
+    1.  **Input Raster Mask**: Provided as `mask_in`, this is an
+        optional binary raster mask, potentially at a lower resolution.
+        It typically matches the grid's shape and resolution. If set,
+        `mask_in_resolution` becomes mandatory.
+        The `mask_in_target_win` argument can define a window for the
+        resampled mask, specified in the output resolution's coordinate
+        system. As resampling may yield float values,
+        `mask_in_binary_threshold` binarizes the result: values
+        greater than or equal to this threshold are `1` (valid),
+        otherwise `0`.
+
+    2.  **Vector Geometry Mask**: The `geometry_pair` argument defines
+        this mask using vectors. It expects a tuple with two
+        `GeometryType` elements:
+        * The **first element** represents **valid** geometries.
+        * The **second element** represents **invalid** geometries.
+        (For details on `GeometryType`, see the `grid_rasterize` module.)
+
+        Both geometry elements are processed sequentially to generate
+        the rasterized vector mask:
+        * **Valid Geometry Rasterization**: The first element is
+            used in a `grid_rasterize` call, with `inner_value` as
+            `Validity.VALID` and `outer_value` as `Validity.INVALID`.
+            This marks the interior (and potentially contour) of the
+            geometry as valid. If `None`, the resulting raster is
+            entirely valid by convention.
+        * **Invalid Geometry Rasterization**: The second element
+            is then used in another `grid_rasterize` call. Here,
+            `inner_value` is `Validity.INVALID` and `outer_value` is
+            `Validity.VALID`. This produces a second raster where the
+            interior (and contour) of this geometry is marked invalid.
+        * **Final Mask Merge**: A unary "AND" operation merges the
+            two rasters to yield the final geometry raster.
+
+    A pixel is considered invalid if it is masked by the input raster, falls
+    outside the **valid** geometry, or lies within the **invalid** geometry.
+
+    The rasterization process aligns with the output coordinate system,
+    defined by the `shape`, `resolution`, and `geometry_origin` arguments.
+    You can pass a preallocated output buffer via the `out` argument;
+    if provided, it must be consistent with the given `shape`.
     
-    This method only works on raster and do not perform IO.
-    
-    This method takes two different kind of masks and compile their information
-    in order to build a binary raster mask at a target resolution (currently
-    only the full resolution is implemented, i.e. (1,1)) :
-    
-    1) The first kind of mask, is a binary raster mask that can be given in a
-    lower resolution through the 'mask_in' argument. This kind of mask usually
-    comes with the grid at the same shape and resolution than the grid itself.
-    Therefore the associated resolution become a mandatory argument if 'mask_in'
-    is set.
-    The 'mask_in_target_win' can also be given in order to only consider a 
-    window of the resampled mask. It is given in the coordinates system of the
-    resampled mask at output resolution.
-    Given that the resampling of the mask may give floating point values, the
-    'mask_in_binary_threshold' argument is used as a threshold to binarize the
-    result of the mask's values interpolation. Any values greater or equal to 
-    that argument are set to 1 (considered masked), 0 otherwise.
-    
-    2) The second kind of mask is given as vectors through the 'geometry'
-    argument. It is given as a polygon or an union of polygons whose interior
-    and contour (depending on the chosen algorithm's predicate) are considered
-    unmasked. What is not will be considered masked.
-    Such masks will be rasterized given the output coordinates system defined
-    through the 'shape', 'resolution' and 'geometry_origin' arguments.
-    
-    A pixel will be set as masked (value 1) if it is either masked by the
-    input raster mask or by the geometry vector mask.
-    
-    A preallocated output buffer can be passed to the method through the 'out'
-    arugment. If it is given it must be consistent with the given 'shape'.
-    
-    Adopted conventions :
-    - the masked pixels are set to 1, 0 otherwise.
-    - the points used in geometries are given with (x, y) coordinates where
-    x is the column et y the row.
-    - all shape, resolution and geometry_origin are given as (value for row,
-    value for column). Please note that the geometry_origin is not given
-    in the same convention order than the point used in geometry definition.
-    
+    If neither an input mask (`mask_in`) nor a geometry pair (`geometry_pair`)
+    is provided, the `out` buffer will not be modified unless the 'init_out' 
+    argument is True. In such cases, it's the user's responsibility to ensure
+    'out' is appropriately initialized, as its contents might otherwise be 
+    non-conforming. If 'init_out' is True, the 'out' buffer will be filled with 
+    'Validity.VALID'.
+
+    **Conventions:**
+
+    * **Invalid (masked) pixels** are `Validity.INVALID` (0);
+        otherwise, they're `Validity.VALID` (1).
+    * Geometry points use `(x, y)` coordinates, where `x` is the column
+        and `y` is the row.
+    * `shape`, `resolution`, and `geometry_origin` are provided as
+        `(value for row, value for column)`. Note that `geometry_origin`'s
+        convention differs from geometry point definitions.
+
     Args:
-        shape: the shape of the output mask (optional). If not given it will be
-                defined from the window (see win argument) or from the out
-                buffer (see out argument) in that priority order.
-        resolution: the resolution of the output mask. Only full resolution (ie
-                (1,1) is currently implemented. The resolution is used for the
-                resampling (oversampling) of the optional input mask and for the
-                rasterization of the geometries.
-        out: an optional preallocated buffer to store the result
-        geometries_origin: geometric coordinates that are mapped to the output
-                first pixel indexed by (0,0) in the array. This argument is
-                mandatory if geometries is set.
-        geometries: Definition of non masked geometries as a polygon or a list
-                of polygons.
-        mask_in: optional input raster mask
-        mask_in_target_win: an optional production window given as a list of  
-                tuple containing the first and last index for each dimension.
-                e.g. for a dimension 2 : 
-                ((first_row, last_row), (first_col, last_col))
-        mask_in_resolution: resolution in row and column of input raster mask
-        oversampling_dtype: the data type to use for oversampling the mask. It
-                must be a floating type.
-        mask_in_binary_threshold: in case of binary option is activated, all
-                values greater or equal to mask_in_binary_threshold are set to
-                1, 0 otherwise.
-        rasterize_kwargs: dictionnary of parameters for the rasterize process.
-                egg. {'alg': GridRasterizeAlg.SHAPELY,
-                'kwargs_alg': {'shapely_predicate': ShapelyPredicate.COVERS}
+    -----
+    
+    shape : (Tuple[int, int])
+        The shape of the output mask. If notgiven, it's defined from 
+        `mask_in_target_win` or `out` in that priority order.
+    
+    resolution : (Tuple[int, int])
+        The output mask's resolution.
+        Only full resolution ((1,1)) is currently implemented. It's used for 
+        resampling the input mask and rasterizing geometries.
+    
+    out : (np.ndarray)
+        An optional preallocated buffer to store the result.
+    
+    geometry_origin : (Tuple[float, float])
+        Geometric coordinates mapped to the output array's (0,0) pixel. This
+        argument is mandatory if `geometry_pair` is set.
+    
+    geometry_pair : (Tuple[GeometryType, GeometryType])
+        A tuple containing:
+        - The first element (`GeometryType`): Represents **valid** geometries.
+        - The second element (`GeometryType`): Represents **invalid** geometries.
+    
+    mask_in : (Optional[np.ndarray])
+        Optional input raster mask.
+    
+    mask_in_target_win : (np.ndarray)
+        An optional production window as
+        `((first_row, last_row), (first_col, last_col))` for a 2D mask.
+    
+    mask_in_resolution : (Optional[Tuple[int, int]])
+        Resolution in row and column for the input raster mask.
+    
+    oversampling_dtype : (np.dtype)
+        The floating-point data type to use for mask oversampling.
+    
+    mask_in_binary_threshold : (float)
+        For binary output, values greater than or equal to this threshold are 
+        `1`, `0` otherwise.
+
+    rasterize_kwargs : (Optional[Dict])
+        Dictionary of parameters for the rasterization process, e.g.,
+        `{'alg': GridRasterizeAlg.SHAPELY,
+          'kwargs_alg': {'shapely_predicate': ShapelyPredicate.COVERS}}`.
+    
+    init_out : (bool)
+        An option to force input 'out' buffer to be filled with Validity.VALID
+        before any mask operation.
+    
+    Returns:
+    --------
+        Optional[np.ndarray]
+            The created binary mask, or `None` if `out` was provided and the 
+            operation was in-place.
     """
     ret = None
     # -- Perform some checks on arguments and init optional arguments
     if shape is None or resolution is None:
         raise ValueError("You must provide both the 'shape' and 'resolution' "
                 "arguments")
-    if resolution is None:
-        raise ValueError("You must provide the 'resolution' argument")
     if ~np.all(resolution == (1,1)):
         raise ValueError("Output resolution different from full resolution have"
                 " not been implemented yet")
     
-    if geometry is not None and geometry_origin is None:
+    has_geometry = (geometry_pair is not None) and (geometry_pair != (None, None))
+    if has_geometry and geometry_origin is None:
         raise ValueError("You must provide the 'geometry_origin' argument "
                 "in order to use rasterization through the 'geometry' argument")
     
@@ -130,9 +185,12 @@ def build_mask(
         
     # Init output buffer if not given
     if out is None:
-        out = np.zeros(shape, dtype=np.uint8)
+        out = np.full(shape, Validity.VALID, dtype=np.uint8)
         ret = out
-    elif ~np.all(out.shape == shape):
+    elif init_out:
+        out[:] = Validity.VALID
+    
+    if ~np.all(out.shape == shape):
         raise ValueError("The values of the 2 arguments 'out' and 'shape' does "
                 "not match.")
     
@@ -197,28 +255,97 @@ def build_mask(
             out[:,:] = np.abs(windows_mask_in) >= mask_in_binary_threshold
     
     # Rasterize the geometry if it has been set
-    if geometry is not None:
-        grid_rasterize_args = {'grid_coords':None,
-                'shape':shape,
-                'origin':geometry_origin,
-                'resolution':resolution,
-                'win':None,
-                'geometry':geometry,
-                'alg':rasterize_kwargs['alg'],
-                'reduce':False}
-        if merge:
-            # The out buffer has already been used by the mask_in associated
-            # process.
-            # We have to allocate a new buffer fo rasterize => let the method
-            # do it internally.
-            grid_rasterize_args['output'] = None
-            grid_rasterize_args['dtype'] = out.dtype
-            rasterize_out = grid_rasterize(**grid_rasterize_args)
-            
-            # Merge : it is masked if masked by the mask_in or by the geometry
-            out[:,:] |= rasterize_out[:,:]
-        else:
-            grid_rasterize_args['output'] = out
-            _ = grid_rasterize(**grid_rasterize_args)
+    base_rasterize_args = {
+        'grid_coords': None,
+        'shape': shape,
+        'origin': geometry_origin,
+        'resolution': resolution,
+        'win': None,
+        'alg': rasterize_kwargs['alg'] if rasterize_kwargs else None,
+        'reduce': False,
+    }
     
+    # Helper function to perform rasterization and merge
+    def grid_rasterize_wrapper(
+        geometry_to_rasterize: GeometryType,
+        inner_val: int,
+        outer_val: int,
+        default_val: int,
+        current_out_array: np.ndarray,
+        merge_current_out_array: bool,
+        temp_array: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
+        """
+        Helper to rasterize a geometry and optionally merge it.
+        Returns the result of the rasterization (temp or direct to out).
+        """
+        raster_args = base_rasterize_args.copy()
+        raster_args['geometry'] = geometry_to_rasterize
+        raster_args['inner_value'] = inner_val
+        raster_args['outer_value'] = outer_val
+        raster_args['default_value'] = default_val
+        raster_args['dtype'] = None
+
+        if merge_current_out_array:
+            # If merging, rasterize to a new temp array
+            raster_args['output'] = temp_array
+            temp_raster_out = None
+            if temp_array is None:
+                raster_args['dtype'] = current_out_array.dtype
+                # temp_raster_out is returned
+                temp_raster_out = grid_rasterize(**raster_args)
+            else:
+                # here output buffer is filled, ie. temp_array
+                _ = grid_rasterize(**raster_args)
+                temp_raster_out = temp_array
+            current_out_array[:] &= temp_raster_out[:] # Merge into current_out_array
+            return current_out_array # Return the modified 'out' array
+        else:
+            # If not merging, can rasterize directly to 'out'
+            raster_args['output'] = current_out_array
+            return grid_rasterize(**raster_args) # Returns 'current_out_array'
+    
+    match geometry_pair:
+        
+        case None:
+            pass
+        
+        case (None, None):
+            pass
+        
+        case (geometry_valid, None) if geometry_valid is not None:
+            # There is only valid geometry
+            # Only valid geometry provided
+            _ = grid_rasterize_wrapper( geometry_valid,
+                    Validity.VALID, Validity.INVALID, Validity.VALID, out,
+                    merge, None)
+        
+        case (None, geometry_invalid) if geometry_invalid is not None:
+            
+            # There is only invalid geometry
+            _ = grid_rasterize_wrapper(geometry_invalid,
+                    Validity.INVALID, Validity.VALID, Validity.VALID, out, 
+                    merge, None)
+        
+        case (geometry_valid, geometry_invalid) \
+                if geometry_valid is not None and geometry_invalid is not None:
+             
+            # In that case we will proceed in 2 passes :
+            # - pass 1 : rasterize the valid geometry
+            # - pass 2 : rasterize the invalid geometry
+            
+            # Here we are sure we will need another buffer - we allocate it here
+            # in order to reuse it if needed for both pass 1 and pass 2.
+            tmp_out = np.empty_like(out)
+            
+            # PASS 1 - on valid geometry
+            _ = grid_rasterize_wrapper(geometry_valid,
+                    Validity.VALID, Validity.INVALID, Validity.VALID, out,
+                    merge, tmp_out)
+            
+            # PASS 2 - on invalid geometry
+            _ = grid_rasterize_wrapper(geometry_invalid,
+                    Validity.INVALID, Validity.VALID, Validity.VALID, out,
+                    True, tmp_out)
+
     return ret
