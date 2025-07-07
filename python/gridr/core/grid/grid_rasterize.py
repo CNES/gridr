@@ -444,7 +444,7 @@ def rasterize_polygons_shapely(
                 np.invert(output, out=output)
             else:
                 # convert in bool
-                output[:,:] = output.astype(np.bool)
+                output[:,:] = output.astype(bool)
         else:
             if inner_value == 0:
                 output[:,:] = np.where(output,0,1)
