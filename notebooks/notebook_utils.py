@@ -17,6 +17,8 @@ import numpy as np
 import uuid 
 import math
 
+import shapely
+
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib import cm
@@ -422,3 +424,116 @@ def bokeh_show_fig(fig, prefix=None):
     else:
         print("Cannot detect the show mode. Please set the DOC_BUILD environment "
                 "variable to 1 if used for documentation build")
+
+
+def plot_convention_grid_mesh(
+        shape,
+        resolution,
+        origin,
+        x,
+        y,
+        geometry=None,
+        geometry_origin=None,
+        mask=None,
+        win=None,
+        value_color_alpha_map=None,
+        plot_res=60,
+        prefix=None):
+    if in_doc_build():
+        output_dir = os.environ.get("DOC_BUILD_FILES_OUTPUT_DIR_PATH", None)
+        if not output_dir:
+            raise Exception("The environment variable "
+                            "`DOC_BUILD_FILES_OUTPUT_DIR_PATH` must be set")
+        output_notebook_path = os.environ.get("DOC_BUILD_NOTEBOOK_OUTPUT_PATH", None)
+        if not output_notebook_path:
+            raise Exception("The environment variable "
+                            "`DOC_BUILD_NOTEBOOK_OUTPUT_PATH` must be set")
+
+        os.makedirs(output_dir, exist_ok=True)
+        unique_name = f"{prefix}.png" if prefix else f"plot_{uuid.uuid4().hex[:8]}.png"
+        path = os.path.join(output_dir, unique_name)
+
+        
+        #ret = mpl_export_gray_static(data=data, win_rect=win_rect, export_name=path)
+        raise NotImplementedError("Static export not implemented for doc build.")
+
+        rel_path = os.path.relpath(ret, os.path.dirname(output_notebook_path))
+        display(Markdown(f"![{unique_name}]({rel_path})"))
+    else:
+        ret = bokeh_plot_convention_grid_mesh(
+                shape=shape,
+                resolution=resolution,
+                origin=origin,
+                x=x,
+                y=y,
+                geometry=geometry,
+                geometry_origin=geometry_origin,
+                mask=mask,
+                win=win,
+                value_color_alpha_map=value_color_alpha_map,
+                plot_res=plot_res,
+                title=prefix)
+        show(ret)
+
+
+def bokeh_plot_convention_grid_mesh(shape, resolution, origin, x, y, geometry=None, geometry_origin=None, mask=None, win=None, value_color_alpha_map=None, plot_res=60, title=None):
+    
+    cx, cy = x[0,:], y[:,0]
+    pixels = np.asarray([[shapely.geometry.Polygon( [(i-resolution[1]/2, j-resolution[0]/2),
+                                      (i-resolution[1]/2, j-resolution[0]/2+resolution[0]),
+                                      (i-resolution[1]/2+resolution[1], j-resolution[0]/2+resolution[0]),
+                                      (i-resolution[1]/2+resolution[1], j-resolution[0]/2),
+                                      (i-resolution[1]/2, j-resolution[0]/2),])
+           for i in cx] for j in cy])
+    
+    p = figure(width=shape[1]*plot_res, height=shape[0]*plot_res)
+    
+    p.x_range.range_padding = p.y_range.range_padding = 0.5
+    p.y_range.flipped = True
+    p.scatter(x.flatten(), y.flatten(), size=5, color="black", alpha=0.5, marker='cross', )
+    p.scatter(x[0,0], y[0,0], size=6, color="red", alpha=1,marker='cross', )
+    geom_x, geom_y = [], []
+    [(geom_x.append(list(polygon.exterior.coords.xy[0])), geom_y.append(list(polygon.exterior.coords.xy[1]))) for polygon in pixels.flatten() ]
+    p.patches('x', 'y', source = ColumnDataSource(dict(x = geom_x, y = geom_y)), line_color = "grey", line_width = 0.2, fill_color=None)
+    
+    origin_annotation = Label(x=0, y=0, x_units='data', y_units='data',
+                     text='(0, 0)', x_offset=0, y_offset=-resolution[0]/4, text_align="center", text_alpha=0.7, text_color='black', text_baseline='bottom', text_font_size='12px' )
+    p.add_layout(origin_annotation)
+    vh = VeeHead(size=10, line_color="red", fill_color="red")
+    p.add_layout(Arrow(end=vh, x_start=0.0, y_start=0., x_end=1, y_end=0, line_color="red"))
+    p.add_layout(Arrow(end=vh, x_start=0.0, y_start=0., x_end=0, y_end=1, line_color="red"))
+    
+    p.grid.grid_line_width = 0.5
+    if title:
+        p.add_layout(Title(text=title, align="center"), "above")
+    
+    if geometry is not None and geometry_origin is not None:
+        # Lets add a vector geometry defined by the Polygon and its origin mapping convention towards the grid
+        # We want to hereby tell that the grid coordinates (0,0) corresponds to the geometry point (0.5, 0.5)
+        
+        # Prepare plot convention
+        delta = np.array(geometry_origin) - np.array(origin[::-1])
+        geom_x, geom_y = [], []
+        [(geom_x.append(list((polygon.exterior.coords.xy[0]-delta[0]))),
+            geom_y.append(list((polygon.exterior.coords.xy[1]-delta[1]))))
+            for polygon in (geometry,) ]
+
+        polygon_geometry = p.patches('x', 'y', source = ColumnDataSource(dict(x = geom_x, y = geom_y)),
+            line_color = "green", line_width = 3, fill_color=None, name="polygon_geometry")
+    
+    if mask is not None and value_color_alpha_map is not None:
+        # light up rasterize pixels
+        for value, color, alpha in value_color_alpha_map:
+            geom_x_inner, geom_y_inner = [], []
+            if win is None:
+                for j,i in (zip(*np.where(mask==value))):
+                    geom_x_inner.append(list(pixels[j,i].exterior.coords.xy[0]))
+                    geom_y_inner.append(list(pixels[j,i].exterior.coords.xy[1]))
+            else:
+                for j,i in (zip(*np.where(mask==value))):
+                    geom_x_inner.append(list(pixels[j+win[0,0],i+win[1,0]].exterior.coords.xy[0]))
+                    geom_y_inner.append(list(pixels[j+win[0,0],i+win[1,0]].exterior.coords.xy[1]))
+            raster_patch_inner = p.patches('x', 'y', source = ColumnDataSource(dict(x = geom_x_inner, y = geom_y_inner)),
+                line_color = color, line_width = 0.5, fill_color=color, fill_alpha=alpha, name="raster_patch")
+
+    return p
