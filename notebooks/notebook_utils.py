@@ -20,7 +20,9 @@ import math
 import shapely
 
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
+import matplotlib.patches as mpatches
+from matplotlib.collections import PatchCollection
+from matplotlib.offsetbox import AnchoredText
 from matplotlib import cm
 
 from bokeh.plotting import figure, show
@@ -252,7 +254,7 @@ def mpl_export_multiple_gray_static(data_dict, win_rect=None, export_name=None, 
 
         if win_rect is not None:
             (row_start, row_end), (col_start, col_end) = win_rect
-            rect = patches.Rectangle(
+            rect = mpatches.Rectangle(
                 (col_start, row_start),
                 col_end - col_start + 1,
                 row_end - row_start + 1,
@@ -305,7 +307,7 @@ def mpl_export_gray_static(data, win_rect=None, export_name=None):
 
     if win_rect is not None:
         (row_start, row_end), (col_start, col_end) = win_rect
-        rect = patches.Rectangle(
+        rect = mpatches.Rectangle(
             (col_start, row_start),
             col_end - col_start + 1,
             row_end - row_start + 1,
@@ -438,6 +440,7 @@ def plot_convention_grid_mesh(
         win=None,
         value_color_alpha_map=None,
         plot_res=60,
+        title=None,
         prefix=None):
     if in_doc_build():
         output_dir = os.environ.get("DOC_BUILD_FILES_OUTPUT_DIR_PATH", None)
@@ -453,10 +456,21 @@ def plot_convention_grid_mesh(
         unique_name = f"{prefix}.png" if prefix else f"plot_{uuid.uuid4().hex[:8]}.png"
         path = os.path.join(output_dir, unique_name)
 
+        ret = mpl_plot_convention_grid_mesh(
+                shape=shape,
+                resolution=resolution,
+                origin=origin,
+                x=x,
+                y=y,
+                geometry=geometry,
+                geometry_origin=geometry_origin,
+                mask=mask,
+                win=win,
+                value_color_alpha_map=value_color_alpha_map,
+                plot_res=plot_res,
+                title=title,
+                export_name=path)
         
-        #ret = mpl_export_gray_static(data=data, win_rect=win_rect, export_name=path)
-        raise NotImplementedError("Static export not implemented for doc build.")
-
         rel_path = os.path.relpath(ret, os.path.dirname(output_notebook_path))
         display(Markdown(f"![{unique_name}]({rel_path})"))
     else:
@@ -472,7 +486,7 @@ def plot_convention_grid_mesh(
                 win=win,
                 value_color_alpha_map=value_color_alpha_map,
                 plot_res=plot_res,
-                title=prefix)
+                title=title)
         show(ret)
 
 
@@ -511,15 +525,21 @@ def bokeh_plot_convention_grid_mesh(shape, resolution, origin, x, y, geometry=No
         # Lets add a vector geometry defined by the Polygon and its origin mapping convention towards the grid
         # We want to hereby tell that the grid coordinates (0,0) corresponds to the geometry point (0.5, 0.5)
         
-        # Prepare plot convention
-        delta = np.array(geometry_origin) - np.array(origin[::-1])
-        geom_x, geom_y = [], []
-        [(geom_x.append(list((polygon.exterior.coords.xy[0]-delta[0]))),
-            geom_y.append(list((polygon.exterior.coords.xy[1]-delta[1]))))
-            for polygon in (geometry,) ]
+        if not isinstance(geometry, list):
+            geometry_list = [geometry]
+        else:
+            geometry_list = geometry
+        
+        for geometry_feature in geometry_list:
+            # Prepare plot convention
+            delta = np.array(geometry_origin) - np.array(origin)
+            geom_x, geom_y = [], []
+            [(geom_x.append(list((polygon.exterior.coords.xy[0]-delta[1]))),
+                geom_y.append(list((polygon.exterior.coords.xy[1]-delta[0]))))
+                for polygon in (geometry_feature,) ]
 
-        polygon_geometry = p.patches('x', 'y', source = ColumnDataSource(dict(x = geom_x, y = geom_y)),
-            line_color = "green", line_width = 3, fill_color=None, name="polygon_geometry")
+            polygon_geometry = p.patches('x', 'y', source = ColumnDataSource(dict(x = geom_x, y = geom_y)),
+                line_color = "green", line_width = 3, fill_color=None, name="polygon_geometry")
     
     if mask is not None and value_color_alpha_map is not None:
         # light up rasterize pixels
@@ -537,3 +557,150 @@ def bokeh_plot_convention_grid_mesh(shape, resolution, origin, x, y, geometry=No
                 line_color = color, line_width = 0.5, fill_color=color, fill_alpha=alpha, name="raster_patch")
 
     return p
+
+
+def mpl_plot_convention_grid_mesh(shape, resolution, origin, x, y, geometry=None, geometry_origin=None, mask=None, win=None, value_color_alpha_map=None, plot_res=60, title=None, export_name=None):
+    """
+    Equivalent Matplotlib plotting function to visualize grid conventions and masks.
+
+    Parameters
+    ----------
+    shape : tuple
+        Shape of the grid (rows, cols).
+    resolution : tuple
+        Resolution of the grid (row_res, col_res).
+    origin : tuple
+        Origin of the grid's coordinate system (x_origin, y_origin).
+    x : numpy.ndarray
+        2D array of x-coordinates for pixel centers.
+    y : numpy.ndarray
+        2D array of y-coordinates for pixel centers.
+    geometry : shapely.geometry.Polygon or list of shapely.geometry.Polygon, optional
+        Vector geometry to plot.
+    geometry_origin : tuple, optional
+        Origin of the geometry's coordinate system (x_origin, y_origin).
+    mask : numpy.ndarray, optional
+        Raster mask to visualize.
+    win : tuple or numpy.ndarray, optional
+        Window for the mask display, e.g., ((row_start, row_end), (col_start, col_end)).
+    value_color_alpha_map : list of tuples, optional
+        Mapping of mask values to (color, alpha) for plotting.
+        Example: [(value1, 'red', 0.5), (value2, 'blue', 1.0)]
+    plot_res : int, optional
+        Resolution factor for plot size (ignored for actual plot scale,
+        kept for parameter compatibility).
+    title : str, optional
+        Title of the plot.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The Matplotlib Figure object.
+    matplotlib.axes.Axes
+        The Matplotlib Axes object.
+    """
+
+    if export_name is None:
+        export_name = f"mpl_convention_grid_mesh_{uuid.uuid4().hex}.png"
+    
+    fig, ax = plt.subplots(figsize=(shape[1] * plot_res / 100, shape[0] * plot_res / 100)) # Adjust figsize for similar visual scale
+
+    # Extract pixel center coordinates
+    cx, cy = x[0, :], y[:, 0]
+    pixels = np.asarray([[shapely.geometry.Polygon( [(i-resolution[1]/2, j-resolution[0]/2),
+                                      (i-resolution[1]/2, j-resolution[0]/2+resolution[0]),
+                                      (i-resolution[1]/2+resolution[1], j-resolution[0]/2+resolution[0]),
+                                      (i-resolution[1]/2+resolution[1], j-resolution[0]/2),
+                                      (i-resolution[1]/2, j-resolution[0]/2),])
+            for i in cx] for j in cy])
+
+    # Generate pixel polygons
+    pixels_patches = [ mpatches.Polygon(np.array(poly.exterior.coords)) for poly in pixels.flatten() ]
+    
+    # Plot pixel boundaries
+    pixel_collection = PatchCollection(pixels_patches, facecolor='none', edgecolor='grey', linewidth=0.2)
+    ax.add_collection(pixel_collection)
+
+    # Plot pixel centroids (x, y are already in the correct "plot" orientation if x is columns, y is rows)
+    ax.scatter(x.flatten(), y.flatten(), s=5, color="black", alpha=0.5, marker='x', label="Pixel Centroids")
+    ax.scatter(0, 0, s=30, color="red", alpha=1, marker='x', zorder=5 ) # Zorder to ensure visibility
+
+    # Set axis limits
+    margin = 2
+    ax.set_xlim(x.min() - resolution[1] - margin, x.max() + resolution[1] + margin)
+    ax.set_ylim(y.max() + resolution[0] + margin, y.min() - resolution[0] - margin) # Invert y-axis to match "x is downwards" convention
+
+    # Add origin annotation
+    ax.annotate(f"(0, 0)", xy=(0, 0), xytext=(0, - resolution[0]/8)
+                ,fontsize=10, color='black', alpha=0.7, ha='left', va='bottom')
+    
+    # Plot coordinate axes (using plot's x,y for direction)
+    ax.arrow(0, 0, 0.9, 0, head_width=0.2, head_length=0.1, fc='red', ec='red', zorder=10) # X-axis arrow (right)
+    ax.arrow(0, 0, 0, 0.9, head_width=0.2, head_length=0.1, fc='red', ec='red', zorder=10) # Y-axis arrow (down)
+
+    ax.set_aspect('equal', adjustable='box')
+    if title:
+        ax.set_title(title, fontsize=10)
+    ax.grid(True, linestyle='--', alpha=0.3, linewidth=0.2)
+
+    # Plot geometry
+    if geometry is not None and geometry_origin is not None:
+        if not isinstance(geometry, list):
+            geometry_list = [geometry]
+        else:
+            geometry_list = geometry
+
+        for geom_feature in geometry_list:
+            # Prepare plot convention
+            delta_plot = np.array(geometry_origin) - np.array(origin)
+
+            if isinstance(geom_feature, shapely.geometry.Polygon):
+                # Shapely polygons have exterior.coords.xy[0] for x and [1] for y
+                # x coordinates (columns in original grid sense)
+                geom_x_coords = np.array(geom_feature.exterior.coords.xy[0]) - delta_plot[1] # subtract y-component of delta from shapely x
+                # y coordinates (rows in original grid sense)
+                geom_y_coords = np.array(geom_feature.exterior.coords.xy[1]) - delta_plot[0] # subtract x-component of delta from shapely y
+                ax.plot(geom_x_coords, geom_y_coords, color="green", linewidth=3, zorder=3)
+            elif isinstance(geom_feature, shapely.geometry.MultiPolygon):
+                for poly in geom_feature.geoms:
+                    geom_x_coords = np.array(poly.exterior.coords.xy[0]) - delta_plot[1]
+                    geom_y_coords = np.array(poly.exterior.coords.xy[1]) - delta_plot[0]
+                    ax.plot(geom_x_coords, geom_y_coords, color="green", linewidth=3, zorder=3)
+
+
+    # Plot raster mask
+    if mask is not None and value_color_alpha_map is not None:
+        mask_patches = []
+        for value, color, alpha in value_color_alpha_map:
+            if win is None:
+                rows, cols = np.where(mask == value)
+                for j, i in zip(rows, cols):
+                    # pixels[j,i] gives the shapely polygon for that pixel
+                    # The polygon coordinates are already relative to the grid origin
+                    poly = shapely.geometry.Polygon([(coord[0], coord[1]) for coord in pixels[j,i].exterior.coords])
+                    mask_patches.append(mpatches.Polygon(np.array(poly.exterior.coords)))
+            else:
+                # If window is defined, mask corresponds to the windowed subgrid
+                # Need to map back to full grid indices for `pixels` array
+                win_row_start, win_row_end = win[0, 0], win[0, 1]
+                win_col_start, win_col_end = win[1, 0], win[1, 1]
+
+                rows_mask, cols_mask = np.where(mask == value)
+                for j_mask, i_mask in zip(rows_mask, cols_mask):
+                    # Calculate original grid index
+                    j_orig = j_mask + win_row_start
+                    i_orig = i_mask + win_col_start
+
+                    poly = shapely.geometry.Polygon([(coord[0], coord[1]) for coord in pixels[j_orig,i_orig].exterior.coords])
+                    mask_patches.append(mpatches.Polygon(np.array(poly.exterior.coords)))
+
+            if mask_patches: # Only add collection if there are patches for this value
+                raster_collection = PatchCollection(mask_patches, facecolor=color, edgecolor=color, linewidth=0.5, alpha=alpha, zorder=1)
+                ax.add_collection(raster_collection)
+                mask_patches = [] # Reset for next value
+    
+    plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    plt.savefig(export_name, bbox_inches='tight', pad_inches=0)
+    plt.close(fig)
+
+    return export_name

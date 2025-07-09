@@ -34,12 +34,12 @@ def build_mask(
         shape: Tuple[int, int],
         resolution: Tuple[int, int],
         out: np.ndarray,
-        geometry_origin: Tuple[float, float],
-        geometry_pair: Tuple[Optional[GeometryType], Optional[GeometryType]],
-        mask_in: Optional[np.ndarray],
-        mask_in_target_win: np.ndarray,
-        mask_in_resolution: Optional[Tuple[int, int]],
-        oversampling_dtype: np.dtype,
+        geometry_origin: Optional[Tuple[float, float]] = None,
+        geometry_pair: Optional[Tuple[Optional[GeometryType], Optional[GeometryType]]] = None,
+        mask_in: Optional[np.ndarray] = None,
+        mask_in_target_win: Optional[np.ndarray] = None,
+        mask_in_resolution: Optional[Tuple[int, int]] = None,
+        oversampling_dtype: Optional[np.dtype] = None,
         mask_in_binary_threshold: float = 0.999,
         rasterize_kwargs: Optional[Dict] = None,
         init_out: bool = False,
@@ -194,11 +194,11 @@ def build_mask(
         raise ValueError("The values of the 2 arguments 'out' and 'shape' does "
                 "not match.")
     
-    if oversampling_dtype is not None:
+    if mask_in is not None and oversampling_dtype is not None:
         if not np.issubdtype(oversampling_dtype, np.floating):
             raise ValueError("The value of argument 'oversampling_dtype' is not"
                     " a floating type")
-    else:
+    elif mask_in is not None:
         raise ValueError("You must precise argument 'oversampling_dtype'")
     
     # At last check that the window lies in the full_resolution input mask
