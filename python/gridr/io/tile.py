@@ -25,7 +25,8 @@ def read_tile_edges(
         tile_shape: Tuple[int, int],
         merge: bool = False,
         window: Optional[Window] = None,
-        check: bool = True):
+        check: bool = True
+        ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Extracts the row and column edges of tiles within a specified window of a
     raster dataset.
@@ -38,20 +39,25 @@ def read_tile_edges(
     ----------
     ds : rasterio.io.DatasetReader
         The open raster dataset to read from.
+        
     ds_band : int
         The band index (1-based) to read from the dataset.
+        
     tile_shape : Tuple[int, int]
         The shape of the tiles as (number of rows, number of columns) used to
         determine tile boundaries.
+        
     merge : bool, optional
         If True, tiles that are smaller than `tile_shape` at the edge are merged
         with the adjacent tile along the corresponding dimension.
         Defaults to False.
+        
     window : Optional[Window], optional
         A rasterio `Window` defining the region of the dataset to consider. The
         top-left corner of this window serves as the origin for tile alignment.
         If None, the full extent of the dataset is used.
         Defaults to None.
+        
     check : bool, optional
         If True, checks the consistency of the provided window against the
         dataset shape. Raises `ValueError` if the check fails.
@@ -62,12 +68,15 @@ def read_tile_edges(
     edge_row_indices : np.ndarray
         1D array of global row indices corresponding to the horizontal edges of
         the tiles.
+        
     edge_col_indices : np.ndarray
         1D array of global column indices corresponding to the vertical edges of
         the tiles.
+        
     edge_rows : np.ndarray
         2D array containing the pixel values along each horizontal tile edge.
         Each row corresponds to a horizontal edge line.
+        
     edge_cols : np.ndarray
         2D array containing the pixel values along each vertical tile edge.
         Each row corresponds to a vertical edge line.
@@ -80,12 +89,14 @@ def read_tile_edges(
 
     Notes
     -----
-    - The `edge_rows` array has shape (number of tile row edges, width of the
+    
+    -   The `edge_rows` array has shape (number of tile row edges, width of the
         window).
-    - The `edge_cols` array has shape (number of tile column edges, height of
+    -   The `edge_cols` array has shape (number of tile column edges, height of
         the window).
-    - The output arrays are allocated with `order='C'` for compatibility with
+    -   The output arrays are allocated with `order='C'` for compatibility with
         downstream processing.
+        
     """
     # Default window to full dataset
     if window is None:

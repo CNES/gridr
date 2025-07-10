@@ -13,7 +13,18 @@ Module for common IO definitions
 from enum import IntEnum
 
 class GridRIOMode(IntEnum):
-    """Define the IO mode to consider in certain computaiton (input or output)
+    """
+    Defines input/output (I/O) modes for computations.
+
+    This enumeration is used to specify whether a particular operation or data
+    context pertains to input or output.
+
+    Members
+    -------
+    INPUT : int
+        Represents an input mode (value = 1).
+    OUTPUT : int
+        Represents an output mode (value = 2).
     """
     INPUT = 1
     OUTPUT = 2

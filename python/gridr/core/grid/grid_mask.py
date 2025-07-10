@@ -25,7 +25,23 @@ from gridr.core.grid.grid_rasterize import (GeometryType, grid_rasterize,
         GridRasterizeAlg, ShapelyPredicate)
 
 class Validity(IntEnum):
-    """Define the GridR convention regarding validity
+    """Defines the GridR convention regarding validity.
+
+    This enumeration is used to represent the validity status of data or
+    regions within the GridR framework.
+
+    Attributes
+    ----------
+    INVALID : int
+        Represents an invalid state. The value is 0.
+    VALID : int
+        Represents a valid state. The value is 1.
+
+    Notes
+    -----
+    This `IntEnum` ensures a consistent and unambiguous representation
+    of validity across different components of the GridR library. It's
+    designed for clear binary state representation (valid/invalid).
     """
     INVALID = 0
     VALID = 1
@@ -51,120 +67,174 @@ def build_mask(
     raster mask at a target resolution (currently only full resolution,
     i.e., (1,1), is implemented).
 
-    1.  **Input Raster Mask**: Provided as `mask_in`, this is an
-        optional binary raster mask, potentially at a lower resolution.
+    1.  **Input Raster Mask**: Provided as `mask_in`, this is an optional binary 
+        raster mask, potentially at a lower resolution.
         It typically matches the grid's shape and resolution. If set,
         `mask_in_resolution` becomes mandatory.
-        The `mask_in_target_win` argument can define a window for the
-        resampled mask, specified in the output resolution's coordinate
-        system. As resampling may yield float values,
-        `mask_in_binary_threshold` binarizes the result: values
-        greater than or equal to this threshold are `1` (valid),
-        otherwise `0`.
+        The `mask_in_target_win` argument can define a window for the resampled 
+        mask, specified in the output resolution's coordinate system. 
+        As resampling may yield float values, `mask_in_binary_threshold` 
+        binarizes the result: values greater than or equal to this threshold are 
+        :py:attr:`~Validity.VALID`, otherwise :py:attr:`~Validity.INVALID`.
 
-    2.  **Vector Geometry Mask**: The `geometry_pair` argument defines
-        this mask using vectors. It expects a tuple with two
-        `GeometryType` elements:
-        * The **first element** represents **valid** geometries.
-        * The **second element** represents **invalid** geometries.
-        (For details on `GeometryType`, see the `grid_rasterize` module.)
+    2.  **Vector Geometry Mask**: The `geometry_pair` argument defines this mask
+        using vectors. It expects a tuple with two :py:class:`~GeometryType` 
+        elements:
+        
+            *   The **first element** represents **valid** geometries.
+            *   The **second element** represents **invalid** geometries.
+            
+        (For details on :py:class:`~GeometryType`, see the `grid_rasterize` 
+        module.)
 
         Both geometry elements are processed sequentially to generate
         the rasterized vector mask:
-        * **Valid Geometry Rasterization**: The first element is
-            used in a `grid_rasterize` call, with `inner_value` as
-            `Validity.VALID` and `outer_value` as `Validity.INVALID`.
-            This marks the interior (and potentially contour) of the
-            geometry as valid. If `None`, the resulting raster is
-            entirely valid by convention.
-        * **Invalid Geometry Rasterization**: The second element
-            is then used in another `grid_rasterize` call. Here,
-            `inner_value` is `Validity.INVALID` and `outer_value` is
-            `Validity.VALID`. This produces a second raster where the
-            interior (and contour) of this geometry is marked invalid.
-        * **Final Mask Merge**: A unary "AND" operation merges the
-            two rasters to yield the final geometry raster.
+        
+            *   **Valid Geometry Rasterization**: The first element is used in a 
+                `grid_rasterize` call, with `inner_value` as 
+                :py:attr:`~Validity.VALID` and `outer_value` as 
+                :py:attr:`~Validity.INVALID`.
+                This marks the interior (and potentially contour) of the 
+                geometry as valid. If ``None``, the resulting raster is entirely 
+                valid by convention.
+            *   **Invalid Geometry Rasterization**: The second element is then 
+                used in another `grid_rasterize` call. Here, `inner_value` is 
+                :py:attr:`~Validity.INVALID` and `outer_value` is
+                :py:attr:`~Validity.VALID`. This produces a second raster where 
+                the interior (and contour) of this geometry is marked invalid.
+            *   **Mask Merge**: A unary "AND" operation merges the two rasters 
+                to yield the final geometry raster.
 
     A pixel is considered invalid if it is masked by the input raster, falls
     outside the **valid** geometry, or lies within the **invalid** geometry.
 
-    The rasterization process aligns with the output coordinate system,
-    defined by the `shape`, `resolution`, and `geometry_origin` arguments.
-    You can pass a preallocated output buffer via the `out` argument;
-    if provided, it must be consistent with the given `shape`.
+    The rasterization process aligns with the output coordinate system, defined 
+    by the `shape`, `resolution`, and `geometry_origin` arguments.
+    You can pass a preallocated output buffer via the `out` argument; if 
+    provided, it must be consistent with the given `shape`.
     
     If neither an input mask (`mask_in`) nor a geometry pair (`geometry_pair`)
-    is provided, the `out` buffer will not be modified unless the 'init_out' 
-    argument is True. In such cases, it's the user's responsibility to ensure
-    'out' is appropriately initialized, as its contents might otherwise be 
-    non-conforming. If 'init_out' is True, the 'out' buffer will be filled with 
-    'Validity.VALID'.
+    is provided, the `out` buffer will not be modified unless the `init_out`
+    argument is ``True``. In such cases, it's the user's responsibility to 
+    ensure `out` is appropriately initialized, as its contents might otherwise 
+    be non-conforming. If `init_out` is ``True``, the `out` buffer will be 
+    filled with :py:attr:`~Validity.VALID`.
 
     **Conventions:**
 
-    * **Invalid (masked) pixels** are `Validity.INVALID` (0);
-        otherwise, they're `Validity.VALID` (1).
+    * **Invalid (masked) pixels** are :py:attr:`~Validity.INVALID` (0);
+        otherwise, they're :py:attr:`~Validity.VALID` (1).
     * Geometry points use `(x, y)` coordinates, where `x` is the column
         and `y` is the row.
     * `shape`, `resolution`, and `geometry_origin` are provided as
         `(value for row, value for column)`. Note that `geometry_origin`'s
         convention differs from geometry point definitions.
 
-    Args:
-    -----
-    
-    shape : (Tuple[int, int])
-        The shape of the output mask. If notgiven, it's defined from 
-        `mask_in_target_win` or `out` in that priority order.
-    
-    resolution : (Tuple[int, int])
-        The output mask's resolution.
-        Only full resolution ((1,1)) is currently implemented. It's used for 
+    Parameters
+    ----------
+    shape : tuple[int, int] or None
+        The shape of the output mask (rows, columns). If ``None``, its shape is
+        defined from `mask_in_target_win` or `out` in that priority order.
+        
+    resolution : tuple[int, int]
+        The output mask's resolution (row_res, col_res).
+        Only full resolution (`(1,1)`) is currently implemented. It's used for
         resampling the input mask and rasterizing geometries.
-    
-    out : (np.ndarray)
-        An optional preallocated buffer to store the result.
-    
-    geometry_origin : (Tuple[float, float])
+        
+    out : numpy.ndarray or None
+        An optional preallocated buffer to store the result. If ``None``, a new
+        array will be created and returned.
+        
+    geometry_origin : tuple[float, float], optional
         Geometric coordinates mapped to the output array's (0,0) pixel. This
-        argument is mandatory if `geometry_pair` is set.
-    
-    geometry_pair : (Tuple[GeometryType, GeometryType])
+        argument is mandatory if `geometry_pair` is set. Defaults to ``None``.
+        
+    geometry_pair : tuple[GeometryType | None, GeometryType | None], optional
         A tuple containing:
-        - The first element (`GeometryType`): Represents **valid** geometries.
-        - The second element (`GeometryType`): Represents **invalid** geometries.
-    
-    mask_in : (Optional[np.ndarray])
-        Optional input raster mask.
-    
-    mask_in_target_win : (np.ndarray)
-        An optional production window as
+        
+          - The first element (:py:class:`~GeometryType` or ``None``): 
+            Represents **valid** geometries.
+          - The second element (:py:class:`~GeometryType` or ``None``):
+            Represents **invalid** geometries.
+        
+        Defaults to ``None``.
+        
+    mask_in : numpy.ndarray, optional
+        Optional input raster mask. Defaults to ``None``.
+        
+    mask_in_target_win : tuple[tuple[int, int], tuple[int, int]], optional
+        An optional production window as 
         `((first_row, last_row), (first_col, last_col))` for a 2D mask.
-    
-    mask_in_resolution : (Optional[Tuple[int, int]])
+        Defaults to ``None``.
+        
+    mask_in_resolution : tuple[int, int], optional
         Resolution in row and column for the input raster mask.
-    
-    oversampling_dtype : (np.dtype)
-        The floating-point data type to use for mask oversampling.
-    
-    mask_in_binary_threshold : (float)
+        Defaults to ``None``.
+        
+    oversampling_dtype : numpy.dtype, optional
+        The floating-point data type to use for mask oversampling. 
+        Defaults to ``None``.
+        
+    mask_in_binary_threshold : float, default 0.999
         For binary output, values greater than or equal to this threshold are 
         `1`, `0` otherwise.
+        
+    rasterize_kwargs : dict, optional
+        Dictionary of parameters for the rasterization process.
+        For example:
+        
+        ::
+            {'alg': GridRasterizeAlg.SHAPELY,
+             'kwargs_alg': {'shapely_predicate': ShapelyPredicate.COVERS}}
+             
+        Defaults to ``None``.
+        
+    init_out : bool, default False
+        An option to force input `out` buffer to be filled with 
+        :py:attr:`~Validity.VALID` before any mask operation.
 
-    rasterize_kwargs : (Optional[Dict])
-        Dictionary of parameters for the rasterization process, e.g.,
-        `{'alg': GridRasterizeAlg.SHAPELY,
-          'kwargs_alg': {'shapely_predicate': ShapelyPredicate.COVERS}}`.
-    
-    init_out : (bool)
-        An option to force input 'out' buffer to be filled with Validity.VALID
-        before any mask operation.
-    
-    Returns:
-    --------
-        Optional[np.ndarray]
-            The created binary mask, or `None` if `out` was provided and the 
-            operation was in-place.
+    Returns
+    -------
+    numpy.ndarray or None
+        The created binary mask, or ``None`` if `out` was provided and the
+        operation was in-place.
+
+    Raises
+    ------
+    ValueError
+        If both `shape` and `resolution` are not provided.
+        
+    ValueError
+        If `resolution` is not `(1,1)`. (Current implementation only supports
+        full resolution).
+        
+    ValueError
+        If `geometry_pair` is provided but `geometry_origin` is `None`.
+        
+    ValueError
+        If `mask_in` is provided but `mask_in_resolution` is `None`.
+        
+    ValueError
+        If the shapes of `out` and `shape` arguments do not match.
+        
+    ValueError
+        If `mask_in` is provided and `oversampling_dtype` is `None`.
+        
+    ValueError
+        If `mask_in` is provided and `oversampling_dtype` is not a 
+        floating-point type.
+        
+    ValueError
+        If `mask_in` is provided and `mask_in_target_win` does not match the
+        computed shape from `shape`.
+        
+    ValueError
+        If `mask_in` is provided and `mask_in_target_win` is not contained
+        within the input mask's full resolution profile.
+        
+    TypeError
+        If `out` is defined and is not a NumPy array.
+        
     """
     ret = None
     # -- Perform some checks on arguments and init optional arguments

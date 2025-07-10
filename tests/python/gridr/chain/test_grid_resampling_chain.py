@@ -267,7 +267,7 @@ class TestGridResamplingChain:
                     computation_dtype = computation_dtype,
                     
                     array_src_geometry_origin = None,
-                    array_src_geometry = None,
+                    array_src_geometry_pair = None,
                 
                     #grid_geometry_origin = (0, 0),
                     io_strip_size = io_strip_size, #10000,

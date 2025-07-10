@@ -1,6 +1,6 @@
 # coding: utf8
 #
-# Copyright (c) 2024 Centre National d'Etudes Spatiales (CNES).
+# Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
 # This file is part of GRIDR
 # (see https://gitlab.cnes.fr/gridr/gridr).
@@ -439,7 +439,7 @@ def plot_convention_grid_mesh(
         mask=None,
         win=None,
         value_color_alpha_map=None,
-        plot_res=60,
+        plot_res=120,
         title=None,
         prefix=None):
     if in_doc_build():
@@ -602,8 +602,8 @@ def mpl_plot_convention_grid_mesh(shape, resolution, origin, x, y, geometry=None
 
     if export_name is None:
         export_name = f"mpl_convention_grid_mesh_{uuid.uuid4().hex}.png"
-    
-    fig, ax = plt.subplots(figsize=(shape[1] * plot_res / 100, shape[0] * plot_res / 100)) # Adjust figsize for similar visual scale
+    fontsize = 8
+    fig, ax = plt.subplots(figsize=(shape[1]/3, shape[0]/3), dpi=plot_res) # Adjust figsize for similar visual scale
 
     # Extract pixel center coordinates
     cx, cy = x[0, :], y[:, 0]
@@ -622,7 +622,7 @@ def mpl_plot_convention_grid_mesh(shape, resolution, origin, x, y, geometry=None
     ax.add_collection(pixel_collection)
 
     # Plot pixel centroids (x, y are already in the correct "plot" orientation if x is columns, y is rows)
-    ax.scatter(x.flatten(), y.flatten(), s=5, color="black", alpha=0.5, marker='x', label="Pixel Centroids")
+    ax.scatter(x.flatten(), y.flatten(), s=3, color="black", alpha=0.5, marker='x', label="Pixel Centroids")
     ax.scatter(0, 0, s=30, color="red", alpha=1, marker='x', zorder=5 ) # Zorder to ensure visibility
 
     # Set axis limits
@@ -632,7 +632,7 @@ def mpl_plot_convention_grid_mesh(shape, resolution, origin, x, y, geometry=None
 
     # Add origin annotation
     ax.annotate(f"(0, 0)", xy=(0, 0), xytext=(0, - resolution[0]/8)
-                ,fontsize=10, color='black', alpha=0.7, ha='left', va='bottom')
+                ,fontsize=fontsize, color='black', alpha=0.7, ha='left', va='bottom')
     
     # Plot coordinate axes (using plot's x,y for direction)
     ax.arrow(0, 0, 0.9, 0, head_width=0.2, head_length=0.1, fc='red', ec='red', zorder=10) # X-axis arrow (right)
@@ -640,7 +640,7 @@ def mpl_plot_convention_grid_mesh(shape, resolution, origin, x, y, geometry=None
 
     ax.set_aspect('equal', adjustable='box')
     if title:
-        ax.set_title(title, fontsize=10)
+        ax.set_title(title, fontsize=fontsize)
     ax.grid(True, linestyle='--', alpha=0.3, linewidth=0.2)
 
     # Plot geometry
@@ -698,6 +698,8 @@ def mpl_plot_convention_grid_mesh(shape, resolution, origin, x, y, geometry=None
                 raster_collection = PatchCollection(mask_patches, facecolor=color, edgecolor=color, linewidth=0.5, alpha=alpha, zorder=1)
                 ax.add_collection(raster_collection)
                 mask_patches = [] # Reset for next value
+                
+    ax.tick_params(axis='both', labelsize=fontsize)
     
     plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
     plt.savefig(export_name, bbox_inches='tight', pad_inches=0)

@@ -1,6 +1,6 @@
 # coding: utf8
 #
-# Copyright (c) 2024 Centre National d'Etudes Spatiales (CNES).
+# Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
 # This file is part of GRIDR
 # (see https://gitlab.cnes.fr/gridr/gridr).
@@ -36,19 +36,29 @@ def check_oa_strip_size(
         ) -> int:
     """
     Check the strip size against array and filter dimension.
-    The methods returns 0 if either :
-    - the half number of lines in array is lesser than the strip size
-    - the number of rows in the filter is greater or equal to the half number of
-        lines in the input array.
-    Otherwise it returns the given strip_size.
-    
-    Args:
-        arr: the input image array
-        fil: the filter given as an array in the spatial domain
-        strip_size : the chunk target number of rows
+
+    The method returns 0 if either :
+      - the half number of lines in the array is lesser than the strip size
+      - the number of rows in the filter is greater than or equal to the half
+        number of lines in the input array.
+
+    Otherwise, it returns the given strip_size.
+
+    Parameters
+    ----------
+    arr : Union[np.ndarray, ArrayProfile]
+        The input image array.
         
-    Returns:
-        the original strip_size or 0
+    fil : np.ndarray
+        The filter given as an array in the spatial domain.
+        
+    strip_size : int
+        The chunk target number of rows.
+
+    Returns
+    -------
+    int
+        The original strip_size or 0.
     """
     if arr.shape[0]/2 < strip_size:
         strip_size = 0
@@ -71,25 +81,57 @@ def fft_array_filter_fallback(
         zoom: int = 1,
         round_out: bool = True,
         ) -> NoReturn:
-    """
-    Wrapper to the fft_array_filter core method in case of no strip.
-    
-    Args:
-        ds_in : opened input image data set
-        ds_out : opened output dataset
-        band : band to consider in the input dataset
-        fil: the filter given as an array in the spatial domain
-        boundary : the edge management rule as a single value (similar for each
-                side) or a tuple ((top, bottom), (left, right)). The rule is
-                defined by the BoundaryPad enum.
-        out_mode : the output mode for the returned array.
-        strip_size : the chunk target number of rows
-        binary : option to save output as binary (0 or 1)
-        binary_threshold : in case of binary option is activated, all values 
-                greater or equal to binary_threshold are set to 1, 0 otherwise.
-        zoom: the zoom factor. It can either be a single integer or a tuple of
-                two integers representing the rational P/Q and given as (P, Q)
-        round_out: option to round the written output to the nearest integer.
+    """Wrapper to the fft_array_filter core method in case of no strip.
+
+    Parameters
+    ----------
+    ds_in : rasterio.io.DatasetReader
+        Opened input image dataset.
+        
+    ds_out : rasterio.io.DatasetWriter
+        Opened output dataset.
+        
+    band : int
+        Band to consider in the input dataset.
+        
+    fil : numpy.ndarray
+        The filter given as an array in the spatial domain.
+        
+    boundary : BoundaryPad
+        The edge management rule as a single value (similar for each side) or
+        a tuple ``((top, bottom), (left, right))``. The rule is defined by the
+        :class:`~gridr.chain.enums.BoundaryPad` enum.
+        
+    out_mode : ConvolutionOutputMode
+        The output mode for the returned array.
+        
+    binary : bool, optional
+        Option to save output as binary (0 or 1). Defaults to False.
+        
+    binary_threshold : float, optional
+        In case the `binary` option is activated, all values greater or equal
+        to `binary_threshold` are set to 1, 0 otherwise. Defaults to 1e-3.
+        
+    zoom : int or tuple, optional
+        The zoom factor. It can either be a single integer or a tuple of
+        two integers representing the rational P/Q and given as (P, Q).
+        
+        Defaults to 1.
+        
+    round_out : bool, optional
+        Option to round the written output to the nearest integer.
+        Defaults to True.
+
+    Returns
+    -------
+    NoReturn
+        This function performs an in-place operation on `ds_out` and
+        does not return any value.
+
+    Notes
+    -----
+    This function acts as a fallback when strip processing is not required or
+    not applicable, directly calling the core `fft_array_filter` method.
     """
     # Full read
     buffer = np.zeros((ds_in.height, ds_in.width),
@@ -124,65 +166,115 @@ def fft_filtering_oa_strip_chain(
         round_out: bool = True,
         logger = None,
         ) -> int:
-    """
-    Compute the FFT Filtering of an opened rasterio input dataset.
-    
-    The read and write operations are performed by chunk of whole rows, also
-    called strips. This method wraps the fft_array_filtering implemented in the
-    core.convolution.fft_filtering module.
-    
-    Input chunks do not overlap in order to limit the number of operations. The
-    overlap-add method is used in order to build the whole output image with no 
-    boundary effects (https://en.wikipedia.org/wiki/Overlap%E2%80%93add_method).
-    
-    The two last strips are merged if the last strip does not match the defined 
-    strip size.
-    
-    Strips are processed sequentially.
-    
-    A binary option can be set to True to activate a binary output. In that case
-    the binary_threshold must be set in order to define the threshold between
-    0 and 1 used for the binary conversion. Please also note that the output
-    dataset has to be opened with the correct option in order to save it as
-    a true binary (1bit per pixel) raster. For instance :
-    
-        ds_out = rasterio.open(file_out, "w",
-                    driver_name="GTiff",
-                    dtype=np.uint8,
-                    height=ds_in.height,
-                    width=ds_in.width,
-                    count=1,
-                    nbits=1)
-   
-    
-    Please note that this methods directly falls back to the wrapped method 
-    depending on dataset and filter shapes. More precisely :
-    - The input raster number of rows has two be greater than twice the 
-    stripsize.
-    - The input raster number of rows has two be greater than twice the 
-    filter size.
-    
-    Args:
-        ds_in : opened input image data set
-        ds_out : opened output dataset
-        band : band to consider in the input dataset
-        fil: the filter given as an array in the spatial domain
-        boundary : the edge management rule as a single value (similar for each
-                side) or a tuple ((top, bottom), (left, right)). The rule is
-                defined by the BoundaryPad enum.
-        out_mode : the output mode for the returned array.
-        strip_size : the chunk target number of rows
-        binary : option to save output as binary (0 or 1)
-        binary_threshold : in case of binary option is activated, all values 
-                greater or equal to binary_threshold are set to 1, 0 otherwise.
-        zoom: the zoom factor. It can either be a single integer or a tuple of
-                two integers representing the rational P/Q and given as (P, Q)
-        round_out: option to round the written output to the nearest integer.
-        logger : python logger object to use for logging. If None a logger is
-                initialized internally.
-   
-    Returns:
-        1
+    """Compute the FFT Filtering of an opened rasterio input dataset.
+
+    The read and write operations are performed by chunks of whole rows,
+    also called strips. This method wraps the `fft_array_filtering`
+    implemented in the `core.convolution.fft_filtering` module.
+
+    Parameters
+    ----------
+    ds_in : rasterio.io.DatasetReader
+        Opened input image dataset.
+        
+    ds_out : rasterio.io.DatasetWriter
+        Opened output dataset.
+        
+    band : int
+        Band to consider in the input dataset.
+        
+    fil : numpy.ndarray
+        The filter given as an array in the spatial domain.
+        
+    boundary : BoundaryPad
+        The edge management rule as a single value (similar for each side) or
+        a tuple ``((top, bottom), (left, right))``. The rule is defined by the
+        :class:`~gridr.chain.enums.BoundaryPad` enum.
+        
+    out_mode : ConvolutionOutputMode
+        The output mode for the returned array.
+        
+    strip_size : int, optional
+        The chunk target number of rows. Defaults to 512.
+        
+    binary : bool, optional
+        Option to save output as binary (0 or 1). Defaults to False.
+        
+    binary_threshold : float, optional
+        In case the `binary` option is activated, all values greater or equal
+        to `binary_threshold` are set to 1, 0 otherwise. Defaults to 1e-3.
+        
+    zoom : int or tuple, optional
+        The zoom factor. It can either be a single integer or a tuple of
+        two integers representing the rational P/Q and given as (P, Q).
+        Defaults to 1.
+        
+    round_out : bool, optional
+        Option to round the written output to the nearest integer.
+        Defaults to True.
+        
+    logger : logging.Logger, optional
+        Python logger object to use for logging. If None, a logger is
+        initialized internally. Defaults to None.
+
+    Returns
+    -------
+    int
+        Returns 1 upon successful completion of the filtering process.
+
+    Notes
+    -----
+    Input chunks do not overlap in order to limit the number of operations.
+    The overlap-add method is used to build the whole output image with no
+    boundary effects (see `Wikipedia entry for Overlap-add method
+    <https://en.wikipedia.org/wiki/Overlap%E2%80%93add_method>`_).
+
+    The two last strips are merged if the last strip does not match the
+    defined strip size. Strips are processed sequentially.
+
+    This method directly falls back to the wrapped method depending on
+    dataset and filter shapes. More precisely:
+
+    -   The input raster number of rows must be greater than twice the
+        strip size.
+    -   The input raster number of rows must be greater than twice the
+        filter size.
+
+    Examples
+    --------
+    A binary option can be set to True to activate a binary output. In that case,
+    the `binary_threshold` must be set to define the threshold between 0 and 1
+    used for the binary conversion. Please also note that the output dataset has
+    to be opened with the correct option in order to save it as a true binary
+    (1bit per pixel) raster.
+
+    For instance:
+
+    .. code-block:: python
+
+        import rasterio
+        import numpy as np
+        from gridr.chain.enums import BoundaryPad, ConvolutionOutputMode
+
+        # Assuming ds_in is an opened rasterio dataset
+        file_out = "output_binary.tif"
+        with rasterio.open(file_out, "w",
+                            driver="GTiff",
+                            dtype=np.uint8,
+                            height=ds_in.height,
+                            width=ds_in.width,
+                            count=1,
+                            nbits=1) as ds_out_binary:
+            fft_filtering_oa_strip_chain(
+                ds_in=ds_in,
+                ds_out=ds_out_binary,
+                band=1,
+                fil=np.ones((3, 3)), # Example filter
+                boundary=BoundaryPad.REFLECT,
+                out_mode=ConvolutionOutputMode.SAME,
+                binary=True,
+                binary_threshold=0.5
+            )
     """
     if logger is None:
         logger = logging.getLogger(__name__)

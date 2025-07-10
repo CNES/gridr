@@ -1,6 +1,6 @@
 # coding: utf8
 #
-# Copyright (c) 2024 Centre National d'Etudes Spatiales (CNES).
+# Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
 # This file is part of GRIDR
 # (see https://gitlab.cnes.fr/gridr/gridr).
@@ -30,24 +30,85 @@ from gridr.core.grid.grid_commons import (grid_regular_coords_1d,
 DFLT_GEOMETRY_BUFFER_DISTANCE = 1e-6
 
 # Define a type alias for geometry input
-GeometryType = Union[ shapely.geometry.Polygon, List[shapely.geometry.Polygon],
-        shapely.geometry.MultiPolygon]
+GeometryType = Union[
+        shapely.geometry.Polygon,
+        List[shapely.geometry.Polygon],
+        shapely.geometry.MultiPolygon
+]
+"""
+Type alias for valid geometry inputs.
+
+This type alias simplifies type hints for functions that accept various
+Shapely geometry types or collections of them. It covers single polygons, lists 
+of polygons, and multi-polygons, which are common inputs for rasterization
+operations.
+
+Examples
+--------
+>>> from shapely.geometry import Polygon, MultiPolygon
+>>> poly1 = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+>>> poly_list = [poly1, Polygon([(2, 2), (3, 2), (3, 3), (2, 3)])]
+>>> multi_poly = MultiPolygon(poly_list)
+
+>>> def process_geometry(geom: GeometryType):
+...     # Function body
+...     pass
+
+>>> process_geometry(poly1)
+>>> process_geometry(poly_list)
+>>> process_geometry(multi_poly)
+"""
 
 
 class GridRasterizeAlg(IntEnum):
-    """Define the backend to use for rasterize.
+    """Define the backend algorithm to use for rasterization.
+
+    This enumeration specifies the different libraries or approaches that
+    can be employed to perform the rasterization of geometric features
+    onto a grid.
+
+    Attributes
+    ----------
+    RASTERIO_RASTERIZE : int
+        Uses `rasterio.features.rasterize` as the backend for rasterization.
+        This typically offers high performance and robustness for geospatial
+        rasterization tasks.
+
+    SHAPELY : int
+        Uses Shapely's geometric operations for rasterization. This might
+        involve iterating over geometries and using Shapely's predicates
+        (e.g., `contains`, `intersects`) to determine cell inclusion.
+        It can be useful for fine-grained control over predicate logic but might
+        be less performant for large-scale rasterization compared to 
+        `rasterio.features.rasterize`.
     """
     RASTERIO_RASTERIZE = 1
     SHAPELY = 2
 
 
 class ShapelyPredicate(IntEnum):
-    """Define the shapely predicates used for rasterize
-    COVERS: covers(a,b) returns True if b is within a or b lies in the contour
-    CONTAINS: contains(a,b) returns True if b is within a. (It will returns
-            False if b only touches a)
-    INTERSECTS: intersects(a,b) : should produce same result as COVERS but less
-            efficient.
+    """Define the shapely predicates used for rasterization.
+
+    These predicates determine how geometric features (typically polygons)
+    are evaluated against raster cells during the rasterization process.
+
+    Attributes
+    ----------
+    COVERS : int
+        `covers(a, b)` returns `True` if geometry `b` is entirely within
+        geometry `a` or if `b` lies on the contour of `a`.
+
+    CONTAINS : int
+        `contains(a, b)` returns `True` if geometry `b` is strictly within
+        geometry `a`. It returns `False` if `b` only touches `a` (i.e.,
+        intersects only at the boundary).
+
+    INTERSECTS : int
+        `intersects(a, b)` returns `True` if the interior or boundary of
+        geometry `a` intersects the interior or boundary of geometry `b`.
+        This predicate should produce the same geometric results as `COVERS`
+        in many rasterization contexts but is generally less efficient for
+        this specific use case.
     """
     COVERS = 1
     CONTAINS = 2
@@ -57,14 +118,26 @@ class ShapelyPredicate(IntEnum):
 # Prepare geometries so that it correspond to a list of Polygons
 def geometry_to_polygon_list(geom: shapely.geometry
         ) -> List[shapely.geometry.Polygon]:
-    """Convert a geometry supposed to be a MultiPolygon or a Polygon to a
-    list of polygons.
-    
-    Args:
-        geom: the geometry to convert
-    
-    Returns:
-        a list of polygons or an empty list if geometry's type mismatch.
+    """Convert a Shapely Polygon or MultiPolygon geometry to a list of polygons.
+
+    This function takes a single `shapely.geometry.Polygon` or
+    `shapely.geometry.MultiPolygon` and converts it into a uniform list of
+    individual `shapely.geometry.Polygon` objects. This is useful for
+    processing workflows that require iterating over individual polygons.
+
+    Parameters
+    ----------
+    geom : Union[shapely.geometry.Polygon, shapely.geometry.MultiPolygon]
+        The geometry to convert. Expected types are `Polygon` or `MultiPolygon`.
+
+    Returns
+    -------
+    List[shapely.geometry.Polygon]
+        A list of `shapely.geometry.Polygon` objects extracted from the input 
+        geometry. If the input `geom` is a `Polygon`, the list will contain just
+        that polygon. If it's a `MultiPolygon`, the list will contain all its 
+        constituent polygons. Returns an empty list if the
+       
     """
     geom_list = []
     if geom.geom_type == 'MultiPolygon':
@@ -84,38 +157,101 @@ def _grid_rasterize_check_params(
         output: Optional[np.ndarray] = None,
         dtype: Optional[np.dtype] = None,
         reduce: bool = False,
-        ) -> Union[np.ndarray, np.uint8]:
-    """Check grid_rasterize method parameters.
+        ) -> Tuple[
+                Union[np.ndarray, Tuple[np.ndarray, np.ndarray]],
+                Optional[np.dtype],
+                Tuple[int, int],
+                np.ndarray,
+                List[shapely.geometry.Polygon]
+                ]:
+    """Check and preprocess parameters for the grid_rasterize method.
+
+    This internal helper function validates and prepares all input parameters
+    required by the `grid_rasterize` method. It ensures consistency between
+    grid definition arguments, handles default windowing, and converts input
+    geometries into a standardized list of polygons.
+
+    Parameters
+    ----------
+    grid_coords : Optional[Tuple[np.ndarray, np.ndarray]]
+        Grid corresponding coordinates. If `None`, they are computed using
+        `shape`, `origin`, and `resolution` arguments. The grid coordinates
+        are typically given as a tuple of 1D or 2D arrays containing the
+        columns and rows of pixel centroids, expressed in the same frame as
+        the geometry.
+
+    shape : Optional[Tuple[int, int]]
+        Grid output shape as a tuple of integers (number of rows, number of 
+        columns). This is used if `grid_coords` is not provided.
+
+    origin : Optional[Tuple[float, float]]
+        Grid origin as a tuple of floats (origin's row coordinate, origin's
+        column coordinate). Used if `grid_coords` is not provided.
+
+    resolution : Optional[Tuple[int, int]]
+        Grid resolution as a tuple of integers (row resolution, columns
+        resolution). Used if `grid_coords` is not provided.
+
+    win : Optional[np.ndarray]
+        The production window given as a list of tuples containing the first
+        and last index for each dimension. The window is defined in regards
+        to the given coordinates. For example, for a 2D dimension:
+        ``((first_row, last_row), (first_col, last_col))``.
+
+    geometry : Optional[GeometryType]
+        Geometry to rasterize on the grid. This can be either a single
+        `shapely.geometry.Polygon`, a `shapely.geometry.MultiPolygon`, or a list
+        of `shapely.geometry.Polygon` objects.
+
+    output : Optional[np.ndarray], default None
+        If not `None`, the rasterization result will be stored directly into 
+        this preallocated array. This option is not compatible if `reduce` is 
+        set to `True`. If a `win` is defined, the `output` array must have the
+        exact same size as the windowed region.
+
+    dtype : Optional[np.dtype], default None
+        Desired data type for the output rasterized array. If `None`, and
+        `output` is provided, the `dtype` of `output` is used. This parameter 
+        is mutually exclusive with `output`.
+
+    reduce : bool, default False
+        A boolean option. If `True`, and if the resulting raster is fully filled
+        with a single scalar value (0 or 1), then that scalar value is returned 
+        instead of the full raster array. This option is mutually exclusive with
+        `output`.
+
+    Returns
+    -------
+    Tuple[
+        Union[np.ndarray, Tuple[np.ndarray, np.ndarray]],
+        Optional[np.dtype],
+        Tuple[int, int],
+        np.ndarray,
+        List[shapely.geometry.Polygon]
+    ]
+        A tuple containing the validated and updated parameters:
+
+        -   **grid_coords**: Updated grid coordinates (NumPy array or tuple
+            of arrays).
+        -   **dtype**: Resolved output data type.
+        -   **shape_out**: The computed output shape of the rasterized grid
+            (tuple of integers).
+        -   **win**: The determined window to apply, as a NumPy array.
+        -   **polygons**: A standardized list of `shapely.geometry.Polygon`
+            objects derived from the input `geometry`.
+
+    Raises
+    ------
+    ValueError
+        If both `reduce` and `output` arguments are set to `True`.
     
-    Args:
-        grid_coords: grid corresponding coordinates. If not given they are
-                computed with shape, origin and resolution arguments.
-                The grid coordinates are given as tuple of 1d or 2d arrays 
-                containing the columns and the rows of pixels centroïds given
-                in the same frame as the geometry.
-        shape: grid output shape as a tuple of integer (number of rows, number 
-                of columns).
-        origin: grid origin as a tuple of float (origin's row coordinate, 
-                origin's column coordinate)
-        resolution: grid resolution as a tuple of integer (row resolution,
-                columns resolution)
-        win: the production window given as a list of tuple containing the
-                first and last index for each dimension. The window is defined
-                in regards to the given coordinates.
-                e.g. for a dimension 2 : 
-                ((first_row, last_row), (first_col, last_col))
-        geometry: geometry to rasterize on the grid. This can be either a
-                simple Polygon, a MultiPolygon or a list of Polygons.
-        output: if not None, the result will be put in output. Not working if
-                reduce is set to true. If a window is defined the output must be
-                the exact same size.
-        dtype: output dtype
-        reduce: a boolean option that returns the corresponding scalar (0 or 1)
-                if the resulting raster if fully filled with that scalar
+    ValueError
+        If both `dtype` and `output` arguments are set simultaneously
+        (as `output.dtype` should define it).
+    
+    Exception
+        If the given `win` (window) is outside the domain of the grid definition.
         
-    Returns:
-        A tuple containing updated variables : grid_coords, dtype, shape_out,
-        win and polygons
     """
     # Check the grid coords definition
     grid_coords = check_grid_coords_definition(grid_coords, shape, origin,
@@ -187,61 +323,116 @@ def grid_rasterize(
         dtype: Optional[np.dtype] = None,
         reduce: bool = False,
         **kwargs_alg,
-        ) -> Union[np.ndarray, np.uint8]:
-    """
-    Generates a raster mask based on the spatial relationship between grid cell
-    centroids and the input geometry.
+        ) -> Union[np.ndarray, np.uint8, None]:
+    """Generates a raster mask based on the spatial relationship between
+    grid cell centroids and the input geometry.
 
-    Each pixel in the output raster will be set to `inner_value` if its 
+    Each pixel in the output raster will be set to `inner_value` if its
     corresponding grid cell centroid is considered to be within the geometry, 
-    according to the optionally specified predicate.
+    according to the optionally specified predicate (for Shapely backend). 
     Otherwise, the mask pixel will be set to `outer_value`.
 
-    If the input geometry is empty (e.g., no polygons are defined), the entire
+    If the input geometry is empty (e.g., no polygons are defined), the entire 
     mask will be populated with `default_value`.
+
+    Parameters
+    ----------
+    grid_coords : Optional[Tuple[np.ndarray, np.ndarray]]
+        Grid corresponding coordinates. If `None`, they are computed with 
+        `shape`, `origin`, and `resolution` arguments. The grid coordinates are 
+        given as a tuple of 1D or 2D arrays containing the columns and rows of 
+        pixel centroids, expressed in the same frame as the geometry.
+
+    shape : Optional[Tuple[int, int]]
+        Grid output shape as a tuple of integers (number of rows, number of 
+        columns).
+
+    origin : Optional[Tuple[float, float]]
+        Grid origin as a tuple of floats (origin's row coordinate, origin's 
+        column coordinate).
+
+    resolution : Optional[Tuple[int, int]]
+        Grid resolution as a tuple of integers (row resolution, columns
+        resolution).
+
+    win : Optional[np.ndarray]
+        The production window given as a list of tuples containing the first and
+        last index for each dimension. The window is defined with respect to the
+        given coordinates. For example, for a 2D dimension: 
+        ``((first_row, last_row), (first_col, last_col))``.
+
+    inner_value : int
+        The value to use for the interior of the union of polygons (pixels 
+        considered inside the geometry).
+
+    outer_value : int
+        The value to use for the exterior of the union of polygons (pixels 
+        considered outside the geometry).
+
+    default_value : int
+        The value to use to fill the entire output raster if no valid polygons 
+        are provided in `geometry`.
+
+    geometry : GeometryType
+        Geometry to rasterize on the grid. This can be either a single
+        `shapely.geometry.Polygon`, a `shapely.geometry.MultiPolygon`, or a list
+        of `shapely.geometry.Polygon` objects.
+
+    geometry_buffer_dst : Optional[float], default DFLT_GEOMETRY_BUFFER_DISTANCE
+        An optional distance to apply to dilate (positive value) or erode
+        (negative value) the geometries using `shapely.buffer`. This may be 
+        needed for the `RASTERIO_RASTERIZE` backend to ensure that polygon 
+        edge's corners are properly burned into the raster.
+
+    alg : GridRasterizeAlg, default GridRasterizeAlg.RASTERIO_RASTERIZE
+        The backend algorithm to use for rasterization. Some backends may
+        require additional arguments, which can be passed via `kwargs_alg`.
+
+    output : Optional[np.ndarray], default None
+        If not `None`, the rasterization result will be stored directly into 
+        this preallocated array. This option is mutually exclusive with 
+        `reduce=True`. If a `win` is defined, the `output` array must be exactly
+        the same size as the windowed region.
+
+    dtype : Optional[np.dtype], default None
+        Desired data type for the output rasterized array. If `None`, and 
+        `output` is provided, the `dtype` of `output` is used. Note that `bool`
+        type is not available with the `RASTERIO_RASTERIZE` algorithm.
+
+    reduce : bool, default False
+        If `True`, and if the resulting raster is entirely filled with either 
+        `inner_value` or `outer_value`, then that corresponding scalar value (0 
+        or 1) is returned instead of the full raster array.
+        This option is mutually exclusive with `output`.
+
+    kwargs_alg : dict
+        Additional dictionary of arguments needed for the chosen rasterize
+        backend. For `GridRasterizeAlg.SHAPELY`, this might include
+        `shapely_predicate` (e.g., `ShapelyPredicate.CONTAINS`).
+
+    Returns
+    -------
+    Union[np.ndarray, np.uint8, None]
+        The binary raster mask as a NumPy array, or a scalar integer
+        (`inner_value` or `outer_value`) if `reduce` is `True` and the
+        mask contains only a single unique value. Returns `None` if
+        `output` was provided and the result was written in-place.
+
+    Raises
+    ------
+    ValueError
+        If both `reduce` and `output` arguments are set to `True`.
+        
+    ValueError
+        If both `dtype` and `output` arguments are set simultaneously (as 
+        `output.dtype` should define it).
     
-    Args:
-        grid_coords: grid corresponding coordinates. If not given they are
-                computed with shape, origin and resolution arguments.
-                The grid coordinates are given as tuple of 1d or 2d arrays 
-                containing the columns and the rows of pixels centroïds given
-                in the same frame as the geometry.
-        shape: grid output shape as a tuple of integer (number of rows, number 
-                of columns).
-        origin: grid origin as a tuple of float (origin's row coordinate, 
-                origin's column coordinate)
-        resolution: grid resolution as a tuple of integer (row resolution,
-                columns resolution)
-        win: the production window given as a list of tuple containing the
-                first and last index for each dimension. The window is defined
-                in regards to the given coordinates.
-                e.g. for a dimension 2 : 
-                ((first_row, last_row), (first_col, last_col))
-        inner_value: The value to use for the interior of the union of polygons.
-        outer_value: The value to use for the exterior of the union of polygons.
-        default_value: The value to use to fill the output if no polygons is
-                given.
-        geometry: geometry to rasterize on the grid. This can be either a
-                simple Polygon, a MultiPolygon or a list of Polygons.
-        geometry_buffer_dst: an optional distance to apply to dilate (positive)
-                or erode (negative) the geometries. These may be needed for the
-                RASTERIO_RASTERIZE backend in order to ensure that polygons
-                edge's corners will be burned.
-        alg: backend to use for rasterization. Some backend may need additionnal
-                arguments given by the kwargs_alg keyword arguments dictionnary.
-        output: if not None, the result will be put in output. Not working if
-                reduce is set to true. If a window is defined the output must be
-                the exact same size.
-        dtype: output dtype. Please note that 'bool' type is not available with
-                the GridRasterizeAlg.RASTERIO_RASTERIZE algorithm.
-        reduce: a boolean option that returns the corresponding scalar (0 or 1)
-                if the resulting raster if fully filled with that scalar
-        kwargs_alg: additionnal dictionnary of arguments needed for rasterize
-                backend.
+    ValueError
+        If an unknown `alg` (backend) is specified.
+        
+    Exception
+        If the given `win` (window) is outside the domain of the grid definition.
     
-    Returns:
-        The binary raster mask or scalar if reduce is True and the mask only
-        contains a unique value.
     """
     raster = None
     
@@ -333,37 +524,99 @@ def rasterize_polygons_shapely(
         shapely_predicate: ShapelyPredicate = ShapelyPredicate.COVERS,
         output: Optional[np.ndarray] = None,
         dtype: Optional[np.dtype] = None,
-        ) -> np.ndarray:
-    """Rasterize list of polygons on a grid as a binary raster using shapely.
-    
-    The raster's pixels will contain `inner_value` if the corresponding grid's 
-    pixel centroïd is considered in the geometry with regards to the optional 
-    chosen predicate.
-    Otherwise the raster's pixels will contain `outer_value`.
-    
-    Args:
-        polygons: geometry to rasterize on the grid given as a list of polygons.
-        inner_value: The value to use for the interior of the union of polygons.
-        outer_value: The value to use for the exterior of the union of polygons.
-        grid_coords: coordinates of pixel centers given as a 3d array or a tuple
-                of 2 2d arrays/
-                First axis contains index for columns and rows coordinates.
-        shape: grid output shape as a tuple of integer (number of rows, number 
-                of columns).
-        origin: grid origin as a tuple of float (origin's row coordinate, 
-                origin's column coordinate)
-        resolution: grid resolution as a tuple of integer (row resolution,
-                columns resolution)
-        output: if not None, the result will be put in output. Not working if
-                reduce is set to true. If a window is defined the output must be
-                the exact same size.
-                Please note output may be initialized with values. The method
-                resets them.
-        dtype: output dtype ; only used if output is not given
-        shapely_predicate: the predicate to use for mask computation.
-    
-    Returns:
-        The binary raster mask
+        ) -> Optional[np.ndarray]:
+    """Rasterizes a list of polygons onto a grid, producing a binary raster
+    using Shapely's geometric predicates.
+
+    Each pixel in the output raster will be set to `inner_value` if its
+    corresponding grid cell centroid is considered to be within the geometry
+    (union of polygons), according to the chosen `shapely_predicate`.
+    Otherwise, the pixel will be set to `outer_value`.
+
+    Parameters
+    ----------
+    polygons : List[shapely.geometry.Polygon]
+        A list of `shapely.geometry.Polygon` objects to rasterize on the grid.
+
+    inner_value : int
+        The value to use for pixels whose grid cell centroids fall within the
+        interior (or boundary, depending on predicate) of the union of polygons.
+        Must be either 0 or 1.
+
+    outer_value : int
+        The value to use for pixels whose grid cell centroids fall outside the
+        exterior of the union of polygons. Must be either 0 or 1.
+        Must be different from `inner_value`.
+
+    grid_coords : Optional[Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]], default None
+        Coordinates of pixel centers. Can be:
+        
+            -   A 2D NumPy array with shape (N, 2) where N is the total number 
+                of points, and columns represent x and y coordinates.
+            -   A tuple of two 2D NumPy arrays `(xx, yy)` representing the X and
+                Y coordinates for each grid point (e.g., from `np.meshgrid`).
+            -   A tuple of two 1D NumPy arrays `(x_coords, y_coords)` which will 
+                be expanded into 2D meshgrids.
+        
+        If provided, `shape`, `origin`, and `resolution` must be `None`.
+
+    shape : Optional[Tuple[int, int]], default None
+        Grid output shape as a tuple of integers `(num_rows, num_columns)`.
+        If provided, `grid_coords` must be `None`, and `origin` and `resolution`
+        must also be provided.
+
+    origin : Optional[Tuple[float, float]], default None
+        Grid origin as a tuple of floats `(origin_row_coordinate, origin_column_coordinate)`.
+        Used with `shape` and `resolution` to compute `grid_coords` if 
+        `grid_coords` is `None`.
+
+    resolution : Optional[Tuple[float, float]], default None
+        Grid resolution as a tuple of floats `(row_resolution, column_resolution)`.
+        Used with `shape` and `origin` to compute `grid_coords` if `grid_coords`
+        is `None`.
+
+    shapely_predicate : ShapelyPredicate, default ShapelyPredicate.COVERS
+        The Shapely predicate to use for mask computation. Options are:
+        `ShapelyPredicate.COVERS`, `ShapelyPredicate.CONTAINS`, 
+        or `ShapelyPredicate.INTERSECTS`.
+
+    output : Optional[np.ndarray], default None
+        An optional preallocated NumPy array buffer to store the result.
+        If provided, the rasterization is performed in-place into this array.
+        Its shape must match the target grid shape derived from `grid_coords`
+        or `shape`/`origin`/`resolution`. If `output` is given, its `dtype` will
+        be used, and the `dtype` argument should be `None`. The method will 
+        reset the values of this buffer before populating it.
+
+    dtype : Optional[np.dtype], default None
+        Desired NumPy data type for the output raster. This argument is only 
+        used if `output` is `None` (i.e., a new array needs to be allocated).
+
+    Returns
+    -------
+    Optional[np.ndarray]
+        The binary raster mask as a NumPy array. If `output` was provided,
+        the rasterization is performed in-place, and this function returns 
+        `None`.
+
+    Raises
+    ------
+    ValueError
+        If neither `output` nor `dtype` is provided, or if both are provided.
+        
+    ValueError
+        If `grid_coords` and `shape`/`origin`/`resolution` are inconsistently 
+        provided.
+        
+    ValueError
+        If the `output` buffer's shape does not match the grid's shape.
+        
+    ValueError
+        If `inner_value` or `outer_value` are not 0 or 1.
+        
+    ValueError
+        If `inner_value` and `outer_value` are the same.
+        
     """
     # Not yet implemented : raise exception if output is given
     if (output is not None and dtype is not None) \
@@ -469,41 +722,87 @@ def rasterize_polygons_rasterio_rasterize(
         outer_value: int,
         output: Optional[np.ndarray] = None,
         dtype: Optional[np.dtype] = None,
-        ) -> Union[np.ndarray, int]:
-    """Rasterize a geometry on a grid
-    
-    That method used rasterio.features.rasterize in order to create the raster.
-    This method implies the definition of an AffineTransform. It is defined
-    using the origin and resolution :
-    
-        | a b c |   | res[1]     0.     O[1] |
-    A = | d e f | = |   0.     res[0]   O[0] |
-        | g h i |   |   0.       0.      1.  |
-    
-    Args:
-        shape: target raster size given as a tuple (number of rows, number of
-                columns).
-        origin: the coordinates (row, col) of the raster first element (0,0)
-                in the image coordinates reference system used by the geometry.
-        resolution: the grid relative pixel size towards the geometry 
-                coordinate reference system.
-        polygons: list of polygons.
-                The polygons coordinates must be defined in the same reference
-                frame as that intrinsic to the image targeted by the raster, 
-                considering the scale factor (resolution) and with a possible
-                shift of its origin.
-                The coordinates of the polygons are here supposed to be given
-                following the standard (x: col, y: row) order.
-        inner_value: The value to use for the interior of the union of polygons.
-        outer_value: The value to use for the exterior of the union of polygons.
-        output: if not None, the result will be put in output. Not working if
-                reduce is set to true. If a window is defined the output must be
-                the exact same size.
-        dtype: output dtype ; only used if output is not given. Please note that
-                'bool' type is not available.
+        ) -> np.ndarray:
+    """Rasterizes a list of polygons onto a grid using `rasterio.features.rasterize`.
+
+    This method implies the definition of an `AffineTransform`. It is defined
+    using the origin and resolution as follows:
+
+    .. math::
+        A = \\begin{pmatrix}
+        a & b & c \\\\
+        d & e & f \\\\
+        g & h & i
+        \\end{pmatrix}
+        =
+        \\begin{pmatrix}
+        resolution[1] & 0. & origin[1] - 0.5 * resolution[1] \\\\
+        0. & resolution[0] & origin[0] - 0.5 * resolution[0] \\\\
+        0. & 0. & 1.
+        \\end{pmatrix}
+
+    Parameters
+    ----------
+    shape : Tuple[int, int]
+        Target raster size as a tuple `(number of rows, number of columns)`.
+
+    origin : Tuple[float, float]
+        The coordinates `(row, col)` of the raster's first element (0,0)
+        (top-left corner of the top-left pixel) in the image's coordinate
+        reference system, which is used by the geometry.
+
+    resolution : Tuple[float, float]
+        The grid's pixel size in the units of the geometry's coordinate
+        reference system. `(row_resolution, column_resolution)`. Note that
+        `rasterio` typically uses positive Y resolution for "up" and negative
+        for "down". Here, `resolution[0]` (row resolution) is used for `e`
+        (y-scale, usually negative for geospatial data) and `resolution[1]`
+        (column resolution) for `a` (x-scale).
+
+    polygons : List[shapely.geometry.Polygon]
+        A list of `shapely.geometry.Polygon` objects to rasterize.
+        The polygon coordinates must be defined in the same reference
+        frame as the image targeted by the raster, considering the scale
+        factor (resolution) and a possible shift of its origin.
+        The coordinates of the polygons are here supposed to be given
+        following the standard (x: column, y: row) order.
+
+    inner_value : int
+        The value to use for pixels covered by the interior of the union of 
+        polygons.
+
+    outer_value : int
+        The value to use for pixels representing the exterior of the union of 
+        polygons.
+
+    output : Optional[np.ndarray], default None
+        An optional preallocated NumPy array buffer to store the result.
+        If provided, the rasterization is performed in-place into this array.
+        Its shape must match the `shape` argument. If `output` is given, its
+        `dtype` will be used, and the `dtype` argument should be `None`.
+        The method will reset the values of this buffer with `outer_value`
+        before populating it.
+
+    dtype : Optional[np.dtype], default None
+        Desired NumPy data type for the output raster. This argument is only 
+        used if `output` is `None` (i.e., a new array needs to be allocated).
+        Note that `bool` type is not supported by `rasterio.features.rasterize` 
+        for `dtype`; `np.uint8` is a common substitute for binary masks.
+
+    Returns
+    -------
+    np.ndarray
+        The binary raster mask as a NumPy array. If an `output` buffer was 
+        provided, this will be a reference to that same array, modified in-place.
+
+    Raises
+    ------
+    ValueError
+        If neither `output` nor `dtype` is provided, or if both are provided.
         
-    Returns:
-        the binary mask
+    ValueError
+        If the `output` buffer's shape does not match the `shape` argument.
+        
     """
     if (output is not None and dtype is not None) \
             or (output is None and dtype is None):

@@ -1,6 +1,6 @@
 # coding: utf8
 #
-# Copyright (c) 2024 Centre National d'Etudes Spatiales (CNES).
+# Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
 # This file is part of GRIDR
 # (see https://gitlab.cnes.fr/gridr/gridr).
@@ -48,167 +48,169 @@ def array_grid_resampling(
         grid_nodata: Optional[float] = None,
         array_out_mask: Optional[Union[np.ndarray, bool]] = None,
         ) -> Tuple[Union[np.ndarray, NoReturn], Union[np.ndarray, NoReturn]]:
-    """
-    Resamples an input array based on target grid coordinates, applying an
+    """Resamples an input array based on target grid coordinates, applying an
     optional bilinear interpolation for low resolution grids.
 
-    The method uses target grid coordinates (`grid_row` and `grid_col`) that may
-    represent a lower resolution than the input array. Bilinear interpolation is
-    applied internally to compute missing target coordinates. The oversampling
-    factor is specified by the `grid_resolution` parameter, where a value of 1 
-    indicates full resolution.
+    The method uses target grid coordinates (`grid_row` and `grid_col`) that
+    may represent a lower resolution than the input array. Bilinear
+    interpolation is applied internally to compute missing target coordinates.
+    The oversampling factor is specified by the `grid_resolution` parameter,
+    where a value of 1 indicates full resolution.
 
     This method wraps a Rust function (`py_array1_grid_resampling_*`) for
     efficient resampling.
 
-    Args:
-    -----
-        array_in : np.ndarray
-            The input array to be resampled. It must be a contiguous 2D (nrow, 
-            ncol) or 3D (nvar, nrow, ncol) array.
+    Parameters
+    ----------
+    array_in : np.ndarray
+        The input array to be resampled. It must be a contiguous 2D (nrow,
+        ncol) or 3D (nvar, nrow, ncol) array.
 
-        grid_row : np.ndarray
-            A 2D array representing the row coordinates of the target grid, with
-            the same shape as `grid_col`. The coordinates target row positions 
-            in the `array_in` input array.
+    grid_row : np.ndarray
+        A 2D array representing the row coordinates of the target grid, with
+        the same shape as `grid_col`. The coordinates target row positions in 
+        the `array_in` input array.
 
-        grid_col : np.ndarray
-            A 2D array representing the column coordinates of the target grid,
-            with the same shape as `grid_row`. The coordinates target column
-            positions in the `array_in` input array.
+    grid_col : np.ndarray
+        A 2D array representing the column coordinates of the target grid,
+        with the same shape as `grid_row`. The coordinates target column
+        positions in the `array_in` input array.
 
-        grid_resolution : Tuple[int, int]
-            A tuple specifying the oversampling factor for the grid for rows and
-            columns. The resolution value of 1 represents full resolution, and
-            higher values indicate lower resolution grids.
+    grid_resolution : Tuple[int, int]
+        A tuple specifying the oversampling factor for the grid for rows and
+        columns. The resolution value of 1 represents full resolution, and
+        higher values indicate lower resolution grids.
 
-        array_out : Optional[np.ndarray]
-            The output array where the resampled values will be stored.
-            If `None`, a new array will be allocated. The shape of the output
-            array is either determined based on the resolution and the input
-            grid or by the optional `win` parameter.
-        
-        array_out_win : Optional[np.ndarray]
-            An optional np.ndarray that designates the specific area in 
-            array_out to receive the resampled data. If this parameter is None, 
-            the method will populate a default rectangular region starting from 
-            array_out's top-left corner. This argument is only considered when 
-            array_out is passed, requiring array_out to be large enough to 
-            contain array_out_win.
+    array_out : Optional[np.ndarray]
+        The output array where the resampled values will be stored.
+        If `None`, a new array will be allocated. The shape of the output array 
+        is either determined based on the resolution and the input grid or by 
+        the optional `win` parameter.
 
-        nodata_out : Optional[Union[int, float]], default 0
-            The value to be assigned to "NoData" in the output array. This value
-            is used to fill in missing values where no valid resampling could
-            occur or where a mask flag is set.
-        
-        array_in_origin : Optional[Tuple[float, float]], default (0., 0.)
-            Bias to respectively apply to the grid_row and grid_col coordinates.
-            The operation is performed by the wrapped rust function.
-            Its primary use cases include aligning with alternative grid origin 
-            conventions or handling situations where the provided `array_in` 
-            array corresponds to a subregion of the complete source raster.
+    array_out_win : Optional[np.ndarray], default None
+        An optional `np.ndarray` that designates the specific area in 
+        `array_out` to receive the resampled data. If `None`, the method will 
+        populate a default rectangular region starting from `array_out`'s 
+        top-left corner. This argument is only considered when `array_out` is 
+        passed, requiring `array_out` to be large enough to contain 
+        `array_out_win`.
 
-        win : Optional[np.ndarray], default None
-            A window (or sub-region) of the full resolution grid to limit the
-            resampling to a specific target region. The window is defined as a
-            list of tuples containing the first and last indices for each
-            dimension.
-            If `None`, the entire grid is processed.
+    nodata_out : Optional[Union[int, float]], default 0
+        The value to be assigned to "NoData" in the output array. This value
+        is used to fill in missing values where no valid resampling could occur 
+        or where a mask flag is set.
 
-        array_in_mask : Optional[np.ndarray], default None
-            A mask for the input array that indicates which parts of `array_in`
-            are valid for resampling.
-            If not provided, the entire input array is considered valid.
+    array_in_origin : Optional[Tuple[float, float]], default (0., 0.)
+        Bias to respectively apply to the `grid_row` and `grid_col` coordinates.
+        The operation is performed by the wrapped Rust function. Its primary use
+        cases include aligning with alternative grid origin conventions or 
+        handling situations where the provided `array_in` array corresponds to a
+        subregion of the complete source raster.
 
-        grid_mask : Optional[np.ndarray], default None
-            An optional integer mask array for the grid. Grid cells
-            corresponding to `grid_mask_valid_value` are considered **valid**;
-            all other values indicate **invalid** cells and will `nodata_out` in
-            the output array.
-            If not provided, the entire grid is considered valid.
-            The grid mask must have the same shape as `grid_row` and `grid_col`.
-        
-        grid_mask_valid_value: Optional[int], default None
-            The value in `grid_mask` that designates a **valid** grid cell.
-            All values in `grid_mask` that differ from this will be treated as
-            **invalid**.  
-            This parameter is required if `grid_mask` is provided.
-        
-        grid_nodata: Optional[float], default None
-            The value in `grid_row` and `grid_col` to consider as **invalid**
-            cells.
-            Please note this option is exclusive with the `grid_mask`. The
-            exclusivity is managed within the bound core method.
+    win : Optional[np.ndarray], default None
+        A window (or sub-region) of the full resolution grid to limit the
+        resampling to a specific target region. The window is defined as a list 
+        of tuples containing the first and last indices for each dimension. 
+        If `None`, the entire grid is processed.
 
-        array_out_mask : Optional[np.ndarray], default None
-            A mask for the output array that indicates where the resampled
-            values should be stored. 
-            If True, a new array will be allocated and initialy filled with 0.
-            The shape of the output array is consistent with the array_out shape.
-            If not provided or not True, the entire output array is assumed to
-            be valid.
+    array_in_mask : Optional[np.ndarray], default None
+        A mask for the input array that indicates which parts of `array_in`
+        are valid for resampling. If not provided, the entire input array is 
+        considered valid.
 
-    Returns:
-    --------
-    np.ndarray
-        The resampled array, unless `array_out` was provided, in which case
-        `None` is returned.
+    grid_mask : Optional[np.ndarray], default None
+        An optional integer mask array for the grid. Grid cells corresponding to
+        `grid_mask_valid_value` are considered **valid**; all other values 
+        indicate **invalid** cells and will result in `nodata_out` in the output
+        array. If not provided, the entire grid is considered valid. The grid 
+        mask must have the same shape as `grid_row` and `grid_col`.
 
-    Raises:
+    grid_mask_valid_value : Optional[int], default 1
+        The value in `grid_mask` that designates a **valid** grid cell.
+        All values in `grid_mask` that differ from this will be treated as
+        **invalid**. This parameter is required if `grid_mask` is provided.
+
+    grid_nodata : Optional[float], default None
+        The value in `grid_row` and `grid_col` to consider as **invalid**
+        cells. Please note this option is exclusive with `grid_mask`. The
+        exclusivity is managed within the bound core method.
+
+    array_out_mask : Optional[Union[np.ndarray, bool]], default None
+        A mask for the output array that indicates where the resampled values 
+        should be stored. If `True`, a new array will be allocated and initially
+        filled with 0. The shape of this output mask array is consistent with 
+        the `array_out` shape. If `None` or not `True`, the entire output array
+        is assumed to be valid.
+
+    Returns
     -------
-    Exception
-        If the `py_array_grid_resampling_*` function is not available for the
-        provided input types.
+    Tuple[Union[np.ndarray, NoReturn], Union[np.ndarray, NoReturn]]
+        A tuple containing:
 
-    Limitations:
-    ------------
-    - The method assumes that all input arrays (`array_in`, `grid_row`,
-     `grid_col`, etc.) are C-contiguous. If any of them are not, the method may
-      raise an assertion error.
-    - The method assumes that the grid related arrays (`grid_row`, `grid_col`, 
-      `grid_mask`) have the same shapes. Mismatched shapes between `grid_row`,
-      `grid_col`, and `grid_mask` will raise an assertion error.
-    - The `win` parameter, if provided, must be compatible with the resolution
-      of the grid. 
-      If `win` exceeds the bounds of the grid, an error may occur.
-    - The method does not handle invalid or missing values in the input arrays
-      or masks. 
-      Users are responsible for ensuring that any invalid or missing data is
-      appropriately handled before calling the method.
-    - For large grids or arrays, performance may degrade. Users should test 
-      the method's efficiency for their specific data sizes before using it in
-      production.
-    - This method assumes that the input grid is in a "full resolution" grid
-      coordinate system. 
-      If the coordinate system is different, the resampling may produce
-      incorrect results.
+        -   The resampled array. If `array_out` was provided, this will be
+            `None` (as the result is written in-place).
+        -   The resampled output mask. If `array_out_mask` was `False` or
+            `None`, this will be `None`.
 
-    Example:
-    --------
-    # Example usage with a 2D input array and grid:
-    array_in = np.random.rand(100, 100)
-    grid_row = np.linspace(0, 99, 50)
-    grid_col = np.linspace(0, 99, 50)
-    grid_resolution = (2, 2)
-    array_out = None
-
-    result, _ = array_grid_resampling(
-        array_in=array_in, 
-        grid_row=grid_row, 
-        grid_col=grid_col, 
-        grid_resolution=grid_resolution, 
-        array_out=array_out
-    )
-
-    Notes:
+    Raises
     ------
-    - This method is designed for resampling raster-like data using a grid of
-      target coordinates.
-    - This method is designed so that it can be embedded in a code that works
-      on tiles both for the inputs and the outputs.
-    - For correct results, ensure that the `grid_row` and `grid_col` values
-      represent the desired target grid coordinates in the full resolution grid
-      system.
+    Exception
+        If the `py_array_grid_resampling_*` function (the underlying Rust
+        binding) is not available for the provided input types.
+
+    Notes
+    -----
+    
+    -   This method is designed for resampling raster-like data using a grid of
+        target coordinates.
+    -   This method is designed to be embedded in code that works on tiles,
+        supporting both tiled inputs and outputs.
+    -   For correct results, ensure that the `grid_row` and `grid_col` values
+        represent the desired target grid coordinates within the full resolution
+        grid system.
+
+    Limitations
+    -----------
+    
+    -   The method assumes that all input arrays (`array_in`, `grid_row`,
+        `grid_col`, etc.) are C-contiguous. If any are not, the method may
+        raise an assertion error.
+    -   The method assumes that the grid-related arrays (`grid_row`, `grid_col`,
+        `grid_mask`) have the same shapes. Mismatched shapes will raise an
+        assertion error.
+    -   The `win` parameter, if provided, must be compatible with the resolution
+        of the grid. If `win` exceeds the bounds of the grid, an error may
+        occur.
+    -   The method does not handle invalid or missing values in the input arrays
+        or masks beyond what's specified by `grid_mask` or `grid_nodata`.
+        Users are responsible for ensuring any invalid or missing data is
+        appropriately handled before calling the method.
+    -   For large grids or arrays, performance may degrade. Users should test
+        the method's efficiency for their specific data sizes before using it
+        in production.
+    -   This method assumes that the input grid is in a "full resolution" grid
+        coordinate system. If the coordinate system is different, the resampling
+        may produce incorrect results.
+
+    Example
+    -------
+    
+    .. code-block:: python
+    
+        # Example usage with a 2D input array and grid:
+        array_in = np.random.rand(100, 100)
+        grid_row = np.linspace(0, 99, 50)
+        grid_col = np.linspace(0, 99, 50)
+        grid_resolution = (2, 2)
+        array_out = None
+        result, _ = array_grid_resampling(
+            array_in=array_in,
+            grid_row=grid_row,
+            grid_col=grid_col,
+            grid_resolution=grid_resolution,
+            array_out=array_out
+        )
+        
     """
     ret = None
     ret_mask = None

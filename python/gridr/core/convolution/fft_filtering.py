@@ -1,6 +1,6 @@
 # coding: utf8
 #
-# Copyright (c) 2024 Centre National d'Etudes Spatiales (CNES).
+# Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
 # This file is part of GRIDR
 # (see https://gitlab.cnes.fr/gridr/gridr).
@@ -40,15 +40,24 @@ def get_filter_margin(
         axes = None,
         ) -> Tuple[int]:
     """Compute the required margin for filter in order to avoid edge effect.
+
     In case of zoom = 1 it corresponds to the half size of the filter.
-    
-    Args:
-        fil: the input filter as ndarray
-        zoom: zoom
-        axes: the axes that will be used for margin computation
-    
-    Returns:
-        The margins array along all dimensions
+
+    Parameters
+    ----------
+    fil : np.ndarray
+        The input filter as ndarray.
+        
+    zoom : int, optional
+        Zoom, by default 1.
+        
+    axes : {None, int, tuple of int}, optional
+        The axes that will be used for margin computation, by default None.
+
+    Returns
+    -------
+    Tuple[int]
+        The margins array along all dimensions.
     """
     assert(zoom ==1)
     if axes is None:
@@ -66,25 +75,33 @@ def pad_array(
         axes = None,
         ) -> np.ndarray:
     """Pad an array with respect to the rules set for edge management.
-    
-    Args:
-        arr : the input array.
-        win : the production window given as a list of tuple containing the
-                first and last index for each dimension.
-                e.g. for a dimension 2 : 
-                ((first_row, last_row), (first_col, last_col))
-        pad: the size of padding for each side as a 4-element tuple (top, bottom
-                , right, left)
-        boundary: the edge management rule as a single value (similar for each
-                side) or a tuple ((top, bottom), (left, right)). The rule is 
-                defined by the BoundaryPad enum.
-        out_mode: the output mode for the returned array.
-        zoom: the zoom factor. It can either be a single integer or a tuple of
-                two integers representing the rational P/Q and given as (P, Q)
-        axes: the axes on which to perform the convolution.
-    
-    Returns:
-        The padded array
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        The input array.
+
+    win : np.ndarray
+        The production window given as a list of tuple containing the
+        first and last index for each dimension. E.g., for a 2D array:
+        ``((first_row, last_row), (first_col, last_col))``.
+
+    pad : Tuple[int, int, int, int]
+        The size of padding for each side as a 4-element tuple
+        (top, bottom, right, left).
+
+    boundary : Union[BoundaryPad, Tuple[Tuple[BoundaryPad, BoundaryPad]]]
+        The edge management rule as a single value (similar for each side)
+        or a tuple ((top, bottom), (left, right)). The rule is defined
+        by the `BoundaryPad` enum.
+
+    axes : {None, int, tuple of int}, optional
+        The axes on which to perform the padding, by default None.
+
+    Returns
+    -------
+    np.ndarray
+        The padded array.
     """
     if axes is None:
         axes = range(arr.ndim)
@@ -114,14 +131,22 @@ def fft_odd_filter(
         axes = None,
         ) -> np.ndarray:
     """Check that the filter has an odd length along specified axes.
+
     If it is not the case it is right/bottom padded with zero on the
     corresponding axe(s).
-    
-    Args:
-        fil: the filter as a numpy ndarray
-        axes: the axes that will be used for convolution computation
-    
-    Returns:
+
+    Parameters
+    ----------
+    fil : np.ndarray
+        The filter as a numpy ndarray.
+
+    axes : {None, int, tuple of int}, optional
+        The axes that will be used for convolution computation,
+        by default None.
+
+    Returns
+    -------
+    np.ndarray
         The odd filter as numpy ndarray.
     """
     if axes is None:
@@ -144,28 +169,41 @@ def fft_array_filter_check_data(
         zoom: Union[int, Tuple[int, int]] = 1,
         axes = None,
         ) -> Tuple[np.ndarray, np.ndarray, Iterable, Tuple]:
-    """
-    Perfoms check on input data in order to ensure the expected data types and
-    profiles :
-    - convert axes to explicit definition if None is given
-    - convert window to an explicit definition if None is given and make sure
-            it matches an ndarray type.
-    - make sure that the filter has an odd size along each dimension
-    - compute convolution margins
+    """Performs checks on input data to ensure expected types and profiles.
+
+    This function handles:
     
-    Args:
-        arr : the input array.
-        win : the production window given as a list of tuple containing the
-                first and last index for each dimension.
-                e.g. for a dimension 2 : 
-                ((first_row, last_row), (first_col, last_col))
-        fil: the filter given as an array in the spatial domain
-        zoom: the zoom factor. It can either be a single integer or a tuple of 
-                two integers representing the rational P/Q and given as (P, Q)
-        axes: the axes on which to perform the convolution.
-    
-    Returns:
-        a tuple containing the filter, the window, the axes and the margins
+        - Converting axes to explicit definitions if `None` is given.
+        - Converting the window to an explicit definition if `None` is given,
+          and ensuring it's an `ndarray` type.
+        - Making sure the filter has an odd size along each dimension.
+        - Computing convolution margins.
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        The input array.
+
+    fil : np.ndarray
+        The filter given as an array in the spatial domain.
+
+    win : np.ndarray or None
+        The production window given as a list of tuples containing the
+        first and last index for each dimension. For example, for a 2D array:
+        ``((first_row, last_row), (first_col, last_col))``.
+
+    zoom : int or Tuple[int, int], optional
+        The zoom factor. It can either be a single integer or a tuple of
+        two integers representing the rational P/Q (e.g., (P, Q)),
+        by default 1.
+
+    axes : {None, int, tuple of int}, optional
+        The axes on which to perform the convolution, by default None.
+
+    Returns
+    -------
+    Tuple[np.ndarray, np.ndarray, Iterable, Tuple]
+        A tuple containing the filter, the window, the axes, and the margins.
     """
     if axes is None:
         axes = range(arr.ndim)
@@ -199,26 +237,48 @@ def fft_array_filter_output_shape(
         zoom: Union[int, Tuple[int, int]] = 1,
         axes = None,
         ) -> np.ndarray:
-    """
-    Compute fft_array_filter expected output shape along all axes.
+    """Compute `fft_array_filter` expected output shape along all axes.
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        The input array.
+
+    fil : np.ndarray
+        The filter given as an array in the spatial domain.
+
+    win : np.ndarray or None
+        The production window given as a list of tuples containing the
+        first and last index for each dimension. For example, for a 2D array:
+        ``((first_row, last_row), (first_col, last_col))``.
+
+    boundary : Union[BoundaryPad, Tuple[Tuple[BoundaryPad, BoundaryPad]]], optional
+        The edge management rule as a single value (similar for each side)
+        or a tuple ((top, bottom), (left, right)). The rule is defined
+        by the `BoundaryPad` enum, by default `BoundaryPad.NONE`.
+
+    out_mode : ConvolutionOutputMode, optional
+        The output mode for the returned array.
+        Default to `ConvolutionOutputMode.SAME`.
+
+    zoom : int or Tuple[int, int], optional
+        The zoom factor. It can either be a single integer or a tuple of
+        two integers representing the rational P/Q (e.g., (P, Q)),
+        by default 1.
+
+    axes : {None, int, tuple of int}, optional
+        The axes on which to perform the convolution, by default None.
+
+    Returns
+    -------
+    np.ndarray
+        An array containing the output shape.
     
-    Args:
-        arr : the input array.
-        win : the production window given as a list of tuple containing the
-                first and last index for each dimension.
-                e.g. for a dimension 2 : 
-                ((first_row, last_row), (first_col, last_col))
-        fil: the filter given as an array in the spatial domain
-        boundary: the edge management rule as a single value (similar for each
-                side) or a tuple ((top, bottom), (left, right)). The rule is 
-                defined by the BoundaryPad enum.
-        out_mode: the output mode for the returned array.
-        zoom: the zoom factor. It can either be a single integer or a tuple of 
-                two integers representing the rational P/Q and given as (P, Q)
-        axes: the axes on which to perform the convolution.
-   
-    Returns:
-        an array containing the output shape
+    Notes
+    -----
+    Currently, this function only supports a `zoom` factor of 1. An assertion
+    will fail if a different zoom value is provided, as other zoom factors are 
+    not yet implemented.
     """
     # zoom different from 1 not yet implemented
     assert(zoom==1)
@@ -272,50 +332,84 @@ def fft_array_filter(
         zoom: Union[int, Tuple[int, int]] = 1,
         axes = None,
         ) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    FFT convolve between an array and a filter.
-    
-    This methods wraps the scipy signal.oaconvolve method by adding some functionalities :
-    - the filter is assumed to have an odd size ; if it is not the case, it is padded on the 
-      right et bottom edges with zeros.
-    - the user can precise the production window in order to limit the data given to the
-      convolution method. Please note that what is really given to the fft convolution depends
-      on the boundary argument.
-    - an edge management option is available in order to precise how to manage boundary at each
-      side. In details :
-      1. BoundaryPad.NONE : no padding in applied on the edge of the production window.
-      2. BoundaryPad.REFLECT : a padding is applied. The length of the padding is computed from
-         the filter size. If data is available in the full array it is taken into account. If 
-         data is not available or partially not available, a "mirror" pad is applied. In that case
-         the array given to the fft convolution method is extended - please note that the 
-         convolution method still apply a zero padding internally.
-      Please note that the padding rule may differs for each side.
-    - the window output can differ depending on the conv_mode :
-      1. In mode "SAME" : the output window matches the input production window.
-      2. In mode "FULL" : the output directly corresponds to the "full" mode of the internal
-         convolution method. Thus embedding both the margins (from the filter) and the extent
-         from the BoundaryPad mode. In that case the second element of the output can be used
-         to get the position of the production window origin.
-    
-    Args:
-        arr : the input array.
-        win : the production window given as a list of tuple containing the
-                first and last index for each dimension.
-                e.g. for a dimension 2 : 
-                ((first_row, last_row), (first_col, last_col))
-        fil: the filter given as an array in the spatial domain
-        boundary: the edge management rule as a single value (similar for each
-                side) or a tuple ((top, bottom), (left, right)). The rule is defined
-                by the BoundaryPad enum.
-        out_mode: the output mode for the returned array.
-        zoom: the zoom factor. It can either be a single integer or a tuple of two integers
-                representing the rational P/Q and given as (P, Q)
-        axes: the axes on which to perform the convolution. WARNING : not yet used.
-   
-    Returns:
-        a tuple containing :
-        - the filtered array whose size depends on the convolution mode
-        - the output coordinates of the production window considering a "full" mode output.
+    """FFT convolve between an array and a filter.
+
+    This method wraps the `scipy.signal.oaconvolve` method by adding some 
+    functionalities:
+
+    - The filter is assumed to have an odd size; if it is not the case, it's 
+      padded on the right and bottom edges with zeros.
+    - The user can specify the production window to limit the data given to the 
+      convolution method. Note that what's actually given to the FFT convolution
+      depends on the `boundary` argument.
+    - An edge management option is available to precisely define how boundaries 
+      are handled on each side. In detail:
+
+        - `BoundaryPad.NONE`: No padding is applied on the edge of the
+            production window.
+        - `BoundaryPad.REFLECT`: Padding is applied. The padding length is
+            calculated from the filter size. If data is available in the full 
+            array, it's considered. If data is not available or only partially 
+            available, a "mirror" pad is applied. In this case, the array given 
+            to the FFT convolution method is extended; note that the convolution 
+            method still applies zero padding internally.
+
+        Note that the padding rule may differ for each side.
+        
+    - The output window can differ depending on the `out_mode`:
+
+        - In mode "SAME": The output window matches the input production
+          window.
+        - In mode "FULL": The output directly corresponds to the "full" mode of 
+          the internal convolution method, thus embedding both the margins (from
+          the filter) and the extent from the `BoundaryPad` mode. In this case, 
+          the second element of the output can be used to get the position of 
+          the production window origin.
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        The input array.
+
+    fil : np.ndarray
+        The filter given as an array in the spatial domain.
+
+    win : np.ndarray or None
+        The production window given as a list of tuples containing the
+        first and last index for each dimension. For example, for a 2D array:
+        ``((first_row, last_row), (first_col, last_col))``.
+
+    boundary : Union[BoundaryPad, Tuple[Tuple[BoundaryPad, BoundaryPad]]], optional
+        The edge management rule as a single value (similar for each side)
+        or a tuple ((top, bottom), (left, right)). The rule is defined by
+        the `BoundaryPad` enum, by default `BoundaryPad.NONE`.
+
+    out_mode : ConvolutionOutputMode, optional
+        The output mode for the returned array, by default `ConvolutionOutputMode.SAME`.
+
+    zoom : int or Tuple[int, int], optional
+        The zoom factor. It can either be a single integer or a tuple of
+        two integers representing the rational P/Q (e.g., (P, Q)),
+        by default 1.
+
+    axes : {None, int, tuple of int}, optional
+        The axes on which to perform the convolution. WARNING: Not yet used,
+        by default None.
+
+    Returns
+    -------
+    Tuple[np.ndarray, np.ndarray]
+        A tuple containing:
+
+        -   The filtered array whose size depends on the convolution mode.
+        -   The output coordinates of the production window considering a
+            "full" mode output.
+
+    Notes
+    -----
+    Currently, this function only supports a `zoom` factor of 1. An assertion
+    will fail if a different zoom value is provided, as other zoom
+    factors are not yet implemented.
     """
     # zoom different from 1 not yet implemented
     assert(zoom==1)

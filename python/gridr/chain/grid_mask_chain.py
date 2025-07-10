@@ -1,6 +1,6 @@
 # coding: utf8
 #
-# Copyright (c) 2024 Centre National d'Etudes Spatiales (CNES).
+# Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
 # This file is part of GRIDR
 # (see https://gitlab.cnes.fr/gridr/gridr).
@@ -92,156 +92,165 @@ def build_mask_chain(
         cpu_tile_shape: Optional[Tuple[int, int]] = DEFAULT_CPU_TILE_SHAPE,
         logger: Optional[logging.Logger] = None,
         ) -> int:
-    """
-    @doc
+    """@doc
     Grid mask computation chain.
-    
-    This method wraps the call to the 'build_mask' core method with I/O 
+
+    This method wraps the call to the `build_mask` core method with I/O
     resources management and a parallel computation capacity.
-    
-    The 'build_mask' method's goal is to compute a full resoltuion binary mask
+
+    The `build_mask` method's goal is to compute a full-resolution binary mask
     by merging an optional undersampled raster mask with a polygonized vector
-    geometries pair. 
-    
-    Should you wish further details on the 'build_mask' method please read its 
-    own documentation.
-    
-    Masked values
-    -------------
-    The 'build_mask' core method designates a pixel as invalid (value
-    'Validity.INVALID') if it is masked by the input raster, falls outside the 
+    geometries pair.
+
+    Parameters
+    ----------
+    shape : tuple of int
+        The corresponding grid shape ``(nrows, ncols)`` at the grid's
+        resolution.
+        
+    resolution : tuple of int
+        The grid's resolution as an oversampling factor ``(rows, columns)``.
+        
+    mask_out_ds : rasterio.io.DatasetWriter
+        The output mask as a `DatasetWriter`. Its target size should correspond
+        to ``shape`` x ``resolution``.
+        
+    mask_out_dtype : numpy.dtypes.Int8DType or numpy.dtypes.UInt8DType
+        The NumPy data type to use for encoding the output mask. This should be
+        an 8-bit signed or unsigned integer type.
+        
+    mask_in_ds : rasterio.io.DatasetReader or None, optional
+        An optional input mask as a `DatasetReader`. Its shape and resolution
+        must align with the `shape` and `resolution` arguments. Defaults to None.
+        
+    mask_in_unmasked_value : int or None, optional
+        The integer value within the `mask_in_ds` to consider as **valid**.
+        Defaults to None.
+        
+    mask_in_band : int or None, optional
+        The index of the band from `mask_in_ds` to use as the input mask raster.
+        Defaults to None.
+        
+    computation_dtype : numpy.dtype
+        The data type to use for internal computations, specifically for mask
+        interpolation.
+        
+    geometry_origin : tuple of float
+        The geometric coordinates that map to the output array's ``(0,0)`` pixel.
+        This argument is required if `geometry_pair` is provided.
+        
+    geometry_pair : tuple of (GeometryType or None), optional
+        A tuple containing two optional `GeometryType` elements:
+          - The first element: Represents the **valid** geometries.
+          - The second element: Represents the **invalid** geometries.
+          
+        Defaults to None.
+        
+    rasterize_kwargs : dict or None, optional
+        A dictionary of parameters to pass directly to the rasterization
+        process, e.g., ``{'alg': GridRasterizeAlg.SHAPELY, 'kwargs_alg':
+        {'shapely_predicate': ShapelyPredicate.COVERS}}``. These arguments are
+        forwarded to the `build_mask` method. Defaults to None.
+        
+    mask_out_values : tuple of int or None, optional
+        A tuple ``(<unmasked_value>, <masked_value>)`` to use for output.
+        If `None`, the default convention used by the `build_mask` method
+        (i.e., ``(Validity.VALID, Validity.INVALID)``) is applied.
+        Defaults to ``(Validity.VALID, Validity.INVALID)``.
+        
+    io_strip_size : int, optional
+        The size (in number of rows) of a strip used for I/O operations.
+        Defaults to `DEFAULT_IO_STRIP_SIZE`.
+        
+    io_strip_size_target : GridRIOMode, optional
+        Defines the mode for interpreting the `io_strip_size`.
+          - If set to `GridRIOMode.INPUT`, `io_strip_size` directly corresponds
+            to the number of rows read from the input buffer.
+          - If set to `GridRIOMode.OUTPUT`, `io_strip_size` represents the size
+            of the full-resolution output strip, which may result in reading
+            fewer rows from the input due to resolution differences.
+            
+        Defaults to `GridRIOMode.INPUT`.
+        
+    ncpu : int, optional
+        The number of worker processes to allocate to the multiprocessing pool.
+        Defaults to `DEFAULT_NCPU`.
+        
+    cpu_tile_shape : tuple of int or None, optional
+        The dimensions of tiles processed by each worker when multiprocessing
+        is enabled. This argument must be set and smaller than the output
+        shape to activate parallel computation. Defaults to
+        `DEFAULT_CPU_TILE_SHAPE`.
+        
+    logger : logging.Logger or None, optional
+        A Python logger object for logging messages. If `None`, a logger is
+        initialized internally. Defaults to None.
+
+    Returns
+    -------
+    int
+        Returns 1 upon successful completion of the mask computation.
+
+    Notes
+    -----
+    Should you wish further details on the `build_mask` method, please read
+    its own documentation.
+
+    **Masked values**
+    The `build_mask` core method designates a pixel as invalid (value
+    `Validity.INVALID`) if it is masked by the input raster, falls outside the
     **valid** geometry, or lies within the **invalid** geometry.
 
-    This method allows user to define independantly :
-    - 'mask_out_values' : the values to use as output for unmasked (ie. valid)
-    and masked (ie. invalid) data.
-    - 'mask_in_unmasked_value' : the valeur to consider as valid in the optional
-    input mask.
-    If the 'mask_in_unmasked_value' differs from the core method convention, the
-    method converts the optional input mask to be complient with it directly
-    afer read instructions.
-    If the 'mask_out_umasked_value' differs from the core method convention, the
-    method converts the output mask to match the user's input.
+    This method allows the user to define independently:
     
-    Read/Write operations:
-    ---------------------
-    I/O for read and write are performed by strip chunks sequentially.
-    A strip is defined as a window whose :
-    - number of columns is the same as the read raster
-    - number of rows is defined by the strip's size.
+        - `mask_out_values`: the values to use as output for unmasked (i.e.,
+          valid) and masked (i.e., invalid) data.
+        - `mask_in_unmasked_value`: the value to consider as valid in the
+          optional input mask.
 
-    There for a first sequential loop is performed on independantly on each
-    strip consisting in the chaining of the 3 steps :
-    'read' > 'process' > 'write'
-  
-    The strip's size can either be set to adress the read raster size or the
-    written raster size (i.e. the computed raster size at each strip).
-    The choice is defined through the definition of the 'io_strip_size_target'
-    argument :
-    - set it to 'GridRIOMode.INPUT' to adress the read strip's buffer size
-    - set it to 'GridRIOMode.OUTPUT' to adress the write strip's buffer size
+    If the `mask_in_unmasked_value` differs from the core method convention,
+    the method converts the optional input mask to be compliant with it
+    directly after read instructions.
+    If the `mask_out_umasked_value` differs from the core method convention,
+    the method converts the output mask to match the user's input.
+
+    **Read/Write operations**
+    I/O for read and write are performed by strip chunks sequentially.
+    A strip is defined as a window whose:
     
-    Parallel processing
-    -------------------
-    This methods offers parallelization inside each strip through a 
-    multiprocessing Pool.
-    In order to activate parallel computing you have to define :
-    - argument 'ncpu' to be greater than 1.
-    - argument 'cpu_tile_shape' to be different from None and smaller than the
-    output shape.
+        - number of columns is the same as the read raster
+        - number of rows is defined by the strip's size.
+
+    Therefore, a first sequential loop is performed independently on each
+    strip, consisting in the chaining of the 3 steps: 'read' > 'process' > 'write'.
+
+    The strip's size can either be set to address the read raster size or the
+    written raster size (i.e., the computed raster size at each strip).
+    The choice is defined through the `io_strip_size_target` argument:
+
+        - set it to `GridRIOMode.INPUT` to address the read strip's buffer size.
+        - set it to `GridRIOMode.OUTPUT` to address the write strip's buffer
+          size.
+
+    **Parallel processing**
+    This method offers parallelization inside each strip through a
+    multiprocessing Pool. To activate parallel computing, you have to define:
     
-    Shared Memory
-    -------------
+        - argument `ncpu` to be greater than 1.
+        - argument `cpu_tile_shape` to be different from None and smaller than
+          the output shape.
+
+    **Shared Memory**
     The read and the output buffers are set at once and used for each strip.
-    They are allocated as Shared Memory in order to be efficiently shared among
-    multiple parallel/concurrent processes.
-    Please note that no lock is set on written memory ; this is justified by the
-    fact that a strict tiling computation ensures that no overlap occurs across
-    different processes.
-    
-    Computation Data Type
-    ---------------------
+    They are allocated as Shared Memory to be efficiently shared among
+    multiple parallel/concurrent processes. Please note that no lock is set
+    on written memory; this is justified by the fact that a strict tiling
+    computation ensures that no overlap occurs across different processes.
+
+    **Computation Data Type**
     The user needs to provide the data type to use for the interpolation of the
     mask. The precision of the computation may differ between float32 and
     float64.
-    
-    Args:
-    -----
-    
-    shape: Tuple[int, int]
-        The corresponding grid shape (nrows, ncols) at the grid's resolution.
-
-    resolution: Tuple[int, int]
-        The grid's resolution as an oversampling factor (rows, columns).
-
-    mask_out_ds: rasterio.io.DatasetWriter
-        The output mask as a `DatasetWriter`. Its target size should correspond 
-        to `shape` x `resolution`.
-
-    mask_out_values : Tuple[int, int]
-        The tuple (<unmasked_value>, <masked_value>) to use for output. If not 
-        given the convention used by the 'build_mask' method is preserved.
-
-    mask_out_dtype: Union[np.dtypes.Int8DType, np.dtypes.UInt8DType]
-        The NumPy data type to use for encoding the output mask. This should be 
-        an 8-bit signed or unsigned integer type.
-
-    mask_in_ds: Optional[rasterio.io.DatasetReader]
-        An optional input mask as a `DatasetReader`. Its shape and resolution 
-        must align with the `shape` and `resolution` arguments.
-
-    mask_in_unmasked_value: Optional[int]
-        The integer value within the `mask_in_ds` to consider as **valid**.
-
-    mask_in_band: Optional[int]
-        The index of the band from `mask_in_ds` to use as the input mask raster.
-
-    computation_dtype: np.dtype
-        The data type to use for internal computations, specifically for mask 
-        interpolation.
-
-    geometry_origin: Tuple[float, float]
-        The geometric coordinates that map to the output array's (0,0) pixel. 
-        This argument is required if `geometry_pair` is provided.
-    
-    geometry_pair: Optional[Tuple[Optional[GeometryType], Optional[GeometryType]]]
-        A tuple containing two optional `GeometryType` elements:
-        - The first element: Represents the **valid** geometries.
-        - The second element: Represents the **invalid** geometries.
-        
-    rasterize_kwargs: Optional[Dict]
-        A dictionary of parameters to pass directly to the rasterization 
-        process, e.g., `{'alg': GridRasterizeAlg.SHAPELY, 'kwargs_alg': 
-        {'shapely_predicate': ShapelyPredicate.COVERS}}`.
-        These arguments are forwarded to the `build_mask` method.
-
-    mask_out_values: Optional[Tuple[int, int]]
-        A tuple `(<unmasked_value>, <masked_value>)` to use for output.
-        If `None`, the default convention used by the `build_mask` method 
-        (i.e., `(Validity.VALID, Validity.INVALID)`) is applied.
-
-    io_strip_size: int
-        The size (in number of rows) of a strip used for I/O operations.
-
-    io_strip_size_target: GridRIOMode
-        Defines the mode for interpreting the `io_strip_size`.
-        - If set to `GridRIOMode.INPUT`, `io_strip_size` directly corresponds to
-        the number of rows read from the input buffer.
-        - If set to `GridRIOMode.OUTPUT`, `io_strip_size` represents the size of
-        the full-resolution output strip, which may result in reading fewer rows
-        from the input due to resolution differences.
-
-    ncpu: int
-        The number of worker processes to allocate to the multiprocessing pool.
-
-    cpu_tile_shape: Optional[Tuple[int, int]]
-        The dimensions of tiles processed by each worker when multiprocessing is
-        enabled. This argument must be set and smaller than the output shape to 
-        activate parallel computation.
-
-    logger: Optional[logging.Logger]
-        A Python logger object for logging messages. If `None`, a logger is 
-        initialized internally.
     """
     # Init a list to register SharedMemoryArray buffers
     sma_buffer_name_list = []
@@ -538,205 +547,206 @@ def build_grid_mask_chain(
         cpu_tile_shape: Optional[Tuple[int, int]] = DEFAULT_CPU_TILE_SHAPE,
         logger: Optional[logging.Logger] = None,
         ) -> int:
-    """
-    @doc
-    Grid and mask computation chain.
-    
-    This method wraps both the call to the build_grid method and the call to the
-    call to the build_mask core method with I/O resources management and a
-    parallel computation capacity.
-    
-    The 'build_grid' method's goal is to compute a full resolution grid. 
-    
-    The 'build_mask' method's goal is to compute a full resoltuion binary mask
-    by merging an optional undersampled raster mask with a polygonized vector
-    geometry. 
-    
-    Should you wish further details on the 'build_grid' and 'build_mask' method
-    please read their own documentations.
-    
-    Masked values
-    -------------
-    The build_mask core method designates a pixel as invalid (value
-    'Validity.INVALID') if it is masked by the input raster, falls outside the 
+    """Grid and mask computation chain.
+
+    This method orchestrates both grid generation and mask computation,
+    wrapping calls to the `build_grid` and `build_mask` core methods.
+    It includes comprehensive I/O resource management and parallel
+    computation capabilities.
+
+    Parameters
+    ----------
+    resolution : tuple of int
+        The grid's resolution as an oversampling factor ``(rows, columns)``.
+        
+    grid_in_ds : rasterio.io.DatasetReader
+        The input dataset for reading row coordinates of the grid. If
+        `grid_in_col_ds` is provided, this argument is solely used for
+        reading row coordinates. Otherwise, it's used for both row and
+        column coordinates. Bands are specified by `grid_in_row_coords_band`
+        and `grid_in_col_coords_band`.
+        
+    grid_in_col_ds : rasterio.io.DatasetReader or None, optional
+        An optional separate `DatasetReader` for reading grid column
+        coordinates. If `None`, `grid_in_ds` is used for both. Defaults to None.
+        
+    grid_in_row_coords_band : int
+        The 1-based index of the row coordinates band within the corresponding
+        input `DatasetReader`.
+        
+    grid_in_col_coords_band : int
+        The 1-based index of the column coordinates band within the
+        corresponding input `DatasetReader`.
+        
+    grid_out_ds : rasterio.io.DatasetWriter
+        The output dataset for writing row coordinates of the grid. If
+        `grid_out_col_ds` is provided, this argument is solely used for
+        writing row coordinates. Otherwise, it's used for both. Bands are
+        specified by `grid_out_row_coords_band` and `grid_out_col_coords_band`.
+        
+    grid_out_col_ds : rasterio.io.DatasetWriter or None, optional
+        An optional separate `DatasetWriter` for writing grid column
+        coordinates. If `None`, `grid_out_ds` is used for both. Defaults to None.
+        
+    grid_out_row_coords_band : int
+        The 1-based index of the row coordinates band within the corresponding
+        output `DatasetWriter`.
+        
+    grid_out_col_coords_band : int
+        The 1-based index of the column coordinates band within the
+        corresponding output `DatasetWriter`.
+        
+    mask_out_ds : rasterio.io.DatasetWriter
+        The output mask as a `DatasetWriter`. Its target size should correspond
+        to ``shape`` x ``resolution`` (where ``shape`` is derived from `grid_in_ds`).
+        
+    mask_out_dtype : numpy.dtypes.Int8DType or numpy.dtypes.UInt8DType
+        The NumPy data type to use for encoding the output mask. This should be
+        an 8-bit signed or unsigned integer type.
+        
+    mask_in_ds : rasterio.io.DatasetReader or None, optional
+        An optional input mask as a `DatasetReader`. Its shape and resolution
+        must align with the `grid_in_ds` and `resolution` arguments.
+        Defaults to None.
+        
+    mask_in_unmasked_value : int or None, optional
+        The integer value within the `mask_in_ds` to consider as **valid**.
+        Defaults to None.
+        
+    mask_in_band : int or None, optional
+        The index of the band from `mask_in_ds` to use as the input mask raster.
+        Defaults to None.
+        
+    computation_dtype : numpy.dtype
+        The data type to use for internal computations, specifically for mask
+        interpolation.
+        
+    geometry_origin : tuple of float
+        The geometric coordinates that map to the output array's ``(0,0)`` pixel.
+        This argument is required if `geometry_pair` is provided.
+        
+    geometry_pair : tuple of (GeometryType or None), optional
+        A tuple containing two optional `GeometryType` elements:
+          - The first element: Represents the **valid** geometries.
+          - The second element: Represents the **invalid** geometries.
+          
+        Defaults to None.
+        
+    rasterize_kwargs : dict or None, optional
+        A dictionary of parameters to pass directly to the rasterization
+        process, e.g., ``{'alg': GridRasterizeAlg.SHAPELY, 'kwargs_alg':
+        {'shapely_predicate': ShapelyPredicate.COVERS}}``. These arguments are
+        forwarded to the `build_mask` method. Defaults to None.
+        
+    mask_out_values : tuple of int or None, optional
+        A tuple ``(<unmasked_value>, <masked_value>)`` to use for output.
+        If `None`, the default convention used by the `build_mask` method
+        (i.e., ``(Validity.VALID, Validity.INVALID)``) is applied.
+        Defaults to ``(Validity.VALID, Validity.INVALID)``.
+        
+    merge_mask_grid : int or float or None, optional
+        The value to use for filling in masked data within the output grid.
+        If `None`, the mask is not merged into the grid. Defaults to None.
+        
+    io_strip_size : int, optional
+        The size (in number of rows) of a strip used for I/O operations.
+        Defaults to `DEFAULT_IO_STRIP_SIZE`.
+        
+    io_strip_size_target : GridRIOMode, optional
+        Defines the mode for interpreting the `io_strip_size`.
+          - If set to `GridRIOMode.INPUT`, `io_strip_size` directly corresponds
+            to the number of rows read from the input buffer.
+          - If set to `GridRIOMode.OUTPUT`, `io_strip_size` represents the size
+            of the full-resolution output strip, which may result in reading
+            fewer rows from the input due to resolution differences.
+            
+        Defaults to `GridRIOMode.INPUT`.
+        
+    ncpu : int, optional
+        The number of worker processes to allocate to the multiprocessing pool.
+        Defaults to `DEFAULT_NCPU`.
+        
+    cpu_tile_shape : tuple of int or None, optional
+        The dimensions of tiles processed by each worker when multiprocessing
+        is enabled. This argument must be set and smaller than the output
+        shape to activate parallel computation. Defaults to
+        `DEFAULT_CPU_TILE_SHAPE`.
+        
+    logger : logging.Logger or None, optional
+        A Python logger object for logging messages. If `None`, a logger is
+        initialized internally. Defaults to None.
+
+    Returns
+    -------
+    int
+        Returns 1 upon successful completion of the grid and mask computation.
+
+    Notes
+    -----
+    This method serves as a high-level orchestrator for both grid generation
+    (via `build_grid`) and mask computation (via `build_mask`). For detailed
+    information on the underlying `build_grid` and `build_mask` functionalities,
+    please refer to their respective documentations.
+
+    **Masked values**
+    The `build_mask` core method designates a pixel as invalid (value
+    `Validity.INVALID`) if it is masked by the input raster, falls outside the
     **valid** geometry, or lies within the **invalid** geometry.
 
-    This method allows user to define independantly :
-    - 'mask_out_values' : the values to use as output for unmasked (ie. valid)
-    and masked (ie. invalid) data.
-    - 'mask_in_unmasked_value' : the valeur to consider as valid in the optional
-    input mask.
-    If the 'mask_in_unmasked_value' differs from the core method convention, the
-    method converts the optional input mask to be complient with it directly
-    afer read instructions.
-    If the 'mask_out_umasked_value' differs from the core method convention, the
-    method converts the output mask to match the user's input.
+    This method allows the user to define independently:
     
-    Merging the mask in the grid
-    ----------------------------
-    This method provides an option to insert the mask in the grid by affecting
-    a special value to mask pixel. In order to do so, just set a not None value
-    to the 'merge_mask_grid' parameter. This value will be used to fill the
-    grid at masked coordinates.
-    
-    
-    Read/Write operations:
-    ---------------------
+        - `mask_out_values`: the values to use as output for unmasked (i.e., 
+          valid) and masked (i.e., invalid) data.
+        - `mask_in_unmasked_value`: the value to consider as valid in the 
+          optional input mask.
+
+    If the `mask_in_unmasked_value` differs from the core method convention,
+    the method converts the optional input mask to be compliant with it
+    directly after read instructions.
+    If the `mask_out_umasked_value` differs from the core method convention,
+    the method converts the output mask to match the user's input.
+
+    **Merging the mask in the grid**
+    This method provides an option to insert the computed mask directly into
+    the output grid by assigning a special value to masked pixels. To activate
+    this feature, set the `merge_mask_grid` parameter to a non-None value.
+    This value will then be used to fill the grid at all masked coordinates.
+
+    **Read/Write operations**
     I/O for read and write are performed by strip chunks sequentially.
-    A strip is defined as a window whose :
+    A strip is defined as a window whose:
     - number of columns is the same as the read raster
     - number of rows is defined by the strip's size.
 
-    There for a first sequential loop is performed on independantly on each
-    strip consisting in the chaining of the 3 steps :
-    'read' > 'process' > 'write'
-  
-    The strip's size can either be set to adress the read raster size or the
-    written raster size (i.e. the computed raster size at each strip).
-    The choice is defined through the definition of the 'io_strip_size_target'
-    argument :
-    - set it to 'GridRIOMode.INPUT' to adress the read strip's buffer size
-    - set it to 'GridRIOMode.OUTPUT' to adress the write strip's buffer size
+    Therefore, a first sequential loop is performed independently on each
+    strip, consisting in the chaining of the 3 steps: 'read' > 'process' > 'write'.
+
+    The strip's size can either be set to address the read raster size or the
+    written raster size (i.e., the computed raster size at each strip).
+    The choice is defined through the `io_strip_size_target` argument:
     
-    Parallel processing
-    -------------------
-    This methods offers parallelization inside each strip through a 
-    multiprocessing Pool.
-    In order to activate parallel computing you have to define :
-    - argument 'ncpu' to be greater than 1.
-    - argument 'cpu_tile_shape' to be different from None and smaller than the
-    output shape.
+        - set it to `GridRIOMode.INPUT` to address the read strip's buffer size.
+        - set it to `GridRIOMode.OUTPUT` to address the write strip's buffer size.
+
+    **Parallel processing**
+    This method offers parallelization inside each strip through a
+    multiprocessing Pool. To activate parallel computing, you have to define:
     
-    Shared Memory
-    -------------
+        - argument `ncpu` to be greater than 1.
+        - argument `cpu_tile_shape` to be different from None and smaller than 
+          the output shape.
+
+    **Shared Memory**
     The read and the output buffers are set at once and used for each strip.
-    They are allocated as Shared Memory in order to be efficiently shared among
-    multiple parallel/concurrent processes.
-    Please note that no lock is set on written memory ; this is justified by the
-    fact that a strict tiling computation ensures that no overlap occurs across
-    different processes.
-    
-    Computation Data Type
-    ---------------------
+    They are allocated as Shared Memory to be efficiently shared among
+    multiple parallel/concurrent processes. Please note that no lock is set
+    on written memory; this is justified by the fact that a strict tiling
+    computation ensures that no overlap occurs across different processes.
+
+    **Computation Data Type**
     The user needs to provide the data type to use for the interpolation of the
     mask. The precision of the computation may differ between float32 and
     float64.
-    
-    Args:
-    -----
-        
-    resolution: Tuple[int, int]
-        The grid's resolution as an oversampling factor (rows, columns).
-
-    grid_in_ds: rasterio.io.DatasetReader
-        The input grid as a `DatasetReader`. If `grid_in_col_ds` is provided, 
-        this argument is solely used for reading the row coordinates. Otherwise,
-        it's used for both row and column coordinates. The bands for reading row
-        and column grids are specified by `grid_in_row_coords_band` and 
-        `grid_in_col_coords_band`, respectively.
-        
-    grid_in_col_ds: Union[rasterio.io.DatasetReader, None]
-        An optional `DatasetReader` for reading the column coordinates.
-        If `None`, `grid_in_ds` is used for both row and column coordinates.
-        
-    grid_in_row_coords_band: int
-        The 1-based index of the row coordinates band within the corresponding
-        `DatasetReader`.
-        
-    grid_in_col_coords_band: int
-        The 1-based index of the column coordinates band within the 
-        corresponding `DatasetReader`.
-        
-    grid_out_ds: rasterio.io.DatasetWriter
-        The output grid as a `DatasetWriter`. If `grid_out_col_ds` is provided, 
-        this argument is solely used for writing the row coordinates. Otherwise,
-        it's used for both row and column coordinates. The bands for writing row
-        and column grids are specified by `grid_out_row_coords_band` and 
-        `grid_out_col_coords_band`, respectively.
-        
-    grid_out_col_ds: Union[rasterio.io.DatasetWriter, None]
-        An optional `DatasetWriter` for writing the column coordinates. If 
-        `None`, `grid_out_ds` is used for both row and column coordinates.
-        
-    grid_out_row_coords_band: int
-        The 1-based index of the row coordinates band within the corresponding
-        `DatasetWriter`.
-        
-    grid_out_col_coords_band: int
-        The 1-based index of the column coordinates band within the 
-        corresponding `DatasetWriter`.
-        
-    mask_out_ds: rasterio.io.DatasetWriter
-        The output mask as a `DatasetWriter`. Its target size should correspond 
-        to `shape` x `resolution`.
-
-    mask_out_values : Tuple[int, int]
-        The tuple (<unmasked_value>, <masked_value>) to use for output. If not 
-        given the convention used by the 'build_mask' method is preserved.
-
-    mask_out_dtype: Union[np.dtypes.Int8DType, np.dtypes.UInt8DType]
-        The NumPy data type to use for encoding the output mask. This should be 
-        an 8-bit signed or unsigned integer type.
-
-    mask_in_ds: Optional[rasterio.io.DatasetReader]
-        An optional input mask as a `DatasetReader`. Its shape and resolution 
-        must align with the `shape` and `resolution` arguments.
-
-    mask_in_unmasked_value: Optional[int]
-        The integer value within the `mask_in_ds` to consider as **valid**.
-
-    mask_in_band: Optional[int]
-        The index of the band from `mask_in_ds` to use as the input mask raster.
-
-    computation_dtype: np.dtype
-        The data type to use for internal computations, specifically for mask 
-        interpolation.
-
-    geometry_origin: Tuple[float, float]
-        The geometric coordinates that map to the output array's (0,0) pixel. 
-        This argument is required if `geometry_pair` is provided.
-    
-    geometry_pair: Optional[Tuple[Optional[GeometryType], Optional[GeometryType]]]
-        A tuple containing two optional `GeometryType` elements:
-        - The first element: Represents the **valid** geometries.
-        - The second element: Represents the **invalid** geometries.
-        
-    rasterize_kwargs: Optional[Dict]
-        A dictionary of parameters to pass directly to the rasterization 
-        process, e.g., `{'alg': GridRasterizeAlg.SHAPELY, 'kwargs_alg': 
-        {'shapely_predicate': ShapelyPredicate.COVERS}}`.
-        These arguments are forwarded to the `build_mask` method.
-
-    mask_out_values: Optional[Tuple[int, int]]
-        A tuple `(<unmasked_value>, <masked_value>)` to use for output.
-        If `None`, the default convention used by the `build_mask` method 
-        (i.e., `(Validity.VALID, Validity.INVALID)`) is applied.
-
-    merge_mask_grid: Optional[Union[int, float]]
-        The value to use for filling in masked data within the output grid.
-
-    io_strip_size: int
-        The size (in number of rows) of a strip used for I/O operations.
-
-    io_strip_size_target: GridRIOMode
-        Defines the mode for interpreting the `io_strip_size`.
-        - If set to `GridRIOMode.INPUT`, `io_strip_size` directly corresponds to
-        the number of rows read from the input buffer.
-        - If set to `GridRIOMode.OUTPUT`, `io_strip_size` represents the size of
-        the full-resolution output strip, which may result in reading fewer rows
-        from the input due to resolution differences.
-
-    ncpu: int
-        The number of worker processes to allocate to the multiprocessing pool.
-
-    cpu_tile_shape: Optional[Tuple[int, int]]
-        The dimensions of tiles processed by each worker when multiprocessing is
-        enabled. This argument must be set and smaller than the output shape to 
-        activate parallel computation.
-
-    logger: Optional[logging.Logger]
-        A Python logger object for logging messages. If `None`, a logger is 
-        initialized internally.
     """
     # Init a list to register SharedMemoryArray buffers
     sma_buffer_name_list = []

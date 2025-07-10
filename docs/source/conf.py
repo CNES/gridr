@@ -41,6 +41,9 @@ extensions = [
     #"sphinxcontrib.rustdoc",  # Pour la doc Rust
 ]
 
+napoleon_google_docstring = True  # Pour activer le support Google Style
+napoleon_numpy_docstring = True # Pour désactiver le support NumPy Style (si vous ne l'utilisez pas)
+
 source_suffix = {
     '.rst': 'restructuredtext',
     '.md': 'markdown',

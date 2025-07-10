@@ -9,8 +9,6 @@
 """
 Module for a Grid Resampling Chain
 # @doc
-
-TMP : PYTHONPATH=${PWD}/python:$PYTHONPATH python python/gridr/chain/grid_resampling_chain.py
 """
 from functools import partial
 import logging
@@ -35,6 +33,7 @@ from gridr.core.grid.grid_commons import (grid_full_resolution_shape,
         grid_resolution_window_safe)
 from gridr.core.grid.grid_utils import build_grid, array_compute_resampling_grid_geometries
 from gridr.core.grid.grid_resampling import array_grid_resampling
+from gridr.core.grid.grid_rasterize import GeometryType
 from gridr.io.common import GridRIOMode
 from gridr.scaling.shmutils import (SharedMemoryArray, shmarray_wrap,
         create_and_register_sma)
@@ -51,16 +50,14 @@ def read_win_from_grid_metrics(
         margins: np.ndarray,
         logger: logging.Logger,
         logger_msg_prefix: str = ''
-        ):
-    """
-    Computes the source read window from grid metrics, taking into account
-    margins for interpolation, filtering, or other processing needs.
+        ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Computes the source read window from grid metrics.
 
-    This function determines the read window (`src_win_read`) from the source 
-    array based on the destination and source bounds contained in `grid_metrics`.
-    It applies the necessary margins to ensure sufficient neighborhood data is 
-    available for operations such as interpolation, while handling cases where 
-    the window exceeds the array boundaries.
+    This function determines the read window (`src_win_read`) from the
+    source array based on the destination and source bounds contained in
+    `grid_metrics`. It applies the necessary margins to ensure sufficient
+    neighborhood data is available for operations such as interpolation,
+    while handling cases where the window exceeds the array boundaries.
 
     Parameters
     ----------
@@ -69,34 +66,41 @@ def read_win_from_grid_metrics(
         destination bounds.
         
     array_src_profile_2d : ArrayProfile
-        Metadata/profile of the 2D source array, including shape and number of 
-        dimensions informations.
+        Metadata/profile of the 2D source array, including shape and number of
+        dimensions information.
         
-    margins : np.ndarray of shape (2, 2)
-        Margins to apply to the read window, formatted as 
-        [[top_margin, bottom_margin], [left_margin, right_margin]].
+    margins : numpy.ndarray of shape (2, 2)
+        Margins to apply to the read window, formatted as
+        ``[[top_margin, bottom_margin], [left_margin, right_margin]]``.
         
     logger : logging.Logger
         Logger instance used for debugging messages.
         
     logger_msg_prefix : str, optional
         Optional prefix to include in log messages for better traceability.
+        Defaults to ''.
 
     Returns
     -------
-    src_win_read : np.ndarray of shape (2, 2)
+    src_win_read : numpy.ndarray of shape (2, 2)
         Final source read window adjusted for margins and boundary constraints.
-        Format: [[row_start, row_end], [col_start, col_end]]. That's the window
-        that should be used for the raster read IO.
+        Format: ``[[row_start, row_end], [col_start, col_end]]``. This is the
+        window that should be used for the raster read IO.
         
-    src_win_marged : np.ndarray of shape (2, 2)
-        Desired read window with margins applied, before boundary correction 
+    src_win_marged : numpy.ndarray of shape (2, 2)
+        Desired read window with margins applied, before boundary correction
         (padding).
         
-    pad : np.ndarray of shape (2, 2)
-        Amount of padding required if the marged window extends outside the 
-        source array.
-        Format: [[top_pad, bottom_pad], [left_pad, right_pad]].
+    pad : numpy.ndarray of shape (2, 2)
+        Amount of padding required if the marged window extends outside the
+        source array. Format: ``[[top_pad, bottom_pad], [left_pad, right_pad]]``.
+
+    Notes
+    -----
+    This function is critical for operations requiring contextual data beyond
+    the immediate processing area, such as filtering or interpolation, ensuring
+    that no data loss or edge artifacts occur due to insufficient neighborhood
+    information.
     """
     def DEBUG(msg):
         logger.debug(f"{logger_msg_prefix} - {msg}")
@@ -199,8 +203,8 @@ def basic_grid_resampling_array(
         array_src_mask_ds: Optional[rasterio.io.DatasetReader],
         array_src_mask_band: Optional[int],
         array_src_geometry_origin: Optional[Tuple[float, float]],
-        array_src_geometry: Optional[Union[shapely.geometry.Polygon,
-                List[shapely.geometry.Polygon], shapely.geometry.MultiPolygon]],
+        array_src_geometry_pair: Optional[Tuple[Optional[GeometryType],
+                Optional[GeometryType]]],
         oversampled_grid_win: np.ndarray,
         margin: np.ndarray,
         sma_out_buffer: SharedMemoryArray,
@@ -212,132 +216,131 @@ def basic_grid_resampling_array(
         ):
     """Resamples source data into a target oversampled window on a grid.
 
-    This method processes a 3D raster grid (`grid_arr`) that includes row and 
-    column coordinates. The `grid_arr` may represent a sub-region of a larger, 
-    non-oversampled grid. Additionally, since `grid_arr` might correspond to a 
-    uniquely allocated buffer used for multiple sub-regions, we cannot rely on 
-    its `shape` attribute to determine the dimensions of the sub-region. 
+    This method processes a 3D raster grid (`grid_arr`) that includes row and
+    column coordinates. The `grid_arr` may represent a sub-region of a larger,
+    non-oversampled grid. Additionally, since `grid_arr` might correspond to a
+    uniquely allocated buffer used for multiple sub-regions, we cannot rely on
+    its `shape` attribute to determine the dimensions of the sub-region.
     Therefore, the `grid_arr_shape` argument is required.
-    
-    The goal is to generate data within a specific target window 
+
+    Parameters
+    ----------
+    grid_arr : numpy.ndarray
+        A 3D array of shape ``(2, rows, cols)``, containing the raster grid's
+        row and column coordinates. It may represent a sub-region of a larger
+        (non-oversampled) grid. The local origin ``(0, 0)`` corresponds to
+        ``grid_arr[:, 0, 0]``.
+        
+    grid_arr_shape : tuple of int
+        Shape of the active sub-region in `grid_arr`, given as ``(rows, cols)``.
+        Required because `grid_arr` may be a larger buffer reused across
+        tiles or subregions.
+        
+    grid_resolution : tuple of int
+        Resolution of the coarse grid, typically in pixels or map units per
+        pixel (e.g., ``(10, 10)``).
+        
+    grid_nodata : scalar or None
+        The NoData value associated with `grid_arr`, marking invalid or
+        missing data points.
+        
+    grid_mask_arr : numpy.ndarray, optional
+        Optional 2D mask array aligned with `grid_arr` (shape: ``(rows, cols)``).
+        Indicates valid (unmasked) and invalid (masked) data. Defaults to None.
+        
+    grid_mask_in_unmasked_value : numpy.uint8
+        Value in `grid_mask_arr` that represents a valid/unmasked data point.
+        
+    array_src_ds : rasterio.io.DatasetReader
+        The source dataset (e.g., a GDAL or Rasterio object) from which
+        raster data will be read and resampled.
+        
+    array_src_bands : int or list of int
+        List of band indices to read from `array_src_ds`. If a single band is
+        provided, it can be an integer.
+        
+    array_src_mask_ds : rasterio.io.DatasetReader or None, optional
+        Optional dataset representing the mask associated with `array_src_ds`.
+        Defaults to None.
+        
+    array_src_mask_band : int or None, optional
+        Band index to read from `array_src_mask_ds` for the source mask.
+        Defaults to None.
+        
+    array_src_geometry_origin : tuple of float or None, optional
+        This optional parameter specifies the origin convention for the
+        `array_src_geometry_pair` definition. GridR uses a ``(0, 0)`` image
+        coordinate system to address the first pixel of the `array_src`
+        raster. This parameter allows you to align the `array_src_geometry_pair`
+        definition with GridR's convention, ensuring proper spatial
+        referencing. Please note, its internal usage is solely for modifying
+        `array_src_geometry_pair`. Defaults to None.
+        
+    array_src_geometry_pair : tuple of (GeometryType or None), optional
+        A tuple containing two optional `GeometryType` elements:
+          - The first element: Represents the **valid** geometries.
+          - The second element: Represents the **invalid** geometries.
+          
+        If provided, a rasterization of those geometries is
+        performed locally on the current `array_src` raster window. This
+        generated mask is then merged with any additional raster mask supplied
+        via the `array_src_mask_ds` dataset. The rasterization itself is
+        delegated to the `build_mask` gridr's core method. Defaults to None.
+        
+    oversampled_grid_win : numpy.ndarray
+        Target window for resampling, defined in full-resolution coordinates,
+        relative to the local origin of `grid_arr`.
+        
+    margin : numpy.ndarray
+        Pixel margin to apply when computing the minimal read window from
+        `array_src_ds`, ensuring context for resampling (e.g., for kernels).
+        Format: ``[[top_margin, bottom_margin], [left_margin, right_margin]]``.
+        
+    sma_out_buffer : SharedMemoryArray or numpy.ndarray
+        Output array (or shared memory buffer) where resampled values will
+        be written.
+        
+    out_win : numpy.ndarray
+        Window within `sma_out_buffer` specifying where to write the output
+        data. Format: ``[[row_start, row_end], [col_start, col_end]]``.
+        
+    nodata_out : scalar or None
+        NoData value to fill the output if the grid metrics are invalid or if
+        no valid data points can be found.
+        
+    sma_out_mask_buffer : SharedMemoryArray or numpy.ndarray or None, optional
+        Optional output array (or shared memory buffer) where output mask
+        will be written. Defaults to None.
+        
+    logger_msg_prefix : str
+        Prefix to prepend to all logger messages, useful for debugging and
+        tracing within logs.
+        
+    logger : logging.Logger
+        Logger instance used for debug and informational messages.
+
+    Notes
+    -----
+    The goal is to generate data within a specific target window
     (`oversampled_grid_win`), which is defined in a full-resolution geometry.
-    The coordinates of this target window are relative to the local origin of 
-    `grid_arr`.
+    The coordinates of this target window are relative to the local origin
+    of `grid_arr`.
 
     To optimize the loading of only the necessary extent from the source image
-    (`array_src_ds`), this method calls the `array_compute_resampling_grid_geometries`
+    (`array_src_ds`), this method calls `array_compute_resampling_grid_geometries`
     on the minimal low-resolution grid window that completely contains the
-    target full-resolution window.
-    The provided `margin` parameter is also incorporated into this calculation
-    to ensure sufficient data coverage.
-
+    target full-resolution window. The provided `margin` parameter is also
+    incorporated into this calculation to ensure sufficient data coverage.
 
     The method writes the resampled output to a shared memory array
     (`sma_out_buffer`), using `out_win` to specify the target writing window
     within this buffer.
-    
+
     Optional masks for both the grid and the source array may be passed.
-    
-    If the grid metrics are not valid, ie. there was not sufficient valid dat
-    to determine the grid and source boundaries, the method flls the windowed
+
+    If the grid metrics are not valid (i.e., there was not sufficient valid data
+    to determine the grid and source boundaries), the method fills the windowed
     output with the `nodata_out` value.
-    
-    
-    Args:
-        grid_arr : np.ndarray
-            A 3D array of shape (2, rows, cols), containing the raster grid's row 
-            and column coordinates. It may represent a sub-region of a larger 
-            (non-oversampled) grid. The local origin (0, 0) corresponds to 
-            `grid_arr[:, 0, 0]`.
-
-        grid_arr_shape : Tuple[int, int]
-            Shape of the active sub-region in `grid_arr`, given as (rows, cols).
-            Required because `grid_arr` may be a larger buffer reused across
-            tiles or subregions.
-
-        grid_resolution : Tuple[int, int]
-            Resolution of the coarse grid, typically in pixels or map units per 
-            pixel (e.g., (10, 10)).
-
-        grid_nodata : scalar
-            The NoData value associated with `grid_arr`, marking invalid or 
-            missing data points.
-
-        grid_mask_arr : Optional[np.ndarray]
-            Optional 2D mask array aligned with `grid_arr` (shape: (rows, cols)). 
-            Indicates valid (unmasked) and invalid (masked) data.
-
-        grid_mask_in_unmasked_value : np.uint8
-            Value in `grid_mask_arr` that represents a valid/unmasked data point.
-
-        array_src_ds : DatasetReader
-            The source dataset (e.g., a GDAL or Rasterio object) from which
-            raster data will be read and resampled.
-
-        array_src_bands : List[int] or Tuple[int]
-            List of band indices to read from `array_src_ds`.
-
-        array_src_mask_ds : Optional[DatasetReader]
-            Optional dataset representing the mask associated with 
-            `array_src_ds`.
-
-        array_src_mask_band : int
-            Band index to read from `array_src_mask_ds` for the source mask.
-        
-        array_src_geometry_origin : Optional[Tuple[float, float]]
-            This optional parameter specifies the origin convention for the
-            `array_src_geometry` definition.
-            GridR uses a (0, 0) image coordinate system to adress the first
-            pixel of the `array_src` raster. This parameter allows you to align
-            the `array_src_geometry` definition with GridR's convention, 
-            ensuring proper spatial referencing.
-            Please note, its internal usage is solely for modifying
-            `array_src_geometry`.
-        
-        array_src_geometry : Optional[ shapely.geometry.Polygon or 
-                List[shapely.geometry.Polygon] or shapely.geometry.MultiPolygon]
-            This optional parameter defines the unmasked geometry within the 
-            `array_src` domain. The union of the provided geometries is used to
-            create a validity mask. Pixels (or points) falling within this union
-            are considered unmasked (valid), while those outside are considered
-            masked (invalid).
-            If provided, a rasterization of this geometry is performed locally 
-            on the current array_src raster window. This generated mask is then 
-            merged with any additional raster mask supplied via the 
-            `array_src_mask_ds` dataset.
-            The rasterization itself is delegated to the `build_mask` gridr's
-            core method.
-
-        oversampled_grid_win : np.ndarray
-            Target window for resampling, defined in full-resolution coordinates,
-            relative to the local origin of `grid_arr`.
-
-        margin : int
-            Pixel margin to apply when computing the minimal read window from 
-            `array_src_ds`, ensuring context for resampling (e.g., for kernels).
-
-        sma_out_buffer : np.ndarray or shared memory array
-            Output array (or shared memory buffer) where resampled values will 
-            be written.
-
-        out_win : np.ndarray
-            Window within `sma_out_buffer` specifying where to write the output 
-            data. Format: [[row_start, row_end], [col_start, col_end]].
-
-        nodata_out : scalar
-            NoData value to fill the output if the grid metrics are invalid or if 
-            no valid data points can be found.
-        
-        sma_out_mask_buffer: Optional[np.ndarray or shared memory array
-            Optional output array (or shared memory buffer) where output mask 
-            will be written.
-
-        logger_msg_prefix : str
-            Prefix to prepend to all logger messages, useful for debugging and 
-            tracing within logs.
-
-        logger : logging.Logger
-            Logger instance used for debug and informational messages.
     """
     def DEBUG(msg):
         logger.debug(f"{logger_msg_prefix} - {msg}")
@@ -527,7 +530,7 @@ def basic_grid_resampling_array(
                     pad[1][0] - array_src_win_read[1][0])
             
             # Manage geometry mask
-            if array_src_geometry is not None:
+            if array_src_geometry_pair is not None:
                 
                 # We have to define the rasterization mesh so that is will be 
                 # aligned with array_in_mask and the optional array_src_mask.
@@ -615,8 +618,8 @@ def basic_grid_resampling_chain(
         computation_dtype: np.dtype,
         
         array_src_geometry_origin: Optional[Tuple[float, float]] = None,
-        array_src_geometry: Optional[Union[shapely.geometry.Polygon,
-                List[shapely.geometry.Polygon], shapely.geometry.MultiPolygon]] = None,
+        array_src_geometry_pair: Optional[Tuple[Optional[GeometryType],
+                Optional[GeometryType]]] = None,
     
         #geometry_origin: Optional[Tuple[float, float]],
         #geometry: Optional[Union[shapely.geometry.Polygon,
@@ -628,7 +631,145 @@ def basic_grid_resampling_chain(
         tile_shape: Optional[Tuple[int, int]] = DEFAULT_TILE_SHAPE,
         logger: Optional[logging.Logger] = None,
         ) -> int:
-    """
+    """Performs a comprehensive grid-based resampling operation.
+
+    This function orchestrates the entire resampling process from input grid
+    and source raster datasets to an output raster dataset, handling various
+    masking, interpolation, and I/O strategies. It leverages the
+    `basic_grid_resampling_array` core method for the actual array processing.
+
+    Parameters
+    ----------
+    grid_ds : rasterio.io.DatasetReader
+        Input dataset containing the grid coordinates. This dataset provides
+        the destination geometry for resampling.
+        
+    grid_col_ds : rasterio.io.DatasetReader or None, optional
+        Optional separate dataset for grid column coordinates if they are not
+        in `grid_ds`. Defaults to None.
+        
+    grid_row_coords_band : int
+        Band index in `grid_ds` corresponding to the row coordinates of the
+        grid.
+        
+    grid_col_coords_band : int
+        Band index in `grid_ds` (or `grid_col_ds`) corresponding to the
+        column coordinates of the grid.
+        
+    grid_resolution : tuple of int
+        Resolution of the coarse grid, typically in pixels or map units per
+        pixel (e.g., ``(10, 10)``).
+        
+    array_src_ds : rasterio.io.DatasetReader
+        The source dataset from which raster data will be read and resampled.
+        
+    array_src_bands : int or list of int
+        Band index or list of band indices to read from `array_src_ds`.
+        
+    array_src_mask_ds : rasterio.io.DatasetReader or None, optional
+        Optional dataset representing the mask associated with `array_src_ds`.
+        Defaults to None.
+        
+    array_src_mask_band : int or None, optional
+        Band index to read from `array_src_mask_ds` for the source mask.
+        Defaults to None.
+        
+    array_out_ds : rasterio.io.DatasetWriter
+        Output dataset where the resampled raster data will be written.
+        
+    interp : str
+        Interpolation method to use (e.g., 'nearest', 'linear', 'bicubic').
+        Specific interpolation options are delegated to the underlying
+        resampling engine.
+        
+    nodata_out : scalar
+        NoData value to fill the output raster when no valid data points
+        can be found for a given output pixel.
+        
+    window : numpy.ndarray
+        Output window of the `grid_ds` to process, defined as
+        ``[[row_start, row_end], [col_start, col_end]]``. This defines the
+        region of interest for the resampling.
+        
+    mask_out_ds : rasterio.io.DatasetWriter
+        Output dataset where the resampled validity mask will be written.
+        This mask indicates which output pixels contain valid resampled data.
+        
+    grid_mask_in_ds : rasterio.io.DatasetReader or None, optional
+        Optional input dataset for the grid mask. This mask can define valid
+        areas within the grid itself. Defaults to None.
+        
+    grid_mask_in_unmasked_value : int or None, optional
+        Value in `grid_mask_in_ds` that represents a valid/unmasked data point.
+        Defaults to None.
+        
+    grid_mask_in_band : int or None, optional
+        Band index to read from `grid_mask_in_ds` for the input grid mask.
+        Defaults to None.
+        
+    computation_dtype : numpy.dtype
+        Data type to use for internal computations during resampling. This
+        influences precision and memory usage.
+        
+    array_src_geometry_origin : tuple of float or None, optional
+        Specifies the origin convention for `array_src_geometry_pair` definition.
+        GridR uses a ``(0, 0)`` image coordinate system to address the first
+        pixel of the source raster. This parameter aligns the geometry
+        definition with GridR's convention. Defaults to None.
+        
+    array_src_geometry_pair : tuple of (GeometryType or None), optional
+        A tuple containing two optional `GeometryType` elements:
+          - The first element: Represents the **valid** geometries.
+          - The second element: Represents the **invalid** geometries.
+          
+        If provided, a rasterization of those geometries is
+        performed locally on the current `array_src` raster window. This
+        generated mask is then merged with any additional raster mask supplied
+        via the `array_src_mask_ds` dataset. The rasterization itself is
+        delegated to the `build_mask` gridr's core method. Defaults to None.
+        
+    io_strip_size : int, optional
+        The number of rows per chunk for I/O operations. This parameter
+        optimizes memory usage and processing speed by dividing the input
+        and output operations into manageable strips. Defaults to
+        `DEFAULT_IO_STRIP_SIZE`.
+        
+    io_strip_size_target : GridRIOMode, optional
+        Defines how `io_strip_size` is applied, e.g., to input or output
+        strips. Defaults to `GridRIOMode.INPUT`.
+        
+    ncpu : int, optional
+        Number of CPU cores to use for parallel processing. Defaults to
+        `DEFAULT_NCPU`.
+        
+    tile_shape : tuple of int or None, optional
+        Shape ``(rows, cols)`` for internal processing tiles within strips,
+        optimizing cache usage. Defaults to `DEFAULT_TILE_SHAPE`.
+        
+    logger : logging.Logger or None, optional
+        Logger instance for debugging and informational messages. If None,
+        a default logger is initialized internally. Defaults to None.
+
+    Returns
+    -------
+    int
+        Returns 1 upon successful completion of the resampling process.
+        A return value other than 1 indicates an error.
+
+    Notes
+    -----
+    This function manages the reading of input data in chunks (strips),
+    calls the `basic_grid_resampling_array` method for processing each chunk,
+    and then writes the results to the output datasets.
+
+    The method handles grid data from one or two separate datasets for row and
+    column coordinates. It also incorporates masking capabilities for both
+    the input grid and the source array, allowing for flexible data validity
+    management.
+
+    The `window` parameter is crucial for defining the specific output region
+    to be processed, enabling partial grid resampling without loading the
+    entire dataset into memory.
     """
     if logger is None:
         logger = logging.getLogger(__name__)
@@ -945,7 +1086,7 @@ def basic_grid_resampling_chain(
                             array_src_mask_ds=array_src_mask_ds, 
                             array_src_mask_band=array_src_mask_band,
                             array_src_geometry_origin=array_src_geometry_origin,
-                            array_src_geometry=array_src_geometry,
+                            array_src_geometry_pair=array_src_geometry_pair,
                             oversampled_grid_win=ctile_grid_win,
                             margin=margin,
                             sma_out_buffer=sma_w_array_buffer,
@@ -973,7 +1114,7 @@ def basic_grid_resampling_chain(
                         array_src_mask_ds=array_src_mask_ds, #TODO
                         array_src_mask_band=array_src_mask_band, #TODO
                         array_src_geometry_origin=array_src_geometry_origin,
-                        array_src_geometry=array_src_geometry,
+                        array_src_geometry_pair=array_src_geometry_pair,
                         oversampled_grid_win=win_rel,
                         margin=margin,
                         sma_out_buffer=sma_w_array_buffer,

@@ -19,16 +19,22 @@ def grid_full_resolution_shape(
         shape: Tuple[int, int],
         resolution: Tuple[int, int],
         ) -> Tuple[int, int]:
-    """Compute the grid's shape at full resolution
-    
-    Args:
-        shape: grid output shape as a tuple of integer (number of rows, number 
-                of columns).
-        resolution: grid resolution as a tuple of integer (row resolution,
-                columns resolution)
-    
-    Returns:
-        The grid's shape at full resolution
+    """Compute the grid's shape at full resolution.
+
+    Parameters
+    ----------
+    shape : Tuple[int, int]
+        Grid output shape as a tuple of integers (number of rows, number
+        of columns).
+
+    resolution : Tuple[int, int]
+        Grid resolution as a tuple of integers (row resolution,
+        columns resolution).
+
+    Returns
+    -------
+    Tuple[int, int]
+        The grid's shape at full resolution.
     """
     nrow = (shape[0]-1) * resolution[0] + 1
     ncol = (shape[1]-1) * resolution[1] + 1
@@ -40,29 +46,51 @@ def grid_regular_coords_1d(
         origin: Tuple[float, float],
         resolution: Tuple[int, int],
         ) -> Tuple[np.ndarray, np.ndarray]:
-    """Create grid one-dimensionnal coordinates its output shape, origin and
-    resolution.
-    
-    This method returns the columns and row coordinates array as 2 numpy
+    """Create grid one-dimensional coordinates based on its output shape,
+    origin, and resolution.
+
+    This method returns the columns and row coordinates arrays as two NumPy 
     ndarrays.
-    
-    The first array corresponds to the columns coordinates :
-        G_col[j] = origin[1] + j * step_col 
-    with
-        step_col = resolution[1] * 1/ (shape[1]-1)
-        
-    The second array corresponds to the rows coordinates :
-        G_row[i] = origin[0] + i * step_row
-    with
-        step_row = resolution[0] * 1/ (shape[0]-1)
-    
-    Args:
-        shape: grid output shape as a tuple of integer (number of rows, number 
-                of columns).
-        origin: grid origin as a tuple of float (origin's row coordinate, 
-                origin's column coordinate)
-        resolution: grid resolution as a tuple of integer (row resolution,
-                columns resolution)
+
+    The first array corresponds to the columns coordinates:
+
+    .. math::
+        G_{col}[j] = origin[1] + j \\cdot step_{col}
+
+    with:
+
+    .. math::
+        step_{col} = resolution[1] \\cdot \\frac{1}{(shape[1]-1)}
+
+    The second array corresponds to the rows coordinates:
+
+    .. math::
+        G_{row}[i] = origin[0] + i \\cdot step_{row}
+
+    with:
+
+    .. math::
+        step_{row} = resolution[0] \\cdot \\frac{1}{(shape[0]-1)}
+
+    Parameters
+    ----------
+    shape : Tuple[int, int]
+        Grid output shape as a tuple of integers (number of rows, number of 
+        columns).
+
+    origin : Tuple[float, float]
+        Grid origin as a tuple of floats (origin's row coordinate, origin's 
+        column coordinate).
+
+    resolution : Tuple[int, int]
+        Grid resolution as a tuple of integers (row resolution,  columns 
+        resolution).
+
+    Returns
+    -------
+    Tuple[np.ndarray, np.ndarray]
+        A tuple containing two NumPy ndarrays: the column coordinates and the 
+        row coordinates.
     """
     x = np.linspace(origin[1], origin[1]+resolution[1]*(shape[1]-1), shape[1])
     y = np.linspace(origin[0], origin[0]+resolution[0]*(shape[0]-1), shape[0])
@@ -75,33 +103,59 @@ def grid_regular_coords_2d(
         resolution: Tuple[int, int],
         sparse: bool = False
         ) -> Tuple[np.ndarray, np.ndarray]:
-    """Create 2D grid's coordinates considering its output shape, origin and
+    """Create 2D grid coordinates considering its output shape, origin, and
     resolution.
-    
-    This method returns the columns and row coordinates array as 2 numpy
+
+    This method returns the columns and row coordinates arrays as two NumPy 
     ndarrays.
-    
-    The first array corresponds to the columns coordinates :
-        G_col[j,i] = origin[1] + j * step_col 
-    with
-        step_col = resolution[1] * 1/ (shape[1]-1)
-        
-    The second array corresponds to the rows coordinates :
-        G_row[j,i] = origin[0] + i * step_row
-    with
-        step_row = resolution[0] * 1/ (shape[0]-1)
-    
-    The method use the numpy meshgrid function to create the grid. The sparse
-    argument is directly passed to this function. Please see numpy.meshgrid for
-    details about that argument.
-    
-    Args:
-        shape: grid output shape as a tuple of integer (number of rows, number 
-                of columns).
-        origin: grid origin as a tuple of float (origin's row coordinate, 
-                origin's column coordinate)
-        resolution: grid resolution as a tuple of integer (row resolution,
-                columns resolution)
+
+    The first array corresponds to the columns coordinates:
+
+    .. math::
+        G_{col}[j,i] = origin[1] + j \\cdot step_{col}
+
+    with:
+
+    .. math::
+        step_{col} = resolution[1] \\cdot \\frac{1}{(shape[1]-1)}
+
+    The second array corresponds to the rows coordinates:
+
+    .. math::
+        G_{row}[j,i] = origin[0] + i \\cdot step_{row}
+
+    with:
+
+    .. math::
+        step_{row} = resolution[0] \\cdot \\frac{1}{(shape[0]-1)}
+
+    The method uses the `numpy.meshgrid` function to create the grid. The
+    `sparse` argument is directly passed to this function. Please refer to
+    `numpy.meshgrid`'s documentation for details about this argument.
+
+    Parameters
+    ----------
+    shape : Tuple[int, int]
+        Grid output shape as a tuple of integers (number of rows, number of 
+        columns).
+
+    origin : Tuple[float, float]
+        Grid origin as a tuple of floats (origin's row coordinate, origin's 
+        column coordinate).
+
+    resolution : Tuple[int, int]
+        Grid resolution as a tuple of integers (row resolution, columns 
+        resolution).
+
+    sparse : bool, optional
+        If True, return sparse grids to conserve memory. See `numpy.meshgrid` 
+        for more details, by default False.
+
+    Returns
+    -------
+    Tuple[np.ndarray, np.ndarray]
+        A tuple containing two NumPy ndarrays: the column coordinates and the 
+        row coordinates.
     """
     x, y = grid_regular_coords_1d(shape, origin, resolution)
     xx, yy = np.meshgrid(x, y, indexing='xy', sparse=sparse)
@@ -111,19 +165,30 @@ def grid_regular_coords_2d(
 def regular_grid_shape_origin_resolution(
         grid_coords: Union[Tuple[np.ndarray], List[np.ndarray], np.ndarray]
         ) -> Tuple[Tuple[int, int], Tuple[float, float], Tuple[int, int]]:
-    """Compute shape, origin and resolution from a regular grid.
-    
-    The grid can be given either as a 3D grid, a tuple of 2 2D arrays or a tuple
-    of 2 1D arrays.
-    
-    Args:
-        grid_coords: grid corresponding coordinates. If not given they are
-                The grid coordinates are given as a 3d arrays or a tuple of 1d
-                or 2d arrays containing the columns and the rows of pixels
-                centroïds.
+    """Compute shape, origin, and resolution from a regular grid.
 
-    Returns:
-        shape, origin, resolution
+    The grid can be provided as a 3D grid, a tuple of two 2D arrays, or a
+    tuple of two 1D arrays. This function extracts the essential properties
+    needed to describe its geometry.
+
+    Parameters
+    ----------
+    grid_coords : Union[Tuple[np.ndarray], List[np.ndarray], np.ndarray]
+        Grid coordinates. These are typically given as a 3D array or a tuple
+        of 1D or 2D arrays containing the column and row centroids of pixels.
+
+    Returns
+    -------
+    Tuple[Tuple[int, int], Tuple[float, float], Tuple[int, int]]
+        A tuple containing:
+
+        -   **shape** (`Tuple[int, int]`): The grid's overall dimensions
+            (number of rows, number of columns).
+        -   **origin** (`Tuple[float, float]`): The grid's starting point
+            (row coordinate, column coordinate).
+        -   **resolution** (`Tuple[int, int]`): The grid's resolution,
+            representing the spacing between grid points (row resolution,
+            column resolution).
     """
     shape, origin, resolution = None, None, None
     try:
@@ -156,28 +221,37 @@ def window_apply_grid_coords(
         check: bool = True,
         ) -> Tuple[np.ndarray]:
     """Apply a window to a grid.
-    
-    The grid can be given either as a 3D grid, a tuple of 2 2D arrays or a tuple
-    of 2 1D arrays.
-    
-    Args:
-        grid_coords: grid corresponding coordinates. If not given they are
-                The grid coordinates are given as a 3d arrays or a tuple of 1d
-                or 2d arrays containing the columns and the rows of pixels
-                centroïds.
-        win: the window to apply. The window is given as a list of tuple
-                containing the first and last index for each dimension.
-                e.g. for a dimension 2 : 
-                ((first_row, last_row), (first_col, last_col))
-             its dimension is not the same as the dimension of the input array :
-             the number of tuple (first, last) must be equal to the number of
-             dimensions in the array.
-             If one or multiple axes are not taken, the corresponding tuple(s)
-             must be set in the window in order to comply the the previous must.
-        check: boolean option to activate window_apply input's consistency check
-    
-    Returns:
-        The windowed grid as a tuple of 2D or 1D coordinates
+
+    The grid can be given as a 3D grid, a tuple of two 2D arrays, or a tuple
+    of two 1D arrays. This function extracts the part of the grid that falls
+    within the specified window.
+
+    Parameters
+    ----------
+    grid_coords : Union[Tuple[np.ndarray], List[np.ndarray], np.ndarray]
+        Grid coordinates. These coordinates can be provided as a 3D array or as 
+        a tuple of 1D or 2D arrays containing the column and row centroids of 
+        pixels.
+
+    win : np.ndarray
+        The window to apply. The window is provided as a list of tuples, each 
+        containing the first and last index for a given dimension.
+        For example, for a 2D grid, it would be
+        ``((first_row, last_row), (first_col, last_col))``. The number of
+        (first, last) tuples must match the number of dimensions in the input 
+        array. If certain axes are not to be windowed, their corresponding 
+        tuples in `win` should be set accordingly (e.g., to cover the full 
+        extent of that dimension).
+
+    check : bool, optional
+        A boolean option to activate consistency checks on the input of
+        `window_apply`, by default True.
+
+    Returns
+    -------
+    Tuple[np.ndarray]
+        The windowed grid as a tuple of 2D or 1D coordinates, depending on the 
+        input `grid_coords` format.
     """
     windowed_grid = None
     try:
@@ -203,27 +277,43 @@ def window_apply_shape_origin_resolution(
         resolution: Tuple[int, int],
         win: np.ndarray,
         ) -> Tuple[Tuple[int, int], Tuple[float, float], Tuple[int, int]]:
-    """Apply a window to the 3 arguments shape, origin and resolution
-    
-    Args:
-        shape: grid output shape as a tuple of integer (number of rows, number 
-                of columns).
-        origin: grid origin as a tuple of float (origin's row coordinate, 
-                origin's column coordinate)
-        resolution: grid resolution as a tuple of integer (row resolution,
-                columns resolution)
-        win: the window to apply. The window is given as a list of tuple
-                containing the first and last index for each dimension.
-                e.g. for a dimension 2 : 
-                ((first_row, last_row), (first_col, last_col))
-             its dimension is not the same as the dimension of the input array :
-             the number of tuple (first, last) must be equal to the number of
-             dimensions in the array.
-             If one or multiple axes are not taken, the corresponding tuple(s)
-             must be set in the window in order to comply the the previous must.
+    """Apply a window to the shape, origin, and resolution arguments.
 
-    Returns:
-        shape, origin, resolution
+    This function adjusts the grid's defining parameters (shape, origin, and 
+    resolution) based on a specified window, effectively cropping the grid's 
+    extent.
+
+    Parameters
+    ----------
+    shape : Tuple[int, int]
+        Grid output shape as a tuple of integers (number of rows, number
+        of columns).
+
+    origin : Tuple[float, float]
+        Grid origin as a tuple of floats (origin's row coordinate, origin's 
+        column coordinate).
+
+    resolution : Tuple[int, int]
+        Grid resolution as a tuple of integers (row resolution, columns
+        resolution).
+
+    win : np.ndarray
+        The window to apply. It's provided as a list of tuples, each containing 
+        the first and last index for a given dimension. For example, for a 2D 
+        grid: ``((first_row, last_row), (first_col, last_col))``. The number of 
+        (first, last) tuples must match the number of dimensions in the array. 
+        If one or multiple axes aren't taken, the corresponding tuple(s) must be
+        set in the window to comply with this requirement.
+
+    Returns
+    -------
+    Tuple[Tuple[int, int], Tuple[float, float], Tuple[int, int]]
+        A tuple containing the adjusted:
+
+        -   **shape** (`Tuple[int, int]`): The new shape after windowing.
+        -   **origin** (`Tuple[float, float]`): The new origin after windowing.
+        -   **resolution** (`Tuple[int, int]`): The resolution (unchanged
+            by windowing).
     """
     shape_out, origin_out, resolution_out \
             = [None, None], [None, None], [None, None]
@@ -247,22 +337,41 @@ def check_grid_coords_definition(
         resolution: Optional[Tuple[int, int]],
         ) -> Union[Tuple[np.ndarray, np.ndarray], np.ndarray]:
     """Check grid definition's parameters.
-    
-    Args:
-        grid_coords: grid corresponding coordinates. If not given they are
-                computed with shape, origin and resolution arguments.
-                The grid coordinates are given as tuple of 1d or 2d arrays 
-                containing the columns and the rows of pixels centroïds given
-                in the same frame as the geometry.
-        shape: grid output shape as a tuple of integer (number of rows, number 
-                of columns).
-        origin: grid origin as a tuple of float (origin's row coordinate, 
-                origin's column coordinate)
-        resolution: grid resolution as a tuple of integer (row resolution,
-                columns resolution)
-        
-    Returns:
-        Updated grid_coords (if needed)
+
+    This function validates and, if necessary, computes the grid coordinates
+    based on the provided `shape`, `origin`, and `resolution` arguments.
+    It ensures that the grid is well-defined for subsequent operations.
+
+    Parameters
+    ----------
+    grid_coords : Optional[Tuple[np.ndarray, np.ndarray]]
+        Grid coordinates. If not provided (i.e., `None`), they are computed
+        using the `shape`, `origin`, and `resolution` arguments.
+        These coordinates are given as a tuple of 1D or 2D arrays containing
+        the column and row centroids of pixels, expressed in the same
+        geometrical frame.
+
+    shape : Optional[Tuple[int, int]]
+        Grid output shape as a tuple of integers (number of rows, number of 
+        columns). This argument is used to compute `grid_coords` if they are not
+        provided.
+
+    origin : Optional[Tuple[float, float]]
+        Grid origin as a tuple of floats (origin's row coordinate,
+        origin's column coordinate). This argument is used to compute
+        `grid_coords` if they are not provided.
+
+    resolution : Optional[Tuple[int, int]]
+        Grid resolution as a tuple of integers (row resolution, columns
+        resolution). This argument is used to compute `grid_coords` if they are 
+        not provided.
+
+    Returns
+    -------
+    Union[Tuple[np.ndarray, np.ndarray], np.ndarray]
+        The updated grid coordinates. This will be a tuple of 1D or 2D NumPy 
+        arrays, or a single NumPy array, depending on how the grid is 
+        represented internally after the checks.
     """
     # Check computation domain arguments
     # We make sure here that the coordinates are either given through the
@@ -316,15 +425,37 @@ def grid_resolution_window(
         resolution: Tuple[int, int],
         win: np.ndarray,
         ) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    This method computes the required window needed in the input grid in order
-    to cover a full target resolution given through the 'window' parameter.
-    If grid's oversampling are equal to 1 in both direction, the required window
-    is directly equal to the input window.
+    """Compute the required window in the input grid to cover a target window.
+
+    This method determines the necessary window in the input grid to encompass
+    a specified target window at full resolution. If the grid's oversampling
+    factors are 1 in both row and column directions, the required window
+    directly matches the input window.
+
+    Parameters
+    ----------
+    resolution : Tuple[int, int]
+        The grid's resolution factors for rows and columns. This indicates
+        how many grid units correspond to one full-resolution unit along
+        each axis.
+
+    win : np.ndarray
+        The target full-resolution window. This defines the spatial extent
+        (e.g., ``((row_start, row_end), (col_start, col_end))``) that needs
+        to be covered by the input grid.
+
+    Returns
+    -------
+    Tuple[np.ndarray, np.ndarray]
+        A tuple containing two NumPy arrays representing the adjusted window for
+        the input grid, accounting for the resolution differences :
+        
+            -   The first array corresponds to the minimal window to extract
+                from the grid at low resolution.
+            -   The second array corresponds to the window to apply at full
+                resolution on the full resolution extract obtained from the
+                first array to achieve the target window.
     
-    Args:
-        resolution : The grid's resolution factors for rows and columns
-        win: The target full resolution window
     """
     resolution_arr = np.asarray(resolution)
     
@@ -350,16 +481,45 @@ def grid_resolution_window_safe(
         win: np.ndarray,
         grid_shape : Tuple[int, int],
         ) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    This method computes the required window needed in the input grid in order
-    to cover a full target resolution given through the 'window' parameter.
-    If grid's oversampling are equal to 1 in both direction, the required window
-    is directly equal to the input window.
+    """Compute the required window in the input grid to cover a target window 
+    safely.
+
+    This method determines the necessary window within the input grid to
+    encompass a specified target window at full resolution. It's a "safe"
+    version, considering the total `grid_shape` to prevent out-of-bounds
+    access. If the grid's oversampling factors are 1 in both row and column
+    directions, the required window directly matches the input window.
+
+    Parameters
+    ----------
+    resolution : Tuple[int, int]
+        The grid's resolution factors for rows and columns. This indicates
+        how many grid units correspond to one full-resolution unit along
+        each axis.
+
+    win : np.ndarray
+        The target full-resolution window. This defines the spatial extent
+        (e.g., ``((row_start, row_end), (col_start, col_end))``) that needs
+        to be covered by the input grid.
+
+    grid_shape : Tuple[int, int]
+        The total shape (rows, columns) of the input grid. This is used
+        to ensure the computed window does not extend beyond the actual
+        dimensions of the grid.
+
+    Returns
+    -------
+    Tuple[np.ndarray, np.ndarray]
+        A tuple containing two NumPy arrays representing the adjusted window
+        for the input grid, accounting for the resolution differences and
+        clamped by `grid_shape`:
+        
+            -   The first array corresponds to the minimal window to extract
+                from the grid at low resolution.
+            -   The second array corresponds to the window to apply at full
+                resolution on the full resolution extract obtained from the
+                first array to achieve the target window.
     
-    Args:
-        resolution : The grid's resolution factors for rows and columns
-        win: The target full resolution window
-        grid_shape: The total shape (rows, columns) of the input grid.
     """
     resolution_arr = np.asarray(resolution)
     grid_shape_arr = np.asarray(grid_shape)

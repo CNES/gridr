@@ -1,6 +1,6 @@
 # coding: utf8
 #
-# Copyright (c) 2024 Centre National d'Etudes Spatiales (CNES).
+# Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
 # This file is part of GRIDR
 # (see https://gitlab.cnes.fr/gridr/gridr).
@@ -44,100 +44,103 @@ def array_compute_resampling_grid_geometries(
         grid_mask_valid_value: Optional[int] = 1,
         grid_nodata: Optional[float] = None,
         ) -> Union[PyGridGeometriesMetricsF64, None]:
-    """
-    Computes resampling grid geometries metrics from given row and column grids.
+    """Computes resampling grid geometries metrics from given row and column 
+    grids.
 
     This function analyzes the validity of grid points (nodes) along rows and
-    columns to determine bounding boxes and transition matrix for resampling
+    columns to determine bounding boxes and a transition matrix for resampling
     operations on grids. It returns detailed information about the source and
     destination grid bounds, as well as the transition matrix describing the
     linear transformation between source and destination grids.
 
-    This method wraps a Rust function 
+    This method wraps a Rust function
     (`py_array1_compute_resampling_grid_geometries_f64_f64`) for grid metrics
     computation.
 
-    Args:
-    -----
-        grid_row : np.ndarray
-            A 2D array representing the row coordinates of the target grid, with
-            the same shape as `grid_col`. The coordinates target row positions 
-            in the `array_in` input array.
+    Parameters
+    ----------
+    grid_row : np.ndarray
+        A 2D array representing the row coordinates of the target grid,
+        with the same shape as `grid_col`. The coordinates target row
+        positions in the `array_in` input array.
 
-        grid_col : np.ndarray
-            A 2D array representing the column coordinates of the target grid,
-            with the same shape as `grid_row`. The coordinates target column
-            positions in the `array_in` input array.
+    grid_col : np.ndarray
+        A 2D array representing the column coordinates of the target grid,
+        with the same shape as `grid_row`. The coordinates target column
+        positions in the `array_in` input array.
 
-        grid_resolution : Tuple[int, int]
-            A tuple specifying the oversampling factor for the grid for rows and
-            columns. The resolution value of 1 represents full resolution, and
-            higher values indicate lower resolution grids.
+    grid_resolution : Tuple[int, int]
+        A tuple specifying the oversampling factor for the grid along rows and
+        columns. A resolution value of 1 represents full resolution, while
+        higher values indicate lower resolution grids.
 
-        win : Optional[np.ndarray], default None
-            A window (or sub-region) of the grid to limit the computation to a
-            specific target region. The window is defined as a list of tuples
-            containing the first and last indices for each dimension.
-            If `None`, the entire grid is processed.
+    win : Optional[np.ndarray], default None
+        An optional window (or sub-region) of the grid to limit the
+        computation to a specific target region. The window is defined as a
+        list of tuples containing the first and last indices for each dimension.
+        If `None`, the entire grid is processed.
 
-        grid_mask : Optional[np.ndarray], default None
-            An optional integer mask array for the grid. Grid cells
-            corresponding to `grid_mask_valid_value` are considered **valid**;
-            all other values indicate **invalid** cells and will `nodata_out` in
-            the output array.
-            If not provided, the entire grid is considered valid.
-            The grid mask must have the same shape as `grid_row` and `grid_col`.
-        
-        grid_mask_valid_value: Optional[int], default None
-            The value in `grid_mask` that designates a **valid** grid cell.
-            All values in `grid_mask` that differ from this will be treated as
-            **invalid**.  
-            This parameter is required if `grid_mask` is provided.
-        
-        grid_nodata: Optional[float], default None
-            The value in `grid_row` and `grid_col` to consider as **invalid**
-            cells.
-            Please note this option is exclusive with the `grid_mask`. The
-            exclusivity is managed within the bound core method.
+    grid_mask : Optional[np.ndarray], default None
+        An optional integer mask array for the grid. Grid cells
+        corresponding to `grid_mask_valid_value` are considered **valid**;
+        all other values indicate **invalid** cells and will result in
+        `nodata_out` in the output array. If not provided, the entire grid
+        is considered valid. The grid mask must have the same shape as
+        `grid_row` and `grid_col`.
 
-    Returns:
-    --------
-    PyGridGeometriesMetricsF64
-        A structure containing computed metrics.
+    grid_mask_valid_value : Optional[int], default 1
+        The value in `grid_mask` that designates a **valid** grid cell.
+        All values in `grid_mask` that differ from this will be treated as
+        **invalid**. This parameter is required if `grid_mask` is provided.
 
-    Raises:
+    grid_nodata : Optional[float], default None
+        The value in `grid_row` and `grid_col` to consider as **invalid**
+        cells. Note that this option is exclusive with `grid_mask`. This
+        exclusivity is managed within the core bound method.
+
+    Returns
     -------
-    Exception
-        If the `py_array1_compute_resampling_grid_geometries_f64_*` function is
-        not available for the provided input types.
+    Union[PyGridGeometriesMetricsF64, None]
+        A structure containing the computed metrics (`PyGridGeometriesMetricsF64`)
+        or `None` if no valid metrics can be computed (e.g., empty grid).
 
-    Limitations:
-    ------------
-    - The method assumes that all input arrays (`grid_row`, `grid_col`, etc.)
-      are C-contiguous. If any of them are not, the method may raise an
-      assertion error.
-    - The method assumes that the grid related arrays (`grid_row`, `grid_col`, 
-      `grid_mask`) have the same shapes. Mismatched shapes between `grid_row`,
-      `grid_col`, and `grid_mask` will raise an assertion error.
-    - The `win` parameter, if provided, must be compatible with the grid shape. 
-      If `win` exceeds the bounds of the grid, an error may occur.
-    - The method does not handle invalid or missing values in the input arrays
-      or masks. 
-      Users are responsible for ensuring that any invalid or missing data is
-      appropriately handled before calling the method.
-
-    Notes:
+    Raises
     ------
+    Exception
+        If the underlying Rust function
+        `py_array1_compute_resampling_grid_geometries_f64_*` is not available
+        for the provided input types.
+
+    Notes
+    -----
+    
     - This method serves as a preprocessing step prior to resampling raster-like
-      data onto a target coordinate grid. The resulting transition matrix
+      data onto a target coordinate grid. The resulting transition matrix 
       facilitates effective anti-aliasing management.
     - The computed source bounds are intended to restrict the read window of the
       input raster, optimizing data access. Similarly, the destination bounds 
-      define the output grid window, preventing unnecessary processing of nodata
-      regions.
+      define the output grid window, preventing  unnecessary processing of 
+      nodata regions.
     - The method is designed to support tiled processing workflows by accepting 
-      an optional window parameter, enabling integration within tile-based
+      an optional window parameter, enabling integration within tile-based 
       operations.
+
+    Limitations
+    -----------
+    
+    - The method assumes that all input arrays (`grid_row`, `grid_col`, etc.) 
+      are C-contiguous. If any of them are not, the method may raise an 
+      assertion error.
+    - The method assumes that the grid-related arrays (`grid_row`, `grid_col`, 
+      `grid_mask`) have the same shapes. Mismatched shapes will raise an 
+      assertion error.
+    - The `win` parameter, if provided, must be compatible with the grid shape. 
+      If `win` exceeds the bounds of the grid, an error may occur.
+    - The method does not handle invalid or missing values in the input arrays 
+      or masks beyond what's specified by `grid_mask` or `grid_nodata`. Users 
+      are responsible for ensuring any invalid or missing data is appropriately 
+      handled before calling this method.
+      
     """
     ret = None
     assert(grid_row.flags.c_contiguous is True)
@@ -195,37 +198,72 @@ def interpolate_grid(
         mask_binarize_precision: float = 1e-6,
         mask_dtype: np.dtype = np.uint8,
         ) -> Tuple[np.ndarray]:
-    """
-    @doc
-    
-    Interpolate a 3-dimensionnal grid and its associated 2-dimensional mask.
-    The first dimension of the grid contain the variable.
-    
-    We assume here that the mask respect the convention where all non zero
-    values are considered masked. The output mask will be binarized (i.e values
-    equal to 0 or 1) according a binarization threshold used on the interpolated
-    values :
-    
-        final_mask(i,j) = 0 only if abs(interp_mask(i-j)) < threshold
-    
-    The grid is interpolated on the mesh generated by the x_new and y_new
-    coordinates and using a linear interpolation.
-    
-    Args:
-        grid: input 3-dimensionnal grid
-        grid_mask : input 2-dimensionnal mask
-        x : 1D coordinates associated to the grid (and mask) for column's
-            indexes.
-        y : 1D coordinates associated to the grid (and mask) for row's indexes.
-        x_new: 1D coordinates associated to the interpolated grid and mask for
-            columns.
-        y_new: 1D coordinates associated to the interpolated grid and mask for
-            rows.
-        dtype: dtype to use for computation. If None it uses the same dtype as
-            input grid
-        mask_binarize_precision: threshold used for interpolated mask
-            binarization.
-        mask_dtype: type of the output mask (should be np.uint8 or bool)
+    """Interpolate a 3-dimensional grid and its associated 2-dimensional mask.
+
+    The first dimension of the grid contains the variable. This function
+    performs linear interpolation of both the grid data and its mask onto a new 
+    coordinate mesh defined by `x_new` and `y_new`.
+
+    We assume here that the input mask follows the convention where all non-zero
+    values are considered masked. The output mask will be binarized (i.e., 
+    values equal to 0 or 1) according to a binarization threshold applied to the
+    interpolated mask values:
+
+    .. math::
+        final\\_mask(i,j) = 0 \\quad \\text{only if} \\quad |interp\\_mask(i,j)| < threshold
+
+    The grid is interpolated on the mesh generated by the `x_new` and `y_new`
+    coordinates, using a linear interpolation method.
+
+    Parameters
+    ----------
+    grid : Optional[np.ndarray]
+        Input 3-dimensional grid. Its first dimension should represent different
+        variables or bands, while the subsequent two dimensions correspond to 
+        spatial (row, column) data.
+
+    grid_mask : Optional[np.ndarray]
+        Input 2-dimensional mask. This mask should have the same spatial
+        dimensions as `grid` (i.e., its last two dimensions). Non-zero values 
+        are treated as masked.
+
+    x : np.ndarray
+        1D coordinates associated with the input `grid` (and `grid_mask`) for 
+        column indexes.
+
+    y : np.ndarray
+        1D coordinates associated with the input `grid` (and `grid_mask`) for 
+        row indexes.
+
+    x_new : np.ndarray
+        1D coordinates associated with the interpolated grid and mask for
+        columns. This defines the new horizontal sampling of the output grid.
+
+    y_new : np.ndarray
+        1D coordinates associated with the interpolated grid and mask for rows.
+        This defines the new vertical sampling of the output grid.
+
+    dtype : Optional[np.dtype], default None
+        Data type to use for computation and for the output interpolated grid.
+        If `None`, it uses the same dtype as the input `grid`.
+
+    mask_binarize_precision : float, default 1e-6
+        Threshold used for the interpolated mask's binarization. Values with an 
+        absolute magnitude less than this threshold will be set to 0 in the 
+        output mask.
+
+    mask_dtype : np.dtype, default np.uint8
+        Data type of the output mask. This should typically be `np.uint8`
+        (for 0 or 1 values) or `bool`.
+
+    Returns
+    -------
+    Tuple[np.ndarray, np.ndarray]
+        A tuple containing:
+
+        -   The interpolated 3-dimensional grid.
+        -   The binarized 2-dimensional interpolated mask.
+        
     """
     interp_grid = None
     interp_grid_mask = None
@@ -279,7 +317,79 @@ def oversample_regular_grid(
         grid_mask_dtype: np.dtype = np.uint8,
         win: Optional[np.ndarray] = None,
         ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-    """ Get an linear interpolated oversampled grid from the input grid.
+    """Get a linearly interpolated oversampled grid from the input grid.
+
+    This function takes an input grid and optionally an associated mask, then 
+    oversamples them to a higher resolution based on provided oversampling 
+    factors. It handles the definition of the target interpolation coordinates 
+    and leverages `interpolate_grid` for the actual resampling. The output grid 
+    and mask will have dimensions scaled by `grid_oversampling_row` and 
+    `grid_oversampling_col`.
+
+    Parameters
+    ----------
+    grid : Optional[np.ndarray]
+        Input 3-dimensional grid. Its first dimension represents different
+        variables or bands, while the subsequent two dimensions correspond
+        to spatial (row, column) data. Can be `None` if only `grid_mask`
+        is to be oversampled.
+
+    grid_oversampling_row : int
+        Integer factor by which to oversample the grid along the row dimension. 
+        A value of 1 means no oversampling in this dimension.
+
+    grid_oversampling_col : int
+        Integer factor by which to oversample the grid along the column 
+        dimension. A value of 1 means no oversampling in this dimension.
+
+    grid_mask : Optional[np.ndarray]
+        Optional 2-dimensional mask associated with the input grid. If `grid` is
+        `None`, this mask's shape is used to determine the original grid 
+        dimensions.
+
+    dtype : Optional[np.dtype], default None
+        Data type to use for computation and for the output interpolated grid. 
+        If `None`, it attempts to infer from `grid.dtype` if `grid` is provided 
+        and floating-point; otherwise, a `ValueError` is raised.
+
+    grid_mask_binarize_precision : Optional[float], default 1e-6
+        Threshold used for the interpolated mask's binarization. This
+        parameter is passed directly to `interpolate_grid`.
+
+    grid_mask_dtype : np.dtype, default np.uint8
+        Data type of the output mask (e.g., `np.uint8` for 0 or 1 values,
+        or `bool`). This parameter is passed directly to `interpolate_grid`.
+
+    win : Optional[np.ndarray], default None
+        An optional window (or sub-region) of the *oversampled* grid to compute.
+        If `None`, the entire oversampled grid is processed. The window should 
+        be defined in terms of the *oversampled* coordinates 
+        (e.g., ``((row_start, row_end), (col_start, col_end))``).
+
+    Returns
+    -------
+    Tuple[Optional[np.ndarray], Optional[np.ndarray]]
+        A tuple containing:
+
+        -   `out_grid` (`Optional[np.ndarray]`): The oversampled 3-dimensional 
+            grid, or `None` if the input `grid` was `None`.
+        -   `out_grid_mask` (`Optional[np.ndarray]`): The oversampled and
+            binarized 2-dimensional mask, or `None` if the input `grid_mask` was
+            `None`.
+
+    Raises
+    ------
+    AssertionError
+        If `grid` is provided but its number of dimensions (`ndim`) is not 3.
+    
+    AssertionError
+        If the calculated or provided `win` is outside the domain of the
+        oversampled grid (checked by an internal `window_check` function).
+            
+    ValueError
+        If `dtype` is `None` and the function cannot infer a floating-point
+        type from the input `grid`.
+        
     """
     # Check that the grid dimension is 3
     out_grid, out_grid_mask = None, None
@@ -349,38 +459,83 @@ def build_grid(
         out: np.ndarray,
         computation_dtype: Optional[np.dtype] = None,
         ) -> Optional[np.ndarray]:
-    """
-    Create the target resolution grid.
+    """Create the target resolution grid.
+
+    This method generates a grid at a specified target resolution by resampling 
+    an input raster-like grid. It performs no I/O operations.
+    The function supports providing a preallocated output buffer for efficiency.
+
+    A preallocated output buffer can be passed to the method via the `out`
+    argument. If provided, its shape must be consistent with the expected output
+    shape determined by `grid_target_win` and `resolution`.
+
+    The data type used for interpolation can also be specified with
+    `computation_dtype`. Note that if `computation_dtype` differs from the
+    output buffer's data type (or the input grid's data type if `out` is not 
+    provided), an implicit cast to the output data type will be performed during 
+    the final assignment.
+
+    Parameters
+    ----------
+    resolution : Tuple[int, int]
+        The desired resolution of the output grid. Currently, only full
+        resolution (i.e., `(1, 1)`) is implemented. This parameter influences 
+        the resampling (oversampling) of the input grid.
+
+    grid : np.ndarray
+        The input grid, expected to be a 3-dimensional NumPy array. Its first 
+        dimension typically represents different bands or variables.
+
+    grid_target_win : np.ndarray
+        The production window for the output grid. It's provided as a
+        2-dimensional array of shape (2, 2) defining
+        ``((first_row, last_row), (first_col, last_col))``. This window is 
+        expressed in the output grid's coordinate system.
+
+    grid_resolution : Tuple[int, int]
+        The resolution (oversampling factors) of the input `grid` in row and 
+        column directions. For example, `(2, 2)` means the input grid is twice 
+        oversampled in both dimensions compared to its intrinsic resolution.
+
+    out : np.ndarray
+        An optional preallocated NumPy array buffer to store the result.
+        If provided, its shape must perfectly match the expected output shape 
+        derived from `grid_target_win` and `resolution`.
+
+    computation_dtype : Optional[np.dtype], default None
+        An optional data type to use for the interpolation computations.
+        If `None`, it defaults to the `out` array's data type if `out` is given,
+        or the `grid` data type otherwise.
+
+    Returns
+    -------
+    Optional[np.ndarray]
+        The computed grid as a NumPy array if `out` was `None`. If `out` was 
+        provided, the result is written directly into it, and this function 
+        returns `None`.
+
+    Raises
+    ------
+    ValueError
+        If `resolution` or `grid` are `None`.
     
-    This method only works on raster and do not perform IO.
+    ValueError
+        If the input `grid` does not have 3 dimensions.
     
-    A preallocated output buffer can be passed to the method through the 'out'
-    arugment. If it is given it must be consistent with the given 'shape'.
+    ValueError
+        If the desired output `resolution` is not `(1, 1)` (due to current
+        implementation limitations).
     
-    The dtype to use for interpolation can also be given. Please note that if it
-    does not correspond to the 'out' data type (or the 'grid' data if 'out' is
-    no provided), the dtype used for interpolation can be different from the 
-    data dtype. An implicit cast to the output dtype will be performed at final
-    output assignment.
+    ValueError
+        If `grid_target_win` is not a 2D window.
     
-    Args:
-        resolution: the resolution of the output grid. Only full resolution (ie
-                (1,1) is currently implemented. The resolution is used for the
-                resampling (oversampling) of the input grid.
-        grid: the input grid
-        grid_target_win: the production window given as a list of  
-                2 tuples containing the first and last index for the row and column
-                dimensions, i.e : 
-                (((first_row, last_row), (first_col, last_col))
-                It is defined in the output grid coordinates system.
-        grid_resolution: the input grid resolution in row and column.
-        out: an optional preallocated buffer to store the result
-        computation_dtype: an optional data type that will be used of
-                interpolation. If None if will use the 'out' data type if given,
-                the 'grid' data type otherwise.
-        
-    Returns:
-        The computed grid or None if `out` is not None.
+    ValueError
+        If `grid_target_win` is outside the bounds of the full-resolution
+        input grid.
+    
+    ValueError
+        If `out` is provided but its shape does not match the expected
+        output shape.
     """
     ret = None
     # -- Perform some checks on arguments and init optional arguments
