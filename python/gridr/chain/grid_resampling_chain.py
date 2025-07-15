@@ -33,7 +33,8 @@ from gridr.core.grid.grid_commons import (grid_full_resolution_shape,
         grid_resolution_window_safe)
 from gridr.core.grid.grid_utils import build_grid, array_compute_resampling_grid_geometries
 from gridr.core.grid.grid_resampling import array_grid_resampling
-from gridr.core.grid.grid_rasterize import GeometryType
+from gridr.core.grid.grid_rasterize import GeometryType, GridRasterizeAlg
+from gridr.core.grid.grid_mask import Validity, build_mask
 from gridr.io.common import GridRIOMode
 from gridr.scaling.shmutils import (SharedMemoryArray, shmarray_wrap,
         create_and_register_sma)
@@ -43,6 +44,8 @@ DEFAULT_TILE_SHAPE = (1000, 1000)
 DEFAULT_NCPU = 1
 
 READ_TILE_MIN_SIZE = (1000, 1000)
+
+GEOMETRY_RASTERIZE_KWARGS = {'alg': GridRasterizeAlg.RASTERIO_RASTERIZE}
 
 def read_win_from_grid_metrics(
         grid_metrics: PyGridGeometriesMetricsF64,
@@ -434,14 +437,16 @@ def basic_grid_resampling_array(
             
             # TODO : do not force float 64 here => requires bound core function to handle other types
             #cstrip_read_buffer = np.zeros(cstrip_read_buffer_shape, dtype=array_src_profile.dtype, )
-            array_src_read_buffer = np.zeros(array_src_read_buffer_shape, dtype=np.float64 )
+            array_src_read_buffer = np.zeros(array_src_read_buffer_shape, 
+                    dtype=np.float64, order='C' )
             
             # Manage the mask assuming here the same shape as image
             # Default value to 0 in order to init as not valid
             # Here we init in all cases (array_src_mask_ds given or not)
             array_src_mask_read_buffer_shape = window_shape(array_src_win_marged)
-            array_src_mask_read_buffer = np.zeros(array_src_mask_read_buffer_shape,
-                    dtype=array_src_mask_dtype)
+            array_src_mask_read_buffer = np.full(
+                    array_src_mask_read_buffer_shape, Validity.INVALID,
+                    dtype=array_src_mask_dtype, order='C')
             
             
             # Read the source array.
@@ -488,7 +493,8 @@ def basic_grid_resampling_array(
                     f"- source window : {array_src_win_read} "
                     f"- target indices : {indices} ..." )
                         
-                array_src_mask_read_buffer[indices] = array_src_mask_ds.read(array_src_mask_band,
+                array_src_mask_read_buffer[indices] = array_src_mask_ds.read(
+                        array_src_mask_band,
                         window = as_rio_window(array_src_win_read)
                         ).astype(array_src_mask_dtype)
                     
@@ -504,7 +510,7 @@ def basic_grid_resampling_array(
                 indices = get_mask_read_buffer_indices(pad,
                         array_src_win_read_shape)
                 
-                array_src_mask_read_buffer[indices] = 1
+                array_src_mask_read_buffer[indices] = Validity.VALID
             
             # TODO : here we could update the array mask with the rasterization of 
             #        a geometry
@@ -533,21 +539,62 @@ def basic_grid_resampling_array(
             if array_src_geometry_pair is not None:
                 
                 # We have to define the rasterization mesh so that is will be 
-                # aligned with array_in_mask and the optional array_src_mask.
+                # aligned with the current raster mask.
                 # Here the rasterize grid is given by :
                 # - its origin : `array_src_origin`
-                # - its shape : 
+                # - its shape : `array_src_mask_read_buffer` shape
+                #
+                # The `array_src_mask_read_buffer` is defined in all cases
+                # (with or without `array_src_mask_ds` defined)
+                # The goal here is to use build_mask in order to merge the 
+                # existing `array_src_mask_read_buffer` with the geometry
+                # masks
+                
+                # `array_src_origin` defines the origin of the current sub-array
+                # in the full array using GridR's internal convention, ie using
+                # (0, 0) as origin.
+                # 
+                # ┌────────────────────────────────────────────────────────────┐
+                # │ WARN :                                                     │
+                # │                                                            │ 
+                # │ `array_src_origin` is a negative shift (see definition)    │
+                # │ We need to take its opposite here                          │
+                # └────────────────────────────────────────────────────────────┘
+                # In order to rasterize we have to take care of the 
+                # `array_src_geometry_origin`
+                print('array_src_origin', array_src_origin)
+                cgeometry_origin = - np.asarray(array_src_origin).astype(np.float64)
+                if array_src_geometry_origin is not None:
+                    cgeometry_origin += array_src_geometry_origin
                 
                 # ┌────────────────────────────────────────────────────────────┐
-                # │ WARNING :                                                  │
+                # │ NOTE :                                                     │
                 # │                                                            │ 
-                # │ The build_mask core method adopts a different convention : │ 
-                # │ - 0 is considered valid and 1 is considered invalid.       │
-                # │ TODO : we may need to change this in the future !!!        │
+                # │ The build_mask core method adopts the same convention :    │ 
+                # │ - Validity.VALID (1) is considered valid                   │ 
+                # │ - Validity.INVALID (0) is considered invalid               │
                 # └────────────────────────────────────────────────────────────┘
                 
-                # TODO FROM HERE
-                pass
+                # We do not pass the mask_in here as it will currently result in
+                # non necessary thresholding
+                # In that case we cant pass the out with the current code as
+                # it will result in a overwrite of the buffer.
+                geom_mask = build_mask(
+                        shape=array_src_mask_read_buffer.shape,
+                        resolution=(1,1),
+                        out=None,
+                        geometry_origin=cgeometry_origin,
+                        geometry_pair=array_src_geometry_pair,
+                        mask_in=None,
+                        mask_in_target_win=None,
+                        mask_in_resolution=None,
+                        oversampling_dtype=None,
+                        mask_in_binary_threshold=None,
+                        rasterize_kwargs=GEOMETRY_RASTERIZE_KWARGS,
+                        init_out=False,
+                        )
+                
+                array_src_mask_read_buffer &= geom_mask
             
             # TODO/TOCHECK We may reset the sma_w_array_buffer.array if the cslices
             # is limited (not the case for now)
