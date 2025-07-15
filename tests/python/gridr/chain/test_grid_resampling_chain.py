@@ -23,7 +23,7 @@ import shapely
 import rasterio
 
 from gridr.core.grid.grid_commons import grid_full_resolution_shape
-from gridr.io.common import GridRIOMode
+from gridr.io.common import GridRIOMode, safe_raster_open
 from gridr.core.grid.grid_resampling import array_grid_resampling
 from gridr.chain.grid_resampling_chain import basic_grid_resampling_chain
 
@@ -31,65 +31,6 @@ from gridr.misc.mandrill import mandrill
 
 UNMASKED_VALUE=1
 MASKED_VALUE=0
-
-class SafeContext:
-    """
-    A context manager designed to safely wrap another resource,
-    especially useful for optional resources that might be None.
-
-    If the wrapped resource is None, __enter__ will return None,
-    and __exit__ will perform no action.
-    If the wrapped resource is a valid context manager (implements __enter__/__exit__),
-    it will delegate to that resource's methods.
-    Otherwise, if the resource is not None but not a context manager,
-    it will simply return the resource itself in __enter__ and do nothing in __exit__.
-    """
-    def __init__(self, resource):
-        """
-        Initializes the SafeContext with the given resource.
-
-        Args:
-            resource: The resource to be managed. This can be a context manager
-                      (like a file object or rasterio.DataSetReader), or None,
-                      or any other object.
-        """
-        self._resource = resource
-
-    def __enter__(self):
-        """
-        Enters the runtime context related to this object.
-
-        Returns:
-            The managed resource, or None if the initial resource was None,
-            or if the resource is not a context manager.
-        """
-        if self._resource is not None:
-            # If the resource has an __enter__ method, call it
-            if hasattr(self._resource, '__enter__'):
-                return self._resource.__enter__()
-            else:
-                # If it's not None but not a context manager, return it directly
-                return self._resource
-        return None # Return None if the initial resource was None
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """
-        Exits the runtime context related to this object.
-        Ensures proper cleanup of the wrapped resource if it's a context manager.
-
-        Args:
-            exc_type: Exception type if an exception occurred within the 'with' block.
-            exc_val: Exception value if an exception occurred.
-            exc_tb: Traceback if an exception occurred.
-
-        Returns:
-            None or a boolean indicating whether the exception was handled.
-        """
-        if self._resource is not None and hasattr(self._resource, '__exit__'):
-            # If the resource has an __exit__ method, call it
-            return self._resource.__exit__(exc_type, exc_val, exc_tb)
-        # Otherwise, do nothing for None resources or non-context managers
-        return None # Explicitly return None if no exception was handled by the wrapped resource
 
 def create_grid(nrow, ncol, origin_pos, origin_node, v_row_y, v_row_x, v_col_y, v_col_x, grid_dtype):
     """
@@ -129,12 +70,6 @@ def shape2(array):
         return (array.shape[1], array.shape[2])
     else:
         return array.shape
-
-def open_raster_or_none(apath, *args, **kwargs):
-    if apath is None:
-        return apath
-    else:
-        return rasterio.open(apath, *args, **kwargs)
 
 class TestGridResamplingChain:
     """Test class"""
@@ -239,9 +174,9 @@ class TestGridResamplingChain:
             with rasterio.open(grid_in_path, 'r') as grid_in_ds, \
                     rasterio.open(array_in_path, 'r') as array_in_ds, \
                     rasterio.open(array_out_path, "w", **array_out_open_kwargs) as array_out_ds, \
-                    SafeContext(open_raster_or_none(grid_mask_in_path)) as grid_mask_in_ds, \
-                    SafeContext(open_raster_or_none(array_mask_in_path)) as array_mask_in_ds, \
-                    SafeContext(open_raster_or_none(array_mask_out_path, "w", **mask_out_open_kwargs)) as array_mask_out_ds:
+                    safe_raster_open(grid_mask_in_path) as grid_mask_in_ds, \
+                    safe_raster_open(array_mask_in_path) as array_mask_in_ds, \
+                    safe_raster_open(array_mask_out_path, "w", **mask_out_open_kwargs) as array_mask_out_ds:
                 
                 basic_grid_resampling_chain(
                     grid_ds = grid_in_ds,
@@ -293,7 +228,7 @@ class TestGridResamplingChain:
                         array_out_mask = mask_out,)
             
             with rasterio.open(array_out_path, "r") as array_out_ds, \
-                    SafeContext(open_raster_or_none(array_mask_out_path, "r")) as array_mask_out_ds:
+                    safe_raster_open(array_mask_out_path, "r") as array_mask_out_ds:
                         
                 np.testing.assert_allclose(np.squeeze(array_out_ds.read()), array_out_validate, rtol=1e-7, atol=1e-8,
                         err_msg="Output image computed with the basic_grid_resampling_chain differs"
