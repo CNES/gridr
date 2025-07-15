@@ -365,7 +365,6 @@ def basic_grid_resampling_array(
     Masks can be passed as either `int8` or `uint8` arrays, but the values must 
     be positive and within the uint8 range of [0-255]. If you provide an `int8`
     mask, the method will internally shadow it with a `uint8` view.
-    
     If the grid metrics are not valid (i.e., there was not sufficient valid data
     to determine the grid and source boundaries), the method fills the windowed
     output with the `nodata_out` value.
@@ -584,6 +583,7 @@ def basic_grid_resampling_array(
                         array_src_win_read_shape)
                 
                 array_src_mask_read_buffer[indices] = Validity.VALID
+
                 
             # TODO : implement edge management. For now we leave it 
             # as it is considering the init zero value.
@@ -632,6 +632,7 @@ def basic_grid_resampling_array(
                 # └────────────────────────────────────────────────────────────┘
                 # In order to rasterize we have to take care of the 
                 # `array_src_geometry_origin`
+
                 cgeometry_origin = - np.asarray(array_src_origin).astype(np.float64)
                 if array_src_geometry_origin is not None:
                     cgeometry_origin += array_src_geometry_origin
@@ -783,7 +784,7 @@ def basic_grid_resampling_chain(
         
     array_src_bands : int or list of int
         Band index or list of band indices to read from `array_src_ds`.
-        
+
     array_out_ds : rasterio.io.DatasetWriter
         Output dataset where the resampled raster data will be written.
         
@@ -901,7 +902,6 @@ def basic_grid_resampling_chain(
     The `win` parameter is crucial for defining the specific output region
     to be processed, enabling partial grid resampling without loading the
     entire dataset into memory.
-    
     """
     if logger is None:
         logger = logging.getLogger(__name__)

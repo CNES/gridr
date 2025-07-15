@@ -203,6 +203,7 @@ class TestGridResamplingChain:
                 # a raster mask
                 validate_array_in_mask = array_mask_in_ds.read(1) if array_mask_in_ds else None
                 
+
                 if validate_array_in_mask is not None:
                     array_replace(
                             validate_array_in_mask,
@@ -211,7 +212,6 @@ class TestGridResamplingChain:
                             Validity.INVALID
                             )
                     validate_array_in_mask = validate_array_in_mask.view(np.uint8)
-                
                 
                 if array_in_geometry_pair is not None and \
                         (array_in_geometry_pair[0] is not None or \
