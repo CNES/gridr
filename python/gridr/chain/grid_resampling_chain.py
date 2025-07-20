@@ -25,7 +25,7 @@ import shapely
 
 from gridr.cdylib import PyGridGeometriesMetricsF64
 from gridr.core.utils import chunks
-from gridr.core.utils.array_utils import ArrayProfile
+from gridr.core.utils.array_utils import array_replace, ArrayProfile
 from gridr.core.utils.array_window import (window_shape, window_check,
         window_indices, as_rio_window, window_from_chunk, window_shift,
         window_overflow, window_extend, window_from_indices)
@@ -132,7 +132,11 @@ def read_win_from_grid_metrics(
     pad = None
     
     if (src_bounds.ymin < 0 and src_bounds.ymax < 0) \
-            or (src_bounds.xmin < 0 and src_bounds.xmax < 0):
+            or (src_bounds.xmin < 0 and src_bounds.xmax < 0) \
+            or (src_bounds.ymin > array_src_profile_2d.shape[0] - 1 \
+                    and src_bounds.ymax > array_src_profile_2d.shape[0] - 1) \
+            or (src_bounds.xmin > array_src_profile_2d.shape[1] - 1 \
+                    and src_bounds.xmax > array_src_profile_2d.shape[1] - 1):
         # The source is not readable from raster - fully outside for at least
         # one direction.
         DEBUG( "The source read window is not available ; it goes fully "
@@ -195,6 +199,7 @@ def read_win_from_grid_metrics(
 
 
 def basic_grid_resampling_array(
+        interp: str,
         grid_arr: np.ndarray,
         grid_arr_shape: Tuple[int, int],
         grid_resolution: Tuple[int, int],
@@ -205,6 +210,7 @@ def basic_grid_resampling_array(
         array_src_bands: Union[int, List[int]],
         array_src_mask_ds: Optional[rasterio.io.DatasetReader],
         array_src_mask_band: Optional[int],
+        array_src_mask_validity_pair: Optional[Tuple[int, int]],
         array_src_geometry_origin: Optional[Tuple[float, float]],
         array_src_geometry_pair: Optional[Tuple[Optional[GeometryType],
                 Optional[GeometryType]]],
@@ -228,6 +234,9 @@ def basic_grid_resampling_array(
 
     Parameters
     ----------
+    interp : str
+        The interpolator.
+    
     grid_arr : numpy.ndarray
         A 3D array of shape ``(2, rows, cols)``, containing the raster grid's
         row and column coordinates. It may represent a sub-region of a larger
@@ -269,6 +278,17 @@ def basic_grid_resampling_array(
     array_src_mask_band : int or None, optional
         Band index to read from `array_src_mask_ds` for the source mask.
         Defaults to None.
+    
+    array_src_mask_validity_pair : tuple of int, optional
+        A tuple containing two integer :
+          - The first integer corresponds to the value to consider as valid in 
+            the mask array.
+          - The second integer corresponds to the value to consider as invalid
+            in the mask array.
+        
+        If the tuple differs from (`Validity.VALID`, `Validity.INVALID`) a 
+        replace operation will be performed in order to make the mask compliant
+        with the core resampling method.
         
     array_src_geometry_origin : tuple of float or None, optional
         This optional parameter specifies the origin convention for the
@@ -340,7 +360,7 @@ def basic_grid_resampling_array(
     within this buffer.
 
     Optional masks for both the grid and the source array may be passed.
-
+    
     If the grid metrics are not valid (i.e., there was not sufficient valid data
     to determine the grid and source boundaries), the method fills the windowed
     output with the `nodata_out` value.
@@ -408,9 +428,18 @@ def basic_grid_resampling_array(
             
             array_src_mask_win_memory = 0
             array_src_mask_dtype = np.uint8
+            array_src_mask_read_dtype = np.uint8
             if array_src_mask_ds is not None:
-                array_src_mask_dtype = np.dtype(array_src_mask_ds.dtypes[array_src_mask_band-1])
-                array_src_mask_win_memory = array_src_mask_dtype.itemsize * \
+                array_src_mask_read_dtype = np.dtype(
+                        array_src_mask_ds.dtypes[array_src_mask_band-1])
+                
+                # Check array_src_mask dtype is an 8 bit integer
+                # We will ensure it is passed as uint8 later
+                if array_src_mask_read_dtype not in (np.int8, np.uint8):
+                    raise TypeError("The mask array must be an 8 bit integer "
+                            "raster.")
+                
+                array_src_mask_win_memory = array_src_mask_read_dtype.itemsize * \
                         np.prod(np.diff(array_src_win_read, axis=1))
                 DEBUG( f"Memory required for array_src_mask_win + margin : "
                         f"{array_src_mask_win_memory} bytes" )
@@ -492,11 +521,32 @@ def basic_grid_resampling_array(
                 DEBUG( f"Reading source window for source mask "
                     f"- source window : {array_src_win_read} "
                     f"- target indices : {indices} ..." )
-                        
-                array_src_mask_read_buffer[indices] = array_src_mask_ds.read(
+                
+                mask_buffer_tmp = array_src_mask_ds.read(
                         array_src_mask_band,
                         window = as_rio_window(array_src_win_read)
-                        ).astype(array_src_mask_dtype)
+                        )
+                
+                # We do not use the second element of `array_src_mask_validity_pair`
+                # It must be given in order to check if we have to force replacement
+                # even if the input valid value corresponds to `Validity.VALID`
+                if array_src_mask_validity_pair != (Validity.VALID, Validity.INVALID):
+                    DEBUG( f"Replacing read mask values to comply with internal"
+                            " convention")
+                    array_replace(
+                            mask_buffer_tmp,
+                            array_src_mask_validity_pair[0],
+                            Validity.VALID,
+                            Validity.INVALID
+                            )
+                
+                if mask_buffer_tmp.dtype == np.uint8:
+                    array_src_mask_read_buffer[indices] = mask_buffer_tmp
+                
+                else:
+                    # Due to previous test it is int8 
+                    # In that case we just get a view
+                    array_src_mask_read_buffer[indices] = mask_buffer_tmp.view(np.uint8)
                     
                 DEBUG( f"Reading source window for source mask "
                         f"- source window : {array_src_win_read} "
@@ -511,9 +561,6 @@ def basic_grid_resampling_array(
                         array_src_win_read_shape)
                 
                 array_src_mask_read_buffer[indices] = Validity.VALID
-            
-            # TODO : here we could update the array mask with the rasterization of 
-            #        a geometry
                 
             # TODO : implement edge management. For now we leave it 
             # as it is considering the init zero value.
@@ -562,7 +609,6 @@ def basic_grid_resampling_array(
                 # └────────────────────────────────────────────────────────────┘
                 # In order to rasterize we have to take care of the 
                 # `array_src_geometry_origin`
-                print('array_src_origin', array_src_origin)
                 cgeometry_origin = - np.asarray(array_src_origin).astype(np.float64)
                 if array_src_geometry_origin is not None:
                     cgeometry_origin += array_src_geometry_origin
@@ -607,7 +653,26 @@ def basic_grid_resampling_array(
             # Call the resampling method - this method returns a tuple containing
             # the output array and the output mask.
             # Here both are returned as None as the buffer are given as input
+            
+            #min_row, max_row = grid_arr[0].min(), grid_arr[0].max()
+            #min_col, max_col = grid_arr[1].min(), grid_arr[1].max()
+            
+            #min_row += array_src_origin[0]
+            #max_row += array_src_origin[0]
+            #min_col += array_src_origin[1]
+            #max_col += array_src_origin[1]
+            
+            check_boundaries = False
+            if np.any(pad != 0):
+                check_boundaries = True
+            #if min_row < 0 \
+            #        or max_row > array_src_read_buffer.shape[0] - 1 \
+            #        or min_col < 0 \
+            #        or max_col > array_src_read_buffer.shape[1] - 1:
+            #    check_boundaries = True
+            
             _ = array_grid_resampling(
+                    interp = interp,
                     array_in = array_src_read_buffer, # thats the previously read buffer
                     grid_row = grid_arr[0], # the grid rows
                     grid_col = grid_arr[1], # the grid columns
@@ -622,6 +687,7 @@ def basic_grid_resampling_array(
                     grid_mask_valid_value = grid_mask_in_unmasked_value, #: Optional[int] = 1,
                     grid_nodata = None, # TODO : manage grid_nodata input
                     array_out_mask = array_out_mask, #TODO: Optional[np.ndarray] = None,
+                    check_boundaries = check_boundaries, # We are sure we pass all the required data
                     )
     
     if full_nodata:
@@ -647,6 +713,7 @@ def basic_grid_resampling_chain(
         array_src_bands: Union[int, List[int]],
         array_src_mask_ds: Optional[rasterio.io.DatasetReader],
         array_src_mask_band: Optional[int],
+        array_src_mask_validity_pair: Optional[Tuple[int, int]],
         
         array_out_ds: rasterio.io.DatasetWriter,
 
@@ -667,10 +734,6 @@ def basic_grid_resampling_chain(
         array_src_geometry_origin: Optional[Tuple[float, float]] = None,
         array_src_geometry_pair: Optional[Tuple[Optional[GeometryType],
                 Optional[GeometryType]]] = None,
-    
-        #geometry_origin: Optional[Tuple[float, float]],
-        #geometry: Optional[Union[shapely.geometry.Polygon,
-        #        List[shapely.geometry.Polygon], shapely.geometry.MultiPolygon]],
         
         io_strip_size: int = DEFAULT_IO_STRIP_SIZE,
         io_strip_size_target: GridRIOMode = GridRIOMode.INPUT,
@@ -720,12 +783,23 @@ def basic_grid_resampling_chain(
     array_src_mask_band : int or None, optional
         Band index to read from `array_src_mask_ds` for the source mask.
         Defaults to None.
+    
+    array_src_mask_validity_pair : tuple of int, optional
+        A tuple containing two integer :
+          - The first integer corresponds to the value to consider as valid in 
+            the mask array.
+          - The second integer corresponds to the value to consider as invalid
+            in the mask array.
+        
+        If the tuple differs from (`Validity.VALID`, `Validity.INVALID`) a 
+        replace operation will be performed in order to make the mask compliant
+        with the core resampling method.
         
     array_out_ds : rasterio.io.DatasetWriter
         Output dataset where the resampled raster data will be written.
         
     interp : str
-        Interpolation method to use (e.g., 'nearest', 'linear', 'bicubic').
+        Interpolation method to use (e.g., 'nearest', 'linear', 'cubic').
         Specific interpolation options are delegated to the underlying
         resampling engine.
         
@@ -817,6 +891,7 @@ def basic_grid_resampling_chain(
     The `window` parameter is crucial for defining the specific output region
     to be processed, enabling partial grid resampling without loading the
     entire dataset into memory.
+    
     """
     if logger is None:
         logger = logging.getLogger(__name__)
@@ -1122,6 +1197,7 @@ def basic_grid_resampling_chain(
                             f"grid : {ctile_grid_win}")
                     
                     basic_grid_resampling_array(
+                            interp=interp,
                             grid_arr=cread_grid_arr,
                             grid_arr_shape=cread_shape,
                             grid_resolution=grid_resolution,
@@ -1132,6 +1208,7 @@ def basic_grid_resampling_chain(
                             array_src_bands=array_src_bands,
                             array_src_mask_ds=array_src_mask_ds, 
                             array_src_mask_band=array_src_mask_band,
+                            array_src_mask_validity_pair=array_src_mask_validity_pair,
                             array_src_geometry_origin=array_src_geometry_origin,
                             array_src_geometry_pair=array_src_geometry_pair,
                             oversampled_grid_win=ctile_grid_win,
@@ -1150,6 +1227,7 @@ def basic_grid_resampling_chain(
                         "(no tiling)")
 
                 basic_grid_resampling_array(
+                        interp=interp,
                         grid_arr=cread_grid_arr,
                         grid_arr_shape=cread_shape,
                         grid_resolution=grid_resolution,
@@ -1160,6 +1238,7 @@ def basic_grid_resampling_chain(
                         array_src_bands=array_src_bands,
                         array_src_mask_ds=array_src_mask_ds, #TODO
                         array_src_mask_band=array_src_mask_band, #TODO
+                        array_src_mask_validity_pair=array_src_mask_validity_pair,
                         array_src_geometry_origin=array_src_geometry_origin,
                         array_src_geometry_pair=array_src_geometry_pair,
                         oversampled_grid_win=win_rel,

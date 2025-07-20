@@ -387,11 +387,9 @@ pub trait GxArrayViewInterpolator
         IC: GxArrayViewInterpolationContextTrait;
     
     /// Returns the kernel size in rows.
-    #[inline(always)]
     fn kernel_row_size(&self) -> usize;
     
     /// Returns the kernel size in rows.
-    #[inline(always)]
     fn kernel_col_size(&self) -> usize;
 }
 

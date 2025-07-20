@@ -6,6 +6,7 @@ from ._libgridr import (
         py_array1_replace_u8,
         py_array1_replace_f32_u8,
         py_array1_replace_f64_u8,
+        PyInterpolatorType,
         py_array1_grid_resampling_f64,
         # from py_grid_geometry
         PyGridTransitionMatrix,
@@ -23,6 +24,7 @@ __all__ = [
         "py_array1_replace_u8",
         "py_array1_replace_f32_u8",
         "py_array1_replace_f64_u8",
+        "PyInterpolatorType",
         "py_array1_grid_resampling_f64",
         "PyGridTransitionMatrix",
         "PyGeometryBoundsUsize",

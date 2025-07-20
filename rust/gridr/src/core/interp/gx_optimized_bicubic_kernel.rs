@@ -677,7 +677,7 @@ impl GxArrayViewInterpolator for GxOptimizedBicubicInterpolator
         let kernel_center_row: i64 = (target_row_pos + 0.5).floor() as i64;
         let kernel_center_col: i64 = (target_col_pos + 0.5).floor() as i64;
  
-        let array_in_var_size = array_in.nrow * array_in.ncol;
+        //let array_in_var_size = array_in.nrow * array_in.ncol;
         let array_out_var_size = array_out.nrow * array_out.ncol;
         
         // Consider mask valid (if any)
@@ -759,9 +759,31 @@ impl GxArrayViewInterpolator for GxOptimizedBicubicInterpolator
                 context.output_mask().set_value(out_idx, 0);
             }
         } else {
+            let rel_row: f64 = target_row_pos - kernel_center_row as f64;
+            let rel_col: f64 = target_col_pos - kernel_center_col as f64;
+            
+            // Create slices to give to weight computation methods
+            let (kernel_weights_row_slice, kernel_weights_col_slice) = weights_buffer.split_at_mut(self.kernel_row_size);
+            
+            // from here - pass slice for weight computation
+            // slices are used here in order to limit buffer allocation
+            optimized_bicubic_kernel_weights(rel_row, kernel_weights_row_slice);
+            optimized_bicubic_kernel_weights(rel_col, kernel_weights_col_slice);
+            
+            if context.input_mask().is_enabled() {
+                self.interpolate_masked_unchecked(kernel_weights_row_slice, kernel_weights_col_slice,
+                        array_in, array_out, out_idx,
+                        kernel_center_row, kernel_center_col, nodata_out, context);
+            }
+            else {
+                self.interpolate_nomask_unchecked(kernel_weights_row_slice, kernel_weights_col_slice,
+                        array_in, array_out, out_idx, kernel_center_row, kernel_center_col);
+            }
         }
         Ok(())
     }
+    
+    
 
 }
 

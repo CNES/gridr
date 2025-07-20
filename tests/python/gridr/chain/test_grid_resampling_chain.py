@@ -22,6 +22,7 @@ import pytest
 import shapely
 import rasterio
 
+from gridr.core.utils.array_utils import array_replace
 from gridr.core.grid.grid_commons import grid_full_resolution_shape
 from gridr.core.grid.grid_rasterize import GeometryType, GridRasterizeAlg
 from gridr.core.grid.grid_mask import Validity, build_mask
@@ -32,8 +33,8 @@ from gridr.chain.grid_resampling_chain import (basic_grid_resampling_chain,
 
 from gridr.misc.mandrill import mandrill
 
-UNMASKED_VALUE=1
-MASKED_VALUE=0
+UNMASKED_VALUE=Validity.VALID
+MASKED_VALUE=Validity.INVALID
 
 def create_grid(nrow, ncol, origin_pos, origin_node, v_row_y, v_row_x, v_col_y, v_col_x, grid_dtype):
     """
@@ -77,37 +78,13 @@ def shape2(array):
 class TestGridResamplingChain:
     """Test class"""
     
-    @pytest.mark.parametrize("array_in, array_in_mask_positions, array_in_bands", [
-            (mandrill[0], None, [1,]),
-            (mandrill, None, [1,2,3]),
-            (mandrill[0], [(60, 160),], [1,]),
-            ])
-    @pytest.mark.parametrize("array_in_dtype", [(np.float64)])
-    @pytest.mark.parametrize("grid_vec_row, grid_vec_col, grid_origin_pos, grid_origin_node, grid_dtype, grid_mask", [
-            ((5.2, 1.2), (-2.7, 7.1), (0.3, 0.2), (0., 0.), np.float64, True),
-            ((5.2, 1.2), (-2.7, 7.1), (0.3, 0.2), (0., 0.), np.float64, False)])
-    @pytest.mark.parametrize("grid_shape, grid_resolution, window", [
-            ((50, 40), (10, 10), None),])
-    @pytest.mark.parametrize("array_in_geometry_origin, array_in_geometry_pair", [
-            (None, None), 
-            ((0.5, 0.5), (None, shapely.geometry.Polygon([(10.5,12.5), (30.5,12.5), (30.5,40.5), (10.5,40.5)]))), 
-            ])
-    @pytest.mark.parametrize("mask_out", [True, False])
-    #@pytest.mark.parametrize("grid_resolution", [(3, 4),])
-    @pytest.mark.parametrize("io_strip_size, io_strip_size_target, tile_shape", [
-        (100, GridRIOMode.OUTPUT, None),
-        (100, GridRIOMode.OUTPUT, (80, 200)),
-        (100, GridRIOMode.INPUT, (80, 200)),
-        (100, GridRIOMode.OUTPUT, (100, 200)),
-        (100, GridRIOMode.OUTPUT, (102, 200)),
-        (1000, GridRIOMode.OUTPUT, (1000, 200)),
-        (1000, GridRIOMode.OUTPUT, (1000, 1000))])
-    #@pytest.mark.parametrize("ncpu", [1, 2])
-    #@pytest.mark.parametrize("cpu_tile_shape", [(1000,1000),])
-    #@pytest.mark.parametrize("computation_dtype", [DTYPE_00,])
-    def test_build_mask_chain(self,
+    def _generic_test_build_mask_chain(self,
             request,
-            array_in, array_in_mask_positions, array_in_bands, array_in_dtype,
+            interp,
+            array_in, array_in_mask_positions, 
+            array_in_mask_validity_pair,
+            array_in_mask_type,
+            array_in_bands, array_in_dtype,
             grid_vec_row, grid_vec_col, grid_origin_pos, grid_origin_node, grid_dtype, grid_mask,
             grid_shape, grid_resolution, window, array_in_geometry_origin, array_in_geometry_pair, mask_out,
             io_strip_size, io_strip_size_target, tile_shape,
@@ -153,10 +130,10 @@ class TestGridResamplingChain:
             # Create array mask
             if array_in_mask_positions is not None:
                 array_mask_in_path = Path(output_dir) / "array_mask_in.tif"
-                array_mask = np.ones(shape2(array_in), dtype=np.uint8) * UNMASKED_VALUE
+                array_mask = np.full(shape2(array_in), array_in_mask_validity_pair[0], dtype=array_in_mask_type)
                 for pos in array_in_mask_positions:
-                    array_mask[pos[0], pos[1]] = MASKED_VALUE
-                write_array(array_mask, np.uint8, array_mask_in_path)
+                    array_mask[pos[0], pos[1]] = array_in_mask_validity_pair[1]
+                write_array(array_mask, array_in_mask_type, array_mask_in_path)
             
             # compute window and output shape
             full_output_shape = grid_full_resolution_shape(shape=grid_row.shape, resolution=grid_resolution)
@@ -197,9 +174,10 @@ class TestGridResamplingChain:
                     
                     array_src_mask_ds = array_mask_in_ds,
                     array_src_mask_band = 1,
+                    array_src_mask_validity_pair = array_in_mask_validity_pair,
                     
                     array_out_ds = array_out_ds,
-                    interp = "bicubic",
+                    interp = interp,
                     nodata_out = 0,
                     window = window,
                     
@@ -224,6 +202,16 @@ class TestGridResamplingChain:
                 # If array_src_geometry_pair is not None we have to compute
                 # a raster mask
                 validate_array_in_mask = array_mask_in_ds.read(1) if array_mask_in_ds else None
+                
+                if validate_array_in_mask is not None:
+                    array_replace(
+                            validate_array_in_mask,
+                            array_in_mask_validity_pair[0],
+                            Validity.VALID,
+                            Validity.INVALID
+                            )
+                    validate_array_in_mask = validate_array_in_mask.view(np.uint8)
+                
                 
                 if array_in_geometry_pair is not None and \
                         (array_in_geometry_pair[0] is not None or \
@@ -251,6 +239,7 @@ class TestGridResamplingChain:
                         validate_array_in_mask = geometry_mask
                 
                 array_out_validate, mask_out_validate = array_grid_resampling(
+                        interp=interp,
                         array_in = np.asarray([ array_in_ds.read(b).astype(np.float64) for b in array_in_bands]),
                         grid_row = grid_in_ds.read(1),
                         grid_col = grid_in_ds.read(2),
@@ -264,7 +253,8 @@ class TestGridResamplingChain:
                         grid_mask = grid_mask_in_ds.read(1) if grid_mask_in_ds else None,
                         grid_mask_valid_value = UNMASKED_VALUE,
                         grid_nodata = None,
-                        array_out_mask = mask_out,)
+                        array_out_mask = mask_out,
+                        check_boundaries = True,)
             
             with rasterio.open(array_out_path, "r") as array_out_ds, \
                     safe_raster_open(array_mask_out_path, "r") as array_mask_out_ds:
@@ -290,4 +280,133 @@ class TestGridResamplingChain:
             if array_mask_out_path:
                 os.unlink(array_mask_out_path)
             os.rmdir(output_dir)
-        
+    
+    @pytest.mark.parametrize("interp", ["cubic"])
+    @pytest.mark.parametrize("array_in, array_in_mask_positions, array_in_bands", [
+            (mandrill[0], None, [1,]),
+            (mandrill, None, [1,2,3]),
+            (mandrill[0], [(60, 160),], [1,]),
+            ])
+    @pytest.mark.parametrize("array_in_dtype", [(np.float64)])
+    @pytest.mark.parametrize("grid_vec_row, grid_vec_col, grid_origin_pos, grid_origin_node, grid_dtype, grid_mask", [
+            ((5.2, 1.2), (-2.7, 7.1), (0.3, 0.2), (0., 0.), np.float64, True),
+            ((5.2, 1.2), (-2.7, 7.1), (0.3, 0.2), (0., 0.), np.float64, False)])
+    @pytest.mark.parametrize("grid_shape, grid_resolution, window", [
+            ((50, 40), (10, 10), None),])
+    @pytest.mark.parametrize("array_in_geometry_origin, array_in_geometry_pair", [
+            (None, None), 
+            ((0.5, 0.5), (None, shapely.geometry.Polygon([(10.5,12.5), (30.5,12.5), (30.5,40.5), (10.5,40.5)]))), 
+            ])
+    @pytest.mark.parametrize("mask_out", [True, False])
+    #@pytest.mark.parametrize("grid_resolution", [(3, 4),])
+    @pytest.mark.parametrize("io_strip_size, io_strip_size_target, tile_shape", [
+        (100, GridRIOMode.OUTPUT, None),
+        (100, GridRIOMode.OUTPUT, (80, 200)),
+        (100, GridRIOMode.INPUT, (80, 200)),
+        (100, GridRIOMode.OUTPUT, (100, 200)),
+        (100, GridRIOMode.OUTPUT, (102, 200)),
+        (1000, GridRIOMode.OUTPUT, (1000, 200)),
+        (1000, GridRIOMode.OUTPUT, (1000, 1000))])
+    #@pytest.mark.parametrize("ncpu", [1, 2])
+    #@pytest.mark.parametrize("cpu_tile_shape", [(1000,1000),])
+    #@pytest.mark.parametrize("computation_dtype", [DTYPE_00,])
+    def test_build_mask_chain(self,
+            request,
+            interp,
+            array_in, array_in_mask_positions, array_in_bands, array_in_dtype,
+            grid_vec_row, grid_vec_col, grid_origin_pos, grid_origin_node, grid_dtype, grid_mask,
+            grid_shape, grid_resolution, window, array_in_geometry_origin, array_in_geometry_pair, mask_out,
+            io_strip_size, io_strip_size_target, tile_shape,
+            ):
+        """Test the grid_resampling_chain - compare results with results in the core method
+        """
+        self._generic_test_build_mask_chain(
+            request=request,
+            interp=interp,
+            array_in=array_in,
+            array_in_mask_positions=array_in_mask_positions,
+            array_in_mask_validity_pair=(Validity.VALID, Validity.INVALID),
+            array_in_mask_type=np.uint8,
+            array_in_bands=array_in_bands,
+            array_in_dtype=array_in_dtype,
+            grid_vec_row=grid_vec_row,
+            grid_vec_col=grid_vec_col,
+            grid_origin_pos=grid_origin_pos,
+            grid_origin_node=grid_origin_node,
+            grid_dtype=grid_dtype,
+            grid_mask=grid_mask,
+            grid_shape=grid_shape,
+            grid_resolution=grid_resolution,
+            window=window,
+            array_in_geometry_origin=array_in_geometry_origin,
+            array_in_geometry_pair=array_in_geometry_pair,
+            mask_out=mask_out,
+            io_strip_size=io_strip_size,
+            io_strip_size_target=io_strip_size_target,
+            tile_shape=tile_shape,
+            )
+    
+    
+    @pytest.mark.parametrize("interp", ["cubic"])
+    @pytest.mark.parametrize("array_in, array_in_mask_positions, array_in_bands", [
+            (mandrill[0], [(60, 160),], [1,]),
+            ])
+    @pytest.mark.parametrize("array_in_dtype", [(np.float64)])
+    @pytest.mark.parametrize("grid_vec_row, grid_vec_col, grid_origin_pos, grid_origin_node, grid_dtype, grid_mask", [
+            ((5.2, 1.2), (-2.7, 7.1), (0.3, 0.2), (0., 0.), np.float64, False)])
+    @pytest.mark.parametrize("grid_shape, grid_resolution, window", [
+            ((50, 40), (10, 10), None),])
+    @pytest.mark.parametrize("array_in_geometry_origin, array_in_geometry_pair", [
+            (None, None), 
+            ((0.5, 0.5), (None, shapely.geometry.Polygon([(10.5,12.5), (30.5,12.5), (30.5,40.5), (10.5,40.5)]))), 
+            ])
+    @pytest.mark.parametrize("mask_out", [True])
+    #@pytest.mark.parametrize("grid_resolution", [(3, 4),])
+    @pytest.mark.parametrize("io_strip_size, io_strip_size_target, tile_shape", [
+        (100, GridRIOMode.OUTPUT, (80, 200)),])
+    @pytest.mark.parametrize("array_in_mask_validity_pair, array_in_mask_type", [
+        ((Validity.VALID, Validity.INVALID), np.uint8),
+        ((Validity.VALID, Validity.INVALID), np.int8),
+        ((0, -1), np.int8),
+        ((1, -127), np.int8),
+        ((-6, 8), np.int8),
+        ((Validity.VALID, 5), np.uint8),])
+    #@pytest.mark.parametrize("ncpu", [1, 2])
+    #@pytest.mark.parametrize("cpu_tile_shape", [(1000,1000),])
+    #@pytest.mark.parametrize("computation_dtype", [DTYPE_00,])
+    def test_build_mask_chain_array_mask_values_and_dtype(self,
+            request,
+            interp,
+            array_in, array_in_mask_positions, array_in_mask_validity_pair, array_in_mask_type, 
+            array_in_bands, array_in_dtype,
+            grid_vec_row, grid_vec_col, grid_origin_pos, grid_origin_node, grid_dtype, grid_mask,
+            grid_shape, grid_resolution, window, array_in_geometry_origin, array_in_geometry_pair, mask_out,
+            io_strip_size, io_strip_size_target, tile_shape,
+            ):
+        """Test the grid_resampling_chain - compare results with results in the core method
+        """
+        self._generic_test_build_mask_chain(
+            request=request,
+            interp=interp,
+            array_in=array_in,
+            array_in_mask_positions=array_in_mask_positions,
+            array_in_mask_validity_pair=array_in_mask_validity_pair,
+            array_in_mask_type=array_in_mask_type,
+            array_in_bands=array_in_bands,
+            array_in_dtype=array_in_dtype,
+            grid_vec_row=grid_vec_row,
+            grid_vec_col=grid_vec_col,
+            grid_origin_pos=grid_origin_pos,
+            grid_origin_node=grid_origin_node,
+            grid_dtype=grid_dtype,
+            grid_mask=grid_mask,
+            grid_shape=grid_shape,
+            grid_resolution=grid_resolution,
+            window=window,
+            array_in_geometry_origin=array_in_geometry_origin,
+            array_in_geometry_pair=array_in_geometry_pair,
+            mask_out=mask_out,
+            io_strip_size=io_strip_size,
+            io_strip_size_target=io_strip_size_target,
+            tile_shape=tile_shape,
+            )

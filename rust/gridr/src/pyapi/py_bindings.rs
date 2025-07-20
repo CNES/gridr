@@ -26,6 +26,7 @@ fn _libgridr(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_array_utils::py_array1_replace_f64_u8,m)?)?;
     
     // Add from py_grid_resampling
+    m.add_class::<py_grid_resampling::PyInterpolatorType>()?;
     m.add_function(wrap_pyfunction!(py_grid_resampling::py_array1_grid_resampling_f64,m)?)?;
     
     // Add from py_grid_geometry

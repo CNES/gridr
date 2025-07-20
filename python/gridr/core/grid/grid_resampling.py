@@ -23,6 +23,7 @@ import rasterio
 
 from gridr.cdylib import (
         PyArrayWindow2,
+        PyInterpolatorType,
         py_array1_grid_resampling_f64,
         )
 
@@ -31,8 +32,14 @@ F64_F64_F64 = (np.dtype('float64'), np.dtype('float64'), np.dtype('float64'))
 PY_ARRAY_GRID_RESAMPLING_FUNC = {
     F64_F64_F64: py_array1_grid_resampling_f64,
 }
-    
+
+PY_INTERPOLATOR_TYPES = {
+    "nearest": PyInterpolatorType.Nearest,
+    "cubic": PyInterpolatorType.OptimizedBicubic,
+}
+
 def array_grid_resampling(
+        interp: str,
         array_in: np.ndarray,
         grid_row: np.ndarray,
         grid_col: np.ndarray,
@@ -47,6 +54,7 @@ def array_grid_resampling(
         grid_mask_valid_value: Optional[int] = 1,
         grid_nodata: Optional[float] = None,
         array_out_mask: Optional[Union[np.ndarray, bool]] = None,
+        check_boundaries: bool = True,
         ) -> Tuple[Union[np.ndarray, NoReturn], Union[np.ndarray, NoReturn]]:
     """Resamples an input array based on target grid coordinates, applying an
     optional bilinear interpolation for low resolution grids.
@@ -56,12 +64,18 @@ def array_grid_resampling(
     interpolation is applied internally to compute missing target coordinates.
     The oversampling factor is specified by the `grid_resolution` parameter,
     where a value of 1 indicates full resolution.
+    
+    The interpolation method is used through the `interp` parameter.
 
     This method wraps a Rust function (`py_array1_grid_resampling_*`) for
     efficient resampling.
 
     Parameters
     ----------
+    interp: str
+        The interpolator name as string. See PY_INTERPOLATOR_TYPES keys for
+        accepted values.
+    
     array_in : np.ndarray
         The input array to be resampled. It must be a contiguous 2D (nrow,
         ncol) or 3D (nvar, nrow, ncol) array.
@@ -141,6 +155,12 @@ def array_grid_resampling(
         filled with 0. The shape of this output mask array is consistent with 
         the `array_out` shape. If `None` or not `True`, the entire output array
         is assumed to be valid.
+    
+    check_boundaries : bool, default True
+        Force a check at each iteration to ensure that the requreid data to
+        perform interpolation is available in the source data.
+        This parameter can be set to False for performance gain if you are sure 
+        that all the required data is available.
 
     Returns
     -------
@@ -204,6 +224,7 @@ def array_grid_resampling(
         grid_resolution = (2, 2)
         array_out = None
         result, _ = array_grid_resampling(
+            interp="cubic",
             array_in=array_in,
             grid_row=grid_row,
             grid_col=grid_col,
@@ -214,6 +235,13 @@ def array_grid_resampling(
     """
     ret = None
     ret_mask = None
+    
+    interp_type = None
+    try:
+        interp_type = PY_INTERPOLATOR_TYPES[interp]
+    except KeyError:
+        raise Exception(f"Unknown interpolator '{interp}'")
+    
     assert(array_in.flags.c_contiguous is True)
     assert(grid_row.flags.c_contiguous is True)
     assert(grid_col.flags.c_contiguous is True)
@@ -318,7 +346,8 @@ def array_grid_resampling(
         raise Exception("py_array_grid_resampling_ function not available for "
                 f"types {func_types}")
     else:
-        func( array_in=array_in,
+        func( interp=interp_type,
+                array_in=array_in,
                 array_in_shape=array_in_shape,
                 grid_row=grid_row,
                 grid_col=grid_col,
@@ -334,7 +363,8 @@ def array_grid_resampling(
                 grid_nodata=grid_nodata,
                 array_out_mask=array_out_mask,
                 grid_win=py_grid_win,
-                out_win=py_array_out_win,)
+                out_win=py_array_out_win,
+                check_boundaries=check_boundaries)
     if ret is not None:
         ret = ret.reshape(array_out_shape).squeeze()
     if ret_mask is not None:

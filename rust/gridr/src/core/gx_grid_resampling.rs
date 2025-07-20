@@ -53,7 +53,7 @@
 use crate::core::gx_array::{GxArrayWindow, GxArrayView, GxArrayViewMut};
 //use crate::core::interp::gx_optimized_bicubic_kernel::{array1_optimized_bicubic_interp2};
 //use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewInterpolationContextTrait, GxArrayViewInterpolationContext, NoInputMask, BinaryInputMask, NoOutputMask, BinaryOutputMask, NoBoundsCheck, BoundsCheck, OutputMaskStrategy, InputMaskStrategy, GxArrayViewInterpolatorOutputMaskStrategy};
-use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewInterpolationContextTrait, GxArrayViewInterpolationContext, GxArrayViewInterpolatorOutputMaskStrategy, NoInputMask, BinaryInputMask, NoOutputMask, BinaryOutputMask, BoundsCheck};
+use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewInterpolationContextTrait, GxArrayViewInterpolationContext, GxArrayViewInterpolatorOutputMaskStrategy, NoInputMask, BinaryInputMask, NoOutputMask, BinaryOutputMask, BoundsCheck, NoBoundsCheck};
 //use crate::core::interp::gx_optimized_bicubic_kernel::{GxOptimizedBicubicInterpolator};
 //use crate::{assert_options_match};
 use crate::core::gx_errors::GxError;
@@ -593,6 +593,8 @@ impl<'a> GridMesh<'a> {
 /// - `ima_out_origin_row`: An optional `f64` bias value that adjusts the row coordinate obtained from `grid_col_array`.
 ///    Its primary use cases include aligning with alternative grid origin conventions or handling situations where the 
 ///    provided `ima_in` array corresponds to a subregion of the complete source raster.
+/// - `check_boundaries`: If True the BoundsCheck strategy is adopted otherwise it is the NoBoundsCheck strategy. Use it
+///    with caution !
 ///
 /// # Output
 /// The function computes interpolated values for both grid rows and columns at each
@@ -650,6 +652,7 @@ pub fn array1_grid_resampling<'a, T, V, W, I, C>(
         out_win: Option<&GxArrayWindow>,
         ima_in_origin_row: Option<f64>,
         ima_in_origin_col: Option<f64>,
+        check_boundaries: bool,
         ) -> Result<(), GxError>
 where
     T: Copy + PartialEq + std::ops::Mul<f64, Output=f64> + Into<f64>,
@@ -721,8 +724,8 @@ where
     // Check that the dimension of `out_window` is sufficient with `ima_out`
     out_window.validate_with_array(ima_out)?;
 
-    match (ima_mask_in, ima_mask_out) {
-        (Some(in_mask), Some(out_mask)) => {
+    match (ima_mask_in, ima_mask_out, check_boundaries) {
+        (Some(in_mask), Some(out_mask), true) => {
             let mut context = GxArrayViewInterpolationContext::new(
                 BinaryInputMask { mask: in_mask},
                 BinaryOutputMask { mask: out_mask },
@@ -748,7 +751,7 @@ where
                 &mut context)
         },
         
-        (Some(in_mask), None) => {
+        (Some(in_mask), None, true) => {
             let mut context = GxArrayViewInterpolationContext::new(
                 BinaryInputMask { mask: in_mask},
                 NoOutputMask {},
@@ -774,7 +777,7 @@ where
                 &mut context)
         },
         
-        (None, Some(out_mask)) => {
+        (None, Some(out_mask), true) => {
             let mut context = GxArrayViewInterpolationContext::new(
                 NoInputMask {},
                 BinaryOutputMask { mask: out_mask },
@@ -800,8 +803,112 @@ where
                 &mut context)
         },
         
-        (None, None) => {
+        (None, None, true) => {
             let mut context = GxArrayViewInterpolationContext::default();
+            
+            perform_grid_resampling_loop( interp,
+                    grid_validity_checker,
+                    ima_in,
+                    grid_row_array,
+                    grid_col_array,
+                    grid_row_oversampling,
+                    grid_col_oversampling,
+                    ima_out,
+                    nodata_val_out,
+                    ima_in_origin_row,
+                    ima_in_origin_col,
+                    &grid_window_src,
+                    &grid_window_rel,
+                    out_window,
+                    ncol_out,
+                    size_out,
+                    &mut context)
+        },
+        
+        (Some(in_mask), Some(out_mask), false) => {
+            let mut context = GxArrayViewInterpolationContext::new(
+                BinaryInputMask { mask: in_mask},
+                BinaryOutputMask { mask: out_mask },
+                NoBoundsCheck {},
+            );
+            
+            perform_grid_resampling_loop( interp,
+                grid_validity_checker,
+                ima_in,
+                grid_row_array,
+                grid_col_array,
+                grid_row_oversampling,
+                grid_col_oversampling,
+                ima_out,
+                nodata_val_out,
+                ima_in_origin_row,
+                ima_in_origin_col,
+                &grid_window_src,
+                &grid_window_rel,
+                out_window,
+                ncol_out,
+                size_out,
+                &mut context)
+        },
+        
+        (Some(in_mask), None, false) => {
+            let mut context = GxArrayViewInterpolationContext::new(
+                BinaryInputMask { mask: in_mask},
+                NoOutputMask {},
+                NoBoundsCheck {},
+            );
+            
+            perform_grid_resampling_loop( interp,
+                grid_validity_checker,
+                ima_in,
+                grid_row_array,
+                grid_col_array,
+                grid_row_oversampling,
+                grid_col_oversampling,
+                ima_out,
+                nodata_val_out,
+                ima_in_origin_row,
+                ima_in_origin_col,
+                &grid_window_src,
+                &grid_window_rel,
+                out_window,
+                ncol_out,
+                size_out,
+                &mut context)
+        },
+        
+        (None, Some(out_mask), false) => {
+            let mut context = GxArrayViewInterpolationContext::new(
+                NoInputMask {},
+                BinaryOutputMask { mask: out_mask },
+                NoBoundsCheck {},
+            );
+            
+            perform_grid_resampling_loop( interp,
+                grid_validity_checker,
+                ima_in,
+                grid_row_array,
+                grid_col_array,
+                grid_row_oversampling,
+                grid_col_oversampling,
+                ima_out,
+                nodata_val_out,
+                ima_in_origin_row,
+                ima_in_origin_col,
+                &grid_window_src,
+                &grid_window_rel,
+                out_window,
+                ncol_out,
+                size_out,
+                &mut context)
+        },
+        
+        (None, None, false) => {
+            let mut context = GxArrayViewInterpolationContext::new(
+                NoInputMask {},
+                NoOutputMask {},
+                NoBoundsCheck {},
+            );
             
             perform_grid_resampling_loop( interp,
                     grid_validity_checker,
@@ -959,63 +1066,7 @@ where
         // Prepare next iteration
         (grid_row_idx, grid_col_idx, out_col_idx, windowed_out_idx) = gmi_mesh.next(grid_row_idx,
                 grid_col_idx, out_col_idx, windowed_out_idx, window_out_idx_jump, ncol_out);
-        /*
-        // Global output : go next output column
-        out_col_idx += 1;
-        windowed_out_idx += 1;
-        
-        // Mesh interpolation : go next column in current mesh
-        gmi_col_idx += 1;
-        
-        // Test if current row within current mesh is done, i.e all columns
-        // have been passed through
-        if gmi_col_idx == grid_col_oversampling {
-            // Current row within mesh oversampling is done.
-            // Warning : we cant go to next mesh on the same row if the current mesh is the last one
-            // Go to next mesh on the same line
-            // - reset relative mesh column index
-            gmi_col_idx = 0;
-            // - increment column index relative to input grid
-            grid_col_idx += 1;
-            // - shift all nodes to right - the method takes care of the last mesh border
-            gmi_mesh.next_src_col(grid_col_idx);
-        }
-        
-        // Test if current output row is done
-        if out_col_idx == ncol_out {
-            
-            // Reset output column index to 0
-            out_col_idx = 0;
-            windowed_out_idx += window_out_idx_jump;
-            
-            // Go next row
-            // out_row_idx += 1;
-            // Reset column index relative to input grid
-            grid_col_idx = grid_window_src.start_col;
-            
-            // Reset relative mesh column index
-            gmi_col_idx = grid_window_rel.start_col;
-            
-            // Increment relative mesh row index
-            gmi_row_idx += 1;
-            
-            // Test if row oversampling in current mesh is done.
-            if gmi_row_idx == grid_row_oversampling {
-                // Reset mesh relative row index
-                gmi_row_idx = 0;
-                // Increment row index relative to input grid
-                grid_row_idx += 1;
-            }
-            
-            // Update interpolation nodes - going next src row
-            gmi_mesh.next_src_row(grid_row_idx);
-            
-            // Update mesh relative row index complement
-            gmi_row_idx_t = grid_row_oversampling - gmi_row_idx;
-        }
-        // Update mesh relative col index complement
-        gmi_col_idx_t = grid_col_oversampling - gmi_col_idx;
-        */
+
     }
     Ok(())
 }
@@ -1099,6 +1150,7 @@ mod gx_grid_resampling_test {
                 None, //out_win: Option<&GxArrayWindow>,
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
+                true, // check_boundaries
                 );
         
         assert!(approx_eq(&data_out, &data_expected, 1e-10));
@@ -1186,6 +1238,7 @@ mod gx_grid_resampling_test {
                 None, //out_win: Option<&GxArrayWindow>,
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
+                true, // check_boundaries
                 );
                 
         /*      UNCOMMENT FOR MANUAL DEBUGGING
@@ -1303,6 +1356,7 @@ mod gx_grid_resampling_test {
                 None, //out_win: Option<&GxArrayWindow>,
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
+                true, // check_boundaries
                 );
                 
         /*      UNCOMMENT FOR MANUAL DEBUGGING
@@ -1397,6 +1451,7 @@ mod gx_grid_resampling_test {
                 None, //out_win: Option<&GxArrayWindow>,
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
+                true, // check_boundaries
                 );
         
         //assert!(approx_eq(&data_out, &data_expected, 1e-10));
@@ -1461,6 +1516,7 @@ mod gx_grid_resampling_test {
                 None, //out_win: Option<&GxArrayWindow>,
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
+                true, // check_boundaries
                 );
     }
     
@@ -1542,6 +1598,7 @@ mod gx_grid_resampling_test {
                 None, //out_win: Option<&GxArrayWindow>,
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
+                true, // check_boundaries
                 );
         
         // Run resampling on window
@@ -1560,6 +1617,7 @@ mod gx_grid_resampling_test {
                 None, //out_win: Option<&GxArrayWindow>,
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
+                true, // check_boundaries
                 );
         
         // Compare the results
@@ -1649,6 +1707,7 @@ mod gx_grid_resampling_test {
                 Some(&out_window), //out_win: Option<&GxArrayWindow>,
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
+                true, // check_boundaries
                 );
         
         // Run resampling on window 
@@ -1667,6 +1726,7 @@ mod gx_grid_resampling_test {
                 None, //out_win: Option<&GxArrayWindow>,
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
+                true, // check_boundaries
                 );
         
         // Compare the results
