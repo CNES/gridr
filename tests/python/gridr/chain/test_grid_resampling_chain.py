@@ -102,7 +102,7 @@ class TestGridResamplingChain:
         array_mask_in_path = None
         array_mask_out_path = None
         
-        computation_dtype = np.float64
+        #computation_dtype = np.float64
         output_dtype = np.float64
         
         try:
@@ -185,7 +185,7 @@ class TestGridResamplingChain:
                     grid_mask_in_ds = grid_mask_in_ds,
                     grid_mask_in_unmasked_value = UNMASKED_VALUE,
                     grid_mask_in_band = 1,
-                    computation_dtype = computation_dtype,
+                    #computation_dtype = computation_dtype,
                     
                     array_src_geometry_origin = array_in_geometry_origin,
                     array_src_geometry_pair = array_in_geometry_pair,

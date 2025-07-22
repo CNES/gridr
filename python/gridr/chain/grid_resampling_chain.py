@@ -704,37 +704,26 @@ def basic_grid_resampling_array(
 
 def basic_grid_resampling_chain(
         grid_ds: rasterio.io.DatasetReader,
-        grid_col_ds: Union[rasterio.io.DatasetReader, None],
         grid_row_coords_band: int,
         grid_col_coords_band: int,
         grid_resolution: Tuple[int, int],
-        
         array_src_ds: rasterio.io.DatasetReader,
         array_src_bands: Union[int, List[int]],
-        array_src_mask_ds: Optional[rasterio.io.DatasetReader],
-        array_src_mask_band: Optional[int],
-        array_src_mask_validity_pair: Optional[Tuple[int, int]],
-        
         array_out_ds: rasterio.io.DatasetWriter,
-
         interp: str,
-
         nodata_out: Union[int, float],
-        
-        window: np.ndarray, 
-    
-        mask_out_ds: rasterio.io.DatasetWriter,
-        
-        grid_mask_in_ds: Optional[rasterio.io.DatasetReader],
-        grid_mask_in_unmasked_value: Optional[int],
-        grid_mask_in_band: Optional[int],
-        
-        computation_dtype: np.dtype,
-        
+        grid_col_ds: Union[rasterio.io.DatasetReader, None] = None,
+        window: Optional[np.ndarray] = None, 
+        array_src_mask_ds: Optional[rasterio.io.DatasetReader] = None,
+        array_src_mask_band: Optional[int] = None,
+        array_src_mask_validity_pair: Optional[Tuple[int, int]] = None,
+        mask_out_ds: Optional[rasterio.io.DatasetWriter] = None,
+        grid_mask_in_ds: Optional[rasterio.io.DatasetReader] = None,
+        grid_mask_in_unmasked_value: Optional[int] = None,
+        grid_mask_in_band: Optional[int] = None,
         array_src_geometry_origin: Optional[Tuple[float, float]] = None,
         array_src_geometry_pair: Optional[Tuple[Optional[GeometryType],
                 Optional[GeometryType]]] = None,
-        
         io_strip_size: int = DEFAULT_IO_STRIP_SIZE,
         io_strip_size_target: GridRIOMode = GridRIOMode.INPUT,
         ncpu: int = DEFAULT_NCPU,
@@ -754,10 +743,6 @@ def basic_grid_resampling_chain(
         Input dataset containing the grid coordinates. This dataset provides
         the destination geometry for resampling.
         
-    grid_col_ds : rasterio.io.DatasetReader or None, optional
-        Optional separate dataset for grid column coordinates if they are not
-        in `grid_ds`. Defaults to None.
-        
     grid_row_coords_band : int
         Band index in `grid_ds` corresponding to the row coordinates of the
         grid.
@@ -775,6 +760,29 @@ def basic_grid_resampling_chain(
         
     array_src_bands : int or list of int
         Band index or list of band indices to read from `array_src_ds`.
+        
+    array_out_ds : rasterio.io.DatasetWriter
+        Output dataset where the resampled raster data will be written.
+        
+    interp : str
+        Interpolation method to use (e.g., 'nearest', 'linear', 'cubic').
+        Specific interpolation options are delegated to the underlying
+        resampling engine.
+        
+    nodata_out : scalar
+        NoData value to fill the output raster when no valid data points
+        can be found for a given output pixel.
+        
+    grid_col_ds : rasterio.io.DatasetReader or None, optional
+        Optional separate dataset for grid column coordinates if they are not
+        in `grid_ds`. Defaults to None.
+        
+    window : numpy.ndarray, optional
+        Optional output window of the `grid_ds` to process, defined as
+        ``[[row_start, row_end], [col_start, col_end]]``. This defines the
+        region of interest for the resampling. If None, the full grid extent
+        is considered.
+        Defaults to None.
         
     array_src_mask_ds : rasterio.io.DatasetReader or None, optional
         Optional dataset representing the mask associated with `array_src_ds`.
@@ -795,23 +803,6 @@ def basic_grid_resampling_chain(
         replace operation will be performed in order to make the mask compliant
         with the core resampling method.
         
-    array_out_ds : rasterio.io.DatasetWriter
-        Output dataset where the resampled raster data will be written.
-        
-    interp : str
-        Interpolation method to use (e.g., 'nearest', 'linear', 'cubic').
-        Specific interpolation options are delegated to the underlying
-        resampling engine.
-        
-    nodata_out : scalar
-        NoData value to fill the output raster when no valid data points
-        can be found for a given output pixel.
-        
-    window : numpy.ndarray
-        Output window of the `grid_ds` to process, defined as
-        ``[[row_start, row_end], [col_start, col_end]]``. This defines the
-        region of interest for the resampling.
-        
     mask_out_ds : rasterio.io.DatasetWriter
         Output dataset where the resampled validity mask will be written.
         This mask indicates which output pixels contain valid resampled data.
@@ -827,10 +818,6 @@ def basic_grid_resampling_chain(
     grid_mask_in_band : int or None, optional
         Band index to read from `grid_mask_in_ds` for the input grid mask.
         Defaults to None.
-        
-    computation_dtype : numpy.dtype
-        Data type to use for internal computations during resampling. This
-        influences precision and memory usage.
         
     array_src_geometry_origin : tuple of float or None, optional
         Specifies the origin convention for `array_src_geometry_pair` definition.
