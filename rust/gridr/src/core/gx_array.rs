@@ -33,6 +33,9 @@
 /// - [`Self::nvar()`]: Returns the number of variables (1st axis of the structure).
 /// - [`Self::nrow()`]: Returns the number of rows (2nd axis of the structure).
 /// - [`Self::ncol()`]: Returns the number of columns (3rd axis of the structure).
+/// - [`Self::size()`]: Returns the size defined as the product of the number of columns with the
+///                     number of rows
+
 
 
 use crate::core::gx_errors::{GxError};
@@ -48,6 +51,9 @@ pub trait GxArrayShape {
     fn nrow(&self) -> usize;
     /// Returns the number of columns (3rd axis of the structure).
     fn ncol(&self) -> usize;
+    /// Returns the size defined as the product of the number of columns with the
+    /// number of rows
+    fn size(&self) -> usize;
 }
 
 /// A mutable view of a multi-dimensional array stored in a contiguous 1D slice.
@@ -102,6 +108,9 @@ pub struct GxArrayViewMut<'a, T> {
     
     /// Number of cols as i64
     pub ncol_i64: i64,
+    
+    /// Size : ncol * nrow
+    pub var_size: usize,
 }
 
 impl<'a, T> GxArrayViewMut<'a, T> {
@@ -118,7 +127,7 @@ impl<'a, T> GxArrayViewMut<'a, T> {
     ///
     /// A new `GxArrayViewMut` instance that provides a read-only view over the provided data.
     pub fn new(data: &'a mut [T], nvar: usize, nrow: usize, ncol: usize) -> Self {
-        Self { data:data, nvar:nvar, nrow:nrow, ncol:ncol, nrow_i64:nrow as i64, ncol_i64:ncol as i64 }
+        Self { data:data, nvar:nvar, nrow:nrow, ncol:ncol, nrow_i64:nrow as i64, ncol_i64:ncol as i64, var_size: ncol*nrow }
     }
 }
 
@@ -146,6 +155,12 @@ impl<T> GxArrayShape for GxArrayViewMut<'_, T> {
     #[inline(always)]
     fn ncol(&self) -> usize {
         self.ncol
+    }
+
+    /// Returns the number of columns (3rd axis of the array).
+    #[inline(always)]
+    fn size(&self) -> usize {
+        self.var_size
     }
 }
 
@@ -197,6 +212,9 @@ pub struct GxArrayView<'a, T> {
     
     /// Number of cols as i64
     pub ncol_i64: i64,
+    
+    /// Size : ncol * nrow
+    pub var_size: usize,
 }
 
 impl<'a, T> GxArrayView<'a, T> {
@@ -213,7 +231,7 @@ impl<'a, T> GxArrayView<'a, T> {
     ///
     /// A new `GxArrayView` instance that provides a read-only view over the provided data.
     pub fn new(data: &'a [T], nvar: usize, nrow: usize, ncol: usize) -> Self {
-        Self { data:data, nvar:nvar, nrow:nrow, ncol:ncol, nrow_i64:nrow as i64, ncol_i64:ncol as i64 }
+        Self { data:data, nvar:nvar, nrow:nrow, ncol:ncol, nrow_i64:nrow as i64, ncol_i64:ncol as i64, var_size:ncol * nrow }
     }
 }
 
@@ -241,6 +259,12 @@ impl<T> GxArrayShape for GxArrayView<'_, T> {
     #[inline(always)]
     fn ncol(&self) -> usize {
         self.ncol
+    }
+
+    /// Returns the number of columns (3rd axis of the array).
+    #[inline(always)]
+    fn size(&self) -> usize {
+        self.var_size
     }
 }
 

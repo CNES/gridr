@@ -63,6 +63,7 @@ pub fn optimized_bicubic_kernel_weights(x: f64, weights: &mut [f64])
         weights[2] = optimized_bicubic_kernel_weights_compute_func1(-x);
         weights[3] = optimized_bicubic_kernel_weights_compute_func1(x + 1.0);
         weights[4] = optimized_bicubic_kernel_weights_compute_func2(x + 2.0);
+        //weights[4] = 1. - weights[1] + weights[2] + weights[3];
     } else if x > 0.0 && x < 1.0 {
         // - instead of abs because we know x is positive
         weights[0] = optimized_bicubic_kernel_weights_compute_func2(-x + 2.0);
@@ -70,6 +71,7 @@ pub fn optimized_bicubic_kernel_weights(x: f64, weights: &mut [f64])
         weights[2] = optimized_bicubic_kernel_weights_compute_func1(x);
         weights[3] = optimized_bicubic_kernel_weights_compute_func2(x + 1.0);
         weights[4] = 0.0;
+        //weights[3] = 1. - weights[1] + weights[2] + weights[0];
     } else if x == 0.0 {
         // Center pixel: interpolation is identity
         weights[0] = 0.0;
@@ -93,6 +95,158 @@ pub fn optimized_bicubic_kernel_weights(x: f64, weights: &mut [f64])
     }
 }
 
+/// Calculates four cubic interpolation weights with factorisation of computation
+/// between the weights.
+///
+/// These weights are derived from the evaluation of two distinct cubic 
+/// polynomials, implemented in `optimized_bicubic_kernel_weights_compute_func1` and
+/// `optimized_bicubic_kernel_weights_compute_func2`
+/// at specific points that depend on `y`.
+///
+/// The base polynomials are defined as follows:
+/// - $P_1(x) = x \cdot x \cdot (1.5 \cdot x - 2.5) + 1.0$
+///   Expanded form: $P_1(x) = 1.5x^3 - 2.5x^2 + 1.0$
+///
+/// - $P_2(x) = x \cdot (x \cdot (-0.5 \cdot x + 2.5) - 4.0) + 2.0$
+///   Expanded form: $P_2(x) = -0.5x^3 + 2.5x^2 - 4.0x + 2.0$
+///
+/// # Case x is positive
+///
+/// The weights to be calculated are assigned to the specified indices as follows:
+/// - `w0 = P_2(2 - y)`
+/// - `w1 = P_1(1 - y)`
+/// - `w2 = P_1(y)`
+/// - `w3 = P_2(y + 1)`
+///
+/// After substitution of `x` and algebraic simplification, the expressions for 
+/// the weights in terms of `y` are:
+///
+/// $$
+/// w_0 = 0.5y^3 - 0.5y^2 \\
+/// w_1 = -1.5y^3 + 2.0y^2 + 0.5y \\
+/// w_2 = 1.5y^3 - 2.5y^2 + 1.0 \\
+/// w_3 = -0.5y^3 + 1.0y^2 - 0.5y \\
+/// w_4 = 0
+/// $$
+///
+/// 
+/// # Case x is negative
+///
+/// The weights to be calculated are assigned to the specified indices as follows:
+/// - `w1 = P_2(1 - y)`
+/// - `w2 = P_1(-y)`
+/// - `w3 = P_1(y + 1)`
+/// - `w4 = P_2(y + 2)`
+///
+/// After substitution of `x` and algebraic simplification, the expressions for 
+/// the weights in terms of `y` are:
+///
+/// $$
+/// w_0 = 0 \\
+/// w_1 = 0.5y^3 + 1.0y^2 + 0.5y \\
+/// w_2 = -1.5y^3 - 2.5y^2 + 1.0 \\
+/// w_3 = 1.5y^3 + 2.0y^2 - 0.5y \\
+/// w_4 = -0.5y^3 - 0.5y^2
+/// $$
+///
+/// # Optimization Strategy (Factorization)
+///
+/// To minimize computational cost, the calculation is optimized by:
+/// 1.  Calculating powers of `y` ($y^2$ and $y^3$) only once.
+/// 2.  Pre-calculating common scaled terms (e.g., $0.5y$, $1.5y^3$, etc.)
+///     that are reused across multiple weight expressions.
+/// 3.  Assembling the final weight results from these pre-calculated terms.
+///
+/// # Cost Analysis
+///
+/// Compared to a naive evaluation of each polynomial independently, this optimized 
+/// method achieves:
+/// - **8 Multiplications** (vs. 12 naive)
+/// - **7 Additions/Subtractions** (vs. 10 naive)
+/// - (2 Negations)
+///
+/// # Arguments
+///
+/// - `y`: The relative coordinate for which the kernel weights should be computed.
+/// - `weights`: A mutable slice of length 5 where the computed weights will be stored.
+///
+/// ```
+#[inline]
+pub fn optimized_bicubic_kernel_weights_opt(y: f64, weights: &mut [f64])
+{
+    if y < 0.0 && y > -1.0 {
+        // Calculate powers of y
+        let y2 = y * y;
+        let y3 = y2 * y;
+
+        // Calculate common scaled terms
+        let y_times_0_5 = 0.5 * y;
+        let y2_times_0_5 = 0.5 * y2;
+        let y3_times_0_5 = 0.5 * y3;
+
+        let y3_times_1_5 = 1.5 * y3;
+        let y2_times_2_0 = 2.0 * y2;
+        let y2_times_2_5 = 2.5 * y2;
+
+        // Assemble the final weight values
+        weights[0] = 0.0;
+        // w1 = 0.5y^3 + 1.0y^2 + 0.5y
+        weights[1] = y3_times_0_5 + y2 + y_times_0_5;
+        // w2 = -1.5y^3 - 2.5y^2 + 1.0
+        weights[2] = -y3_times_1_5 - y2_times_2_5 + 1.0;
+        // w3 = 1.5y^3 + 2.0y^2 - 0.5y
+        weights[3] = y3_times_1_5 + y2_times_2_0 - y_times_0_5;
+        // w4 = -0.5y^3 - 0.5y^2
+        weights[4] = -y3_times_0_5 - y2_times_0_5;
+        
+    } else if y > 0.0 && y < 1.0 {
+        // Calculate powers of y
+        let y2 = y * y;
+        let y3 = y2 * y;
+
+        // Calculate common scaled terms
+        let y_times_0_5 = 0.5 * y;
+        let y2_times_0_5 = 0.5 * y2;
+        let y3_times_0_5 = 0.5 * y3;
+
+        let y3_times_1_5 = 1.5 * y3;
+        let y2_times_2_0 = 2.0 * y2;
+        let y2_times_2_5 = 2.5 * y2;
+
+        // Assemble the final weight values
+        // w0 = 0.5y^3 - 0.5y^2
+        weights[0] = y3_times_0_5 - y2_times_0_5;
+        // w1 = -1.5y^3 + 2.0y^2 + 0.5y
+        weights[1] = -y3_times_1_5 + y2_times_2_0 + y_times_0_5;
+        // w2 = 1.5y^3 - 2.5y^2 + 1.0
+        weights[2] = y3_times_1_5 - y2_times_2_5 + 1.0;
+        // w3 = -0.5y^3 + 1.0y^2 - 0.5y
+        weights[3] = -y3_times_0_5 + y2 - y_times_0_5;
+        weights[4] = 0.0;
+        
+    } else if y == 0.0 {
+        // Center pixel: interpolation is identity
+        weights[0] = 0.0;
+        weights[1] = 0.0;
+        weights[2] = 1.0;
+        weights[3] = 0.0;
+        weights[4] = 0.0;
+    } else {
+        // Default formula - fallback => should not pass here so no effort to 
+        // optimize it.
+        for k in 0..=4 {
+            weights[k] = 0.0;
+            let yy = (y + k as f64 - 2.).abs();
+            if yy < 1.0 {
+                weights[k] = optimized_bicubic_kernel_weights_compute_func1(yy);
+            } else if yy < 2.0 {
+                weights[k] = optimized_bicubic_kernel_weights_compute_func2(yy);
+            } else {
+                weights[k] = 0.0;
+            }
+        }
+    }
+}
 
 pub struct GxOptimizedBicubicInterpolator {
     kernel_row_size: usize,
@@ -166,21 +320,19 @@ impl GxOptimizedBicubicInterpolator {
         V: Copy + From<f64>
     {
         let ncol = array_in.ncol;
-        let array_in_var_size = array_in.nrow * ncol;
-        let array_out_var_size = array_out.nrow * array_out.ncol;
+        let array_in_var_size = array_in.var_size;
+        let array_out_var_size = array_out.var_size;
         let mut arr_irow: usize;
         let mut arr_icol: usize;
         let mut arr_iflat: usize;
         let mut computed: f64;
         let mut computed_col: f64;
-        let mut array_in_var_shift: usize;
-        let mut array_out_var_shift: usize;
+        let mut array_in_var_shift: usize = 0;
+        let mut array_out_var_shift: usize = 0;
         
         // Loop on multipe variables in input array.
         for ivar in 0..array_in.nvar {
             computed = 0.0;
-            array_in_var_shift = ivar * array_in_var_size;
-            array_out_var_shift = ivar * array_out_var_size;
             
             for irow in 0..=4 {
                 computed_col = 0.0;
@@ -193,11 +345,15 @@ impl GxOptimizedBicubicInterpolator {
                     arr_iflat = array_in_var_shift + arr_irow * ncol + arr_icol;
                     // add current weighted product
                     computed_col += array_in.data[arr_iflat] * weights_col[4 - icol as usize];
+                    
                 }
                 computed += weights_row[4 - irow as usize] * computed_col;
             }
             // Write interpolated value to output buffer
             array_out.data[out_idx + array_out_var_shift] = V::from(computed);
+            
+            array_in_var_shift += array_in_var_size;
+            array_out_var_shift += array_out_var_size;
         }
     }
     
@@ -242,15 +398,15 @@ impl GxOptimizedBicubicInterpolator {
         N: GxArrayViewInterpolatorOutputMaskStrategy,
     {
         let ncol = array_in.ncol;
-        let array_in_var_size = array_in.nrow * ncol;
-        let array_out_var_size = array_out.nrow * array_out.ncol;
+        let array_in_var_size = array_in.var_size;
+        let array_out_var_size = array_out.var_size;
         let mut arr_irow;
         let mut arr_icol;
         let mut arr_iflat: usize;
         let mut computed: f64;
         let mut computed_col: f64;
-        let mut array_in_var_shift: usize;
-        let mut array_out_var_shift: usize;
+        let mut array_in_var_shift: usize = 0;
+        let mut array_out_var_shift: usize = 0;
         
         // Pre check boundaries and weights value
         for irow in 0..=4 {
@@ -271,11 +427,13 @@ impl GxOptimizedBicubicInterpolator {
                     // ignore that we go out of bounds as far as the validity is
                     // concerned.
                     for ivar in 0..array_in.nvar {
-                        array_out.data[out_idx + ivar * array_out_var_size] = nodata;
+                        array_out.data[out_idx + array_out_var_shift] = nodata;
+                        array_out_var_shift += array_out_var_size;
                     }
                     output_mask_strategy.set_value(out_idx, 0);
                     return;
                 }
+                array_out_var_shift = 0;
             }
         }
         
@@ -284,8 +442,6 @@ impl GxOptimizedBicubicInterpolator {
         // for the corresponding row or column value.
         for ivar in 0..array_in.nvar {
             computed = 0.0;
-            array_in_var_shift = ivar * array_in_var_size;
-            array_out_var_shift = ivar * array_out_var_size;
             
             for irow in 0..=4 {
                 arr_irow = row_c + irow - 2;
@@ -309,6 +465,9 @@ impl GxOptimizedBicubicInterpolator {
             }
             // Write interpolated value to output buffer
             array_out.data[out_idx + array_out_var_shift] = V::from(computed);
+            
+            array_in_var_shift += array_in_var_size;
+            array_out_var_shift += array_out_var_size;
         }
         output_mask_strategy.set_value(out_idx, 1);
     }
@@ -377,11 +536,7 @@ impl GxOptimizedBicubicInterpolator {
         weights_row: &[f64],
         weights_col: &[f64],
         array_in: &GxArrayView<'_, T>,
-        //input_mask_strategy: &M,
-        //array_mask_in: &GxArrayView<'_, u8>,
         array_out: &mut GxArrayViewMut<'_, V>,
-        //output_mask_strategy: &mut N,
-        //array_mask_out: &mut GxArrayViewMut<'_, u8>,
         out_idx: usize,
         row_c: i64, 
         col_c: i64,
@@ -392,19 +547,102 @@ impl GxOptimizedBicubicInterpolator {
         T: Copy + std::ops::Mul<f64, Output=f64> + Into<f64>,
         V: Copy + From<f64>,
         IC: GxArrayViewInterpolationContextTrait,
-        //M: GxArrayViewInterpolatorInputMaskStrategy,
-        //N: GxArrayViewInterpolatorOutputMaskStrategy,
     {
         let ncol = array_in.ncol;
-        let array_in_var_size = array_in.nrow * ncol;
-        let array_out_var_size = array_out.nrow * array_out.ncol;
+        let array_in_var_size = array_in.var_size;
+        let array_out_var_size = array_out.var_size;
         let mut arr_irow: usize;
         let mut arr_icol: usize;
         let mut arr_iflat: usize;
         let mut computed: f64;
         let mut computed_col: f64;
-        let mut array_in_var_shift: usize;
-        let mut array_out_var_shift: usize;
+        let mut array_in_var_shift: usize = 0;
+        let mut array_out_var_shift: usize = 0;
+        
+
+        let row_c_m2 = (row_c - 2) as usize;
+        let col_c_m2 = (col_c - 2) as usize;
+
+        // Pre check mask
+        // Ignore mask value where weights are zero
+        let mut valid = 1u8;
+        arr_iflat = row_c_m2 * ncol + col_c_m2;
+
+        let local_cache: Vec<u8> = vec![0; 25];
+        let mut local_cache = local_cache.into_boxed_slice();
+
+        valid = context.input_mask().is_valid_weighted_window(arr_iflat, 5, 5, weights_row, weights_col, &mut local_cache); 
+      
+        if valid == 0 {
+            
+            for ivar in 0..array_in.nvar {
+                array_out.data[out_idx + array_out_var_shift] = nodata;
+                array_out_var_shift += array_out_var_size;
+            }
+            context.output_mask().set_value(out_idx, 0);
+            return;
+        }
+
+        // Loop on multipe variables in input array.      
+        for ivar in 0..array_in.nvar {
+
+            computed = 0.0;
+                        
+            for irow in 0..=4 {
+                computed_col = 0.0;
+                
+                for icol in 0..=4 {
+                    
+                    // flat 1d index computation
+                    // add current weighted product
+                    computed_col += array_in.data[arr_iflat] * weights_col[4 - icol as usize];
+                    
+                    arr_iflat += 1;
+                }
+                computed += weights_row[4 - irow as usize] * computed_col;
+                
+                arr_iflat += ncol - 5;
+            }
+            // Write interpolated value to output buffer
+            array_out.data[out_idx + array_out_var_shift] = V::from(computed);
+            
+            arr_iflat += array_in_var_size - 5*ncol;
+            array_out_var_shift += array_out_var_size;
+        }
+
+        context.output_mask().set_value(out_idx, 1);
+
+    }
+
+/*
+    #[inline(always)]
+    fn interpolate_masked_unchecked<T, V, IC>(
+        &self,
+        weights_row: &[f64],
+        weights_col: &[f64],
+        array_in: &GxArrayView<'_, T>,
+        array_out: &mut GxArrayViewMut<'_, V>,
+        out_idx: usize,
+        row_c: i64, 
+        col_c: i64,
+        nodata: V,
+        context: &mut IC,
+        )
+    where
+        T: Copy + std::ops::Mul<f64, Output=f64> + Into<f64>,
+        V: Copy + From<f64>,
+        IC: GxArrayViewInterpolationContextTrait,
+    {
+        let ncol = array_in.ncol;
+        let array_in_var_size = array_in.var_size;
+        let array_out_var_size = array_out.var_size;
+        let mut arr_irow: usize;
+        let mut arr_icol: usize;
+        let mut arr_iflat: usize;
+        let mut computed: f64;
+        let mut computed_col: f64;
+        let mut array_in_var_shift: usize = 0;
+        let mut array_out_var_shift: usize = 0;
         
         // Pre check mask
         // Ignore mask value where weights are zero
@@ -437,8 +675,6 @@ impl GxOptimizedBicubicInterpolator {
         // Loop on multipe variables in input array.
         for ivar in 0..array_in.nvar {
             computed = 0.0;
-            array_in_var_shift = ivar * array_in_var_size;
-            array_out_var_shift = ivar * array_out_var_size;
             
             for irow in 0..=4 {
                 computed_col = 0.0;
@@ -456,9 +692,13 @@ impl GxOptimizedBicubicInterpolator {
             }
             // Write interpolated value to output buffer
             array_out.data[out_idx + array_out_var_shift] = V::from(computed);
+            
+            array_in_var_shift += array_in_var_size;
+            array_out_var_shift += array_out_var_size;
         }
         context.output_mask().set_value(out_idx, 1);
     }
+*/
     
     /// Performs a partial weighted interpolation on a 5×5 window centered at `(row_c, col_c)`
     /// within a multidimensional input array `array_in`, taking into account validity masks.
@@ -540,15 +780,15 @@ impl GxOptimizedBicubicInterpolator {
         //N: GxArrayViewInterpolatorOutputMaskStrategy,
     {
         let ncol = array_in.ncol;
-        let array_in_var_size = array_in.nrow * ncol;
-        let array_out_var_size = array_out.nrow * array_out.ncol;
+        let array_in_var_size = array_in.var_size;
+        let array_out_var_size = array_out.var_size;
         let mut arr_irow;
         let mut arr_icol;
         let mut arr_iflat: usize;
         let mut computed: f64;
         let mut computed_col: f64;
-        let mut array_in_var_shift: usize;
-        let mut array_out_var_shift: usize;
+        let mut array_in_var_shift: usize = 0;
+        let mut array_out_var_shift: usize = 0;
         
         // Pre check mask
         let mut valid = 1u8;
@@ -587,7 +827,8 @@ impl GxOptimizedBicubicInterpolator {
         
         if valid == 0 {
             for ivar in 0..array_in.nvar {
-                array_out.data[out_idx + ivar * array_out_var_size] = nodata;
+                array_out.data[out_idx + array_out_var_shift] = nodata;
+                array_out_var_shift += array_out_var_size;
             }
             context.output_mask().set_value(out_idx, 0);
             //array_mask_out.data[out_idx] = 0;
@@ -599,8 +840,6 @@ impl GxOptimizedBicubicInterpolator {
         // for the corresponding row or column value.
         for ivar in 0..array_in.nvar {
             computed = 0.0;
-            array_in_var_shift = ivar * array_in_var_size;
-            array_out_var_shift = ivar * array_out_var_size;
             
             for irow in 0..=4 {
                 arr_irow = row_c + irow - 2;
@@ -624,6 +863,9 @@ impl GxOptimizedBicubicInterpolator {
             }
             // Write interpolated value to output buffer
             array_out.data[out_idx + array_out_var_shift] = V::from(computed);
+            
+            array_in_var_shift += array_in_var_size;
+            array_out_var_shift += array_out_var_size;
         }
         context.output_mask().set_value(out_idx, 1);
     }
@@ -678,7 +920,7 @@ impl GxArrayViewInterpolator for GxOptimizedBicubicInterpolator
         let kernel_center_col: i64 = (target_col_pos + 0.5).floor() as i64;
  
         //let array_in_var_size = array_in.nrow * array_in.ncol;
-        let array_out_var_size = array_out.nrow * array_out.ncol;
+        let array_out_var_size = array_out.var_size;
         
         // Consider mask valid (if any)
         context.output_mask().set_value(out_idx, 1);
@@ -702,8 +944,8 @@ impl GxArrayViewInterpolator for GxOptimizedBicubicInterpolator
                 
                 // from here - pass slice for weight computation
                 // slices are used here in order to limit buffer allocation
-                optimized_bicubic_kernel_weights(rel_row, kernel_weights_row_slice);
-                optimized_bicubic_kernel_weights(rel_col, kernel_weights_col_slice);
+                optimized_bicubic_kernel_weights_opt(rel_row, kernel_weights_row_slice);
+                optimized_bicubic_kernel_weights_opt(rel_col, kernel_weights_col_slice);
                 
                 
                 if context.input_mask().is_enabled() {
@@ -734,8 +976,8 @@ impl GxArrayViewInterpolator for GxOptimizedBicubicInterpolator
                 
                 // from here - pass slice for weight computation
                 // slices are used here in order to limit buffer allocation
-                optimized_bicubic_kernel_weights(rel_row, kernel_weights_row_slice);
-                optimized_bicubic_kernel_weights(rel_col, kernel_weights_col_slice);
+                optimized_bicubic_kernel_weights_opt(rel_row, kernel_weights_row_slice);
+                optimized_bicubic_kernel_weights_opt(rel_col, kernel_weights_col_slice);
                 
                 if context.input_mask().is_enabled() {
                     /* self.interpolate_masked_partial(kernel_weights_row_slice, kernel_weights_col_slice,
@@ -767,8 +1009,8 @@ impl GxArrayViewInterpolator for GxOptimizedBicubicInterpolator
             
             // from here - pass slice for weight computation
             // slices are used here in order to limit buffer allocation
-            optimized_bicubic_kernel_weights(rel_row, kernel_weights_row_slice);
-            optimized_bicubic_kernel_weights(rel_col, kernel_weights_col_slice);
+            optimized_bicubic_kernel_weights_opt(rel_row, kernel_weights_row_slice);
+            optimized_bicubic_kernel_weights_opt(rel_col, kernel_weights_col_slice);
             
             if context.input_mask().is_enabled() {
                 self.interpolate_masked_unchecked(kernel_weights_row_slice, kernel_weights_col_slice,
@@ -860,6 +1102,24 @@ mod gx_optimized_bicubic_kernel_tests {
         
         optimized_bicubic_kernel_weights(-1.0, &mut weights);
         assert_eq!(weights, [0., 0., 0., 1., 0.]);
+    }
+    
+    /// Tests the both implementations (naive and optimized) give the same results
+    #[test]
+    fn test_optimized_bicubic_kernel_weights_both_implementation() {
+        let mut weights_naive = [0.0; 5];
+        let mut weights_opt = [0.0; 5];
+        
+        let x_values: [f64; 13] = [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 0.999999, 1., 1.1, 1.3, 1.8, 2., 2.1];
+        for &x in x_values.iter()  {
+            optimized_bicubic_kernel_weights(x, &mut weights_naive);
+            optimized_bicubic_kernel_weights_opt(x, &mut weights_opt);
+            assert!(approx_eq(&weights_naive, &weights_opt, 1e-10));
+            
+            optimized_bicubic_kernel_weights(-x, &mut weights_naive);
+            optimized_bicubic_kernel_weights_opt(-x, &mut weights_opt);
+            assert!(approx_eq(&weights_naive, &weights_opt, 1e-10));
+        }
     }
     
     #[test]

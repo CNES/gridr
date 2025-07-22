@@ -8,6 +8,12 @@ edition = "2021"
 extension-module = ["pyo3/extension-module"]
 default = []
 
+[profile.release]
+#debug = true          
+opt-level = 3         
+lto = "fat"          
+codegen-units = 1   
+
 [dependencies]
 pyo3 = { version = "0.21.2", features = ["extension-module", "experimental-declarative-modules"]}
 numpy = "0.21.0"

@@ -51,6 +51,12 @@ pub trait GxArrayViewInterpolatorInputMaskStrategy {
     /// Returns whether the point at index `idx` is valid (1) or invalid (0).
     fn is_valid(&self, idx: usize) -> u8;
     
+    /// Returns whether the all the points in a array are valid (1) or invalid (0).
+    fn is_valid_window(&self, start_idx: usize, height: usize, width: usize, cache: &mut [u8]) -> u8;
+    
+    /// Returns whether the all the points in a array are valid (1) or invalid (0).
+    fn is_valid_weighted_window(&self, start_idx: usize, height: usize, width: usize, weights_row: &[f64], weights_col: &[f64], cache: &mut [u8]) -> u8;
+    
     /// Returns true if the input mask strategy is enabled.
     fn is_enabled(&self) -> bool;
 }
@@ -59,6 +65,16 @@ impl<T: GxArrayViewInterpolatorInputMaskStrategy> GxArrayViewInterpolatorInputMa
     #[inline(always)]
     fn is_valid(&self, idx: usize) -> u8 {
         (*self).is_valid(idx)
+    }
+    
+    #[inline(always)]
+    fn is_valid_window(&self, start_idx: usize, height: usize, width: usize, cache: &mut [u8]) -> u8 {
+        (*self).is_valid_window(start_idx, height, width, cache)
+    }
+    
+    #[inline(always)]
+    fn is_valid_weighted_window(&self, start_idx: usize, height: usize, width: usize, weights_row: &[f64], weights_col: &[f64], cache: &mut [u8]) -> u8 {
+        (*self).is_valid_weighted_window(start_idx, height, width, weights_row, weights_col, cache)
     }
 
     #[inline(always)]
@@ -78,6 +94,16 @@ impl GxArrayViewInterpolatorInputMaskStrategy for NoInputMask {
     }
     
     #[inline(always)]
+    fn is_valid_window(&self, start_idx: usize, height: usize, width: usize, cache: &mut [u8]) -> u8 {
+        1
+    }
+    
+    #[inline(always)]
+    fn is_valid_weighted_window(&self, start_idx: usize, height: usize, width: usize, weights_row: &[f64], weights_col: &[f64], cache: &mut [u8]) -> u8 {
+        1
+    }
+    
+    #[inline(always)]
     fn is_enabled(&self) -> bool {
         false
     }
@@ -92,6 +118,46 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
     #[inline(always)]
     fn is_valid(&self, idx: usize) -> u8 {
         self.mask.data[idx]
+    }
+    
+    #[inline(always)]
+    fn is_valid_window(&self, start_idx: usize, height: usize, width: usize, cache: &mut [u8]) -> u8 {
+        1
+    }
+    
+    #[inline(always)]
+    fn is_valid_weighted_window(&self, start_idx: usize, height: usize, width: usize, weights_row: &[f64], weights_col: &[f64], cache: &mut [u8]) -> u8 {
+        let mut arr_iflat = start_idx;
+        let ncol = self.mask.ncol;
+        let height_m1 = height - 1;
+        let width_m1 = width - 1;
+        let mut i: usize = 0;
+        
+        for irow in 0..height {
+            if weights_row[height_m1 - irow as usize] == 0.0 {
+                // Go to next row
+                i += height;
+                arr_iflat += ncol;
+                continue;
+            }
+            for icol in 0..width {
+                if weights_col[width_m1 - icol as usize] == 0.0 {
+                    // Go to next col
+                    arr_iflat += 1;
+                    i += 1;
+                    continue;
+                }
+                cache[i] = self.mask.data[arr_iflat];
+                
+                if cache[i] == 0 {
+                    return 0;
+                }
+                arr_iflat += 1;
+                i += 1;
+            }
+            arr_iflat += ncol - width;
+        }
+        1
     }
     
     #[inline(always)]
