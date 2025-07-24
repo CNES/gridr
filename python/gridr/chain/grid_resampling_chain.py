@@ -257,7 +257,8 @@ def basic_grid_resampling_array(
         missing data points.
         
     grid_mask_arr : numpy.ndarray, optional
-        Optional 2D mask array aligned with `grid_arr` (shape: ``(rows, cols)``).
+        Optional 2D `uint8` or `int8` mask array aligned with `grid_arr` 
+        (shape: ``(rows, cols)``).
         Indicates valid (unmasked) and invalid (masked) data. Defaults to None.
         
     grid_mask_in_unmasked_value : numpy.uint8
@@ -361,6 +362,10 @@ def basic_grid_resampling_array(
 
     Optional masks for both the grid and the source array may be passed.
     
+    Masks can be passed as either `int8` or `uint8` arrays, but the values must 
+    be positive and within the uint8 range of [0-255]. If you provide an `int8`
+    mask, the method will internally shadow it with a `uint8` view.
+    
     If the grid metrics are not valid (i.e., there was not sufficient valid data
     to determine the grid and source boundaries), the method fills the windowed
     output with the `nodata_out` value.
@@ -372,6 +377,24 @@ def basic_grid_resampling_array(
     # `oversamped_grid_win`.
     grid_arr_win, _ = grid_resolution_window_safe(resolution=grid_resolution,
             win=oversampled_grid_win, grid_shape=grid_arr_shape)
+    
+    # Check grid_mask_arr - no change done here but the grid_mask_arr
+    # may be shadowed with an uint8 view if passed as int8
+    if grid_mask_arr is not None:
+        
+        # Check array_src_mask dtype is an 8 bit integer
+        # We will ensure it is passed as uint8 later
+        if grid_mask_arr.dtype not in (np.int8, np.uint8):
+            raise TypeError("The grid mask array must be an 8 bit integer "
+                    "raster.")
+        # Check validity value in range of uint8
+        if grid_mask_in_unmasked_value < 0 \
+                or grid_mask_in_unmasked_value > 255:
+            raise ValueError("The `grid_mask_in_unmasked_value` must be in the "
+                    "[0-255] range."
+                    f"The current value is {grid_mask_in_unmasked_value}")
+        if grid_mask_arr.dtype == np.int8:
+            grid_mask_arr = grid_mask_arr.view(np.uint8)
     
     # Compute strip grid metrics for current tile
     DEBUG("Computing grid metrics... ")
