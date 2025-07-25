@@ -179,7 +179,7 @@ class TestGridResamplingChain:
                     array_out_ds = array_out_ds,
                     interp = interp,
                     nodata_out = 0,
-                    window = window,
+                    win = window,
                     
                     mask_out_ds = array_mask_out_ds,
                     grid_mask_in_ds = grid_mask_in_ds,

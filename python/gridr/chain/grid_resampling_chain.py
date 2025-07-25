@@ -736,7 +736,7 @@ def basic_grid_resampling_chain(
         interp: str,
         nodata_out: Union[int, float],
         grid_col_ds: Union[rasterio.io.DatasetReader, None] = None,
-        window: Optional[np.ndarray] = None, 
+        win: Optional[np.ndarray] = None, 
         array_src_mask_ds: Optional[rasterio.io.DatasetReader] = None,
         array_src_mask_band: Optional[int] = None,
         array_src_mask_validity_pair: Optional[Tuple[int, int]] = None,
@@ -800,7 +800,7 @@ def basic_grid_resampling_chain(
         Optional separate dataset for grid column coordinates if they are not
         in `grid_ds`. Defaults to None.
         
-    window : numpy.ndarray, optional
+    win : numpy.ndarray, optional
         Optional output window of the `grid_ds` to process, defined as
         ``[[row_start, row_end], [col_start, col_end]]``. This defines the
         region of interest for the resampling. If None, the full grid extent
@@ -898,7 +898,7 @@ def basic_grid_resampling_chain(
     the input grid and the source array, allowing for flexible data validity
     management.
 
-    The `window` parameter is crucial for defining the specific output region
+    The `win` parameter is crucial for defining the specific output region
     to be processed, enabling partial grid resampling without loading the
     entire dataset into memory.
     
@@ -963,18 +963,18 @@ def basic_grid_resampling_chain(
 
     # The window is given in target geometry - if None we set it to full grid
     # The window contains the first and last index for each axis
-    if window is None:
+    if win is None:
         logger.debug("No window given : the full grid is considered as window")
-        window = np.array(((0, full_shape_out[0]-1), (0, full_shape_out[1]-1)))
+        win = np.array(((0, full_shape_out[0]-1), (0, full_shape_out[1]-1)))
     
     # If the window is given we have to check that it lies in the grid
-    elif not window_check(full_profile_out, window):
+    elif not window_check(full_profile_out, win):
         raise Exception("The given 'window' is outside the grid domain of "
                     "definition.")
 
-    logger.debug(f"Window : {window}")
+    logger.debug(f"Window : {win}")
     
-    shape_out = window[:,1] - window[:,0] + 1
+    shape_out = win[:,1] - win[:,0] + 1
     logger.debug(f"Shape out : {shape_out}")
 
     # Compute strips definitions
@@ -990,7 +990,7 @@ def basic_grid_resampling_chain(
     # - the shape_out corresponds to the production window shape
     # - we shift the chunk_windows of the window origin 
     chunk_windows = [np.array([[c0, c1-1], [0, shape_out[1]-1]]) \
-            + window[:,0].reshape(-1, 1) for c0, c1 in chunk_boundaries]
+            + win[:,0].reshape(-1, 1) for c0, c1 in chunk_boundaries]
 
     # Compute the window to read for each chunk window.
     # This will returns both the window to read, and the relative window
@@ -1088,7 +1088,7 @@ def basic_grid_resampling_chain(
             cslices3 = (slice(None, None),) + cslices
             # Define the target positioning window `cstrip_target_win` to write to 
             # disk. We have to revert back the shift of the production window.
-            cstrip_target_win = chunk_win - window[:,0].reshape(-1,1)
+            cstrip_target_win = chunk_win - win[:,0].reshape(-1,1)
             # read the grid data
             cread_shape = window_shape(win_read)
             
