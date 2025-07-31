@@ -51,11 +51,7 @@
 //! - This design supports both safe and unsafe (optimized) execution paths, with clear contracts
 //!   for when each may be used.
 use crate::core::gx_array::{GxArrayWindow, GxArrayView, GxArrayViewMut};
-//use crate::core::interp::gx_optimized_bicubic_kernel::{array1_optimized_bicubic_interp2};
-//use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewInterpolationContextTrait, GxArrayViewInterpolationContext, NoInputMask, BinaryInputMask, NoOutputMask, BinaryOutputMask, NoBoundsCheck, BoundsCheck, OutputMaskStrategy, InputMaskStrategy, GxArrayViewInterpolatorOutputMaskStrategy};
 use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewInterpolationContextTrait, GxArrayViewInterpolationContext, GxArrayViewInterpolatorOutputMaskStrategy, NoInputMask, BinaryInputMask, NoOutputMask, BinaryOutputMask, BoundsCheck, NoBoundsCheck};
-//use crate::core::interp::gx_optimized_bicubic_kernel::{GxOptimizedBicubicInterpolator};
-//use crate::{assert_options_match};
 use crate::core::gx_errors::GxError;
 
 /// A trait that standardizes grid cell validation logic within a mesh-based computation.
@@ -1011,12 +1007,6 @@ where
         if grid_validity_checker.validate(&mut gmi_mesh, &mut out_idx, &grid_row_array) {
         
             // Bilinear grid interpolation with oversampling
-            /*
-            let gmi_w1: f64 = (gmi_col_idx_t * gmi_row_idx_t) as f64;
-            let gmi_w2: f64 = (gmi_col_idx * gmi_row_idx_t) as f64;
-            let gmi_w3: f64 = (gmi_col_idx * gmi_row_idx) as f64;
-            let gmi_w4: f64 = (gmi_col_idx_t * gmi_row_idx) as f64;
-            */
             let gmi_w1: f64 = gmi_mesh.gmi_w1 as f64;
             let gmi_w2: f64 = gmi_mesh.gmi_w2 as f64;
             let gmi_w3: f64 = gmi_mesh.gmi_w3 as f64;
@@ -1047,11 +1037,6 @@ where
                     ima_in,
                     ima_out,
                     nodata_val_out,
-                    //ima_mask_in,
-                    //ima_mask_out,
-                    //array_in_mask_strategy,
-                    //array_out_mask_strategy,
-                    //bound_check_strategy,
                     context,
                     );
         } else {

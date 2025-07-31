@@ -35,6 +35,7 @@ PY_ARRAY_GRID_RESAMPLING_FUNC = {
 
 PY_INTERPOLATOR_TYPES = {
     "nearest": PyInterpolatorType.Nearest,
+    "linear": PyInterpolatorType.Linear,
     "cubic": PyInterpolatorType.OptimizedBicubic,
 }
 

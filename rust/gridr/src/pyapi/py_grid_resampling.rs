@@ -2,17 +2,15 @@
 //! Crate doc
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
-//use ndarray;
-//use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayDyn, PyReadonlyArrayDyn, PyArrayMethods};
-//use numpy::{PyArray1, PyArrayDyn, PyArrayMethods};
 use numpy::{PyArray1, PyReadwriteArray1, PyArrayMethods, Element};
-/// We tell here what module/functions we use from the pure rust library (lib.rs)
+
 use crate::{assert_options_exclusive};
 use crate::core::gx_array::{GxArrayWindow, GxArrayView, GxArrayViewMut};
 use crate::core::gx_grid_resampling::{array1_grid_resampling, NoCheckGridMeshValidator, MaskGridMeshValidator, InvalidValueGridMeshValidator};
 use crate::core::interp::gx_array_view_interp::GxArrayViewInterpolator;
 use crate::core::interp::gx_optimized_bicubic_kernel::{GxOptimizedBicubicInterpolator};
 use crate::core::interp::gx_nearest_kernel::{GxNearestInterpolator};
+use crate::core::interp::gx_linear_kernel::{GxLinearInterpolator};
 use crate::core::gx_const::{F64_TOLERANCE};
 
 use super::py_array::{PyArrayWindow2};
@@ -21,8 +19,9 @@ use super::py_array::{PyArrayWindow2};
 #[pyclass]
 #[derive(Clone, Copy)]
 pub enum PyInterpolatorType {
-    OptimizedBicubic,
     Nearest,
+    Linear,
+    OptimizedBicubic,
 }
 
 fn py_array1_grid_resampling<T, V, W>(
@@ -51,14 +50,9 @@ fn py_array1_grid_resampling<T, V, W>(
     ) -> Result<(), PyErr>
 where
     T: Element + Copy + PartialEq + Default + std::ops::Mul<f64, Output=f64> + Into<f64>,
-    //U: Element + Copy + PartialEq + Default + Into<f64>,
     V: Element + Copy + PartialEq + Default + From<f64>,
     W: Element + Copy + PartialEq + Default + std::ops::Mul<f64, Output=f64> + Into<f64>,
 {
-    // Create the interpolator (bicubic forced here for now)
-    //let interp = GxOptimizedBicubicInterpolator::new();
-    //let interp = GxNearestInterpolator::new();
-    
     // Create a safe mutable array_view in order to be able to read and write
     // from/to the output array
     let mut array_out_view_mut = array_out.readwrite();
@@ -218,6 +212,96 @@ where
             let interp = GxNearestInterpolator::new();
             
             match array1_grid_resampling::<T, V, W, GxNearestInterpolator, InvalidValueGridMeshValidator>(
+                    &interp, // interp
+                    &grid_checker, //
+                    &array_in_arrayview, //ima_in
+                    &grid_row_arrayview, //grid_row_array
+                    &grid_col_arrayview, //grid_col_array
+                    grid_resolution.0, //grid_row_oversampling
+                    grid_resolution.1, //grid_col_oversampling
+                    &mut array_out_arrayview, //ima_out
+                    nodata_out, //nodata_val_out
+                    mask_in_array_view.as_ref(), //ima_mask_in
+                    mask_out_array_view.as_mut(), //ima_mask_out
+                    rs_grid_win.as_ref(), //grid_win
+                    rs_out_win.as_ref(), //out_win
+                    origin_row_bias, // ima_in_origin_row
+                    origin_col_bias, // ima_in_origin_col
+                    check_boundaries, // check_boundaries
+                ) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(PyValueError::new_err(e.to_string())),
+            }
+        },
+        
+        // ---- linear ----
+        (PyInterpolatorType::Linear, 0) => {
+            // No validator parameter has been passed ; we set the grid_checker to the always
+            // positiv NoCheckGridMeshValidator
+            let grid_checker = NoCheckGridMeshValidator{};
+            let interp = GxLinearInterpolator::new();
+            match array1_grid_resampling::<T, V, W, GxLinearInterpolator, NoCheckGridMeshValidator>(
+                    &interp, // interp
+                    &grid_checker, //
+                    &array_in_arrayview, //ima_in
+                    &grid_row_arrayview, //grid_row_array
+                    &grid_col_arrayview, //grid_col_array
+                    grid_resolution.0, //grid_row_oversampling
+                    grid_resolution.1, //grid_col_oversampling
+                    &mut array_out_arrayview, //ima_out
+                    nodata_out, //nodata_val_out
+                    mask_in_array_view.as_ref(), //ima_mask_in
+                    mask_out_array_view.as_mut(), //ima_mask_out
+                    rs_grid_win.as_ref(), //grid_win
+                    rs_out_win.as_ref(), //out_win
+                    origin_row_bias, // ima_in_origin_row
+                    origin_col_bias, // ima_in_origin_col
+                    check_boundaries, // check_boundaries
+                ) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(PyValueError::new_err(e.to_string())),
+            }
+        },
+        (PyInterpolatorType::Linear, 1) => {
+            // A grid mask parameter has been passed ; we intialize a MaskGridMeshValidator
+            let mask_view = grid_mask_array_view.unwrap();
+            let mask_valid_value = grid_mask_valid_value.ok_or_else(|| PyValueError::new_err(
+                    "The argument `grid_mask_valid_value` is mandatory when using `grid_mask`"
+                ))?;
+            let grid_checker = MaskGridMeshValidator{ mask_view: &mask_view, valid_value: mask_valid_value };
+            let interp = GxLinearInterpolator::new();
+            
+            match array1_grid_resampling::<T, V, W, GxLinearInterpolator, MaskGridMeshValidator>(
+                    &interp, // interp
+                    &grid_checker, //
+                    &array_in_arrayview, //ima_in
+                    &grid_row_arrayview, //grid_row_array
+                    &grid_col_arrayview, //grid_col_array
+                    grid_resolution.0, //grid_row_oversampling
+                    grid_resolution.1, //grid_col_oversampling
+                    &mut array_out_arrayview, //ima_out
+                    nodata_out, //nodata_val_out
+                    mask_in_array_view.as_ref(), //ima_mask_in
+                    mask_out_array_view.as_mut(), //ima_mask_out
+                    rs_grid_win.as_ref(), //grid_win
+                    rs_out_win.as_ref(), //out_win
+                    origin_row_bias, // ima_in_origin_row
+                    origin_col_bias, // ima_in_origin_col
+                    check_boundaries, // check_boundaries
+                ) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(PyValueError::new_err(e.to_string())),
+            }
+        },
+        (PyInterpolatorType::Linear, 2) => {
+            // A grid nodata value parameter has been passed ; we intialize an InvalidValueGridMeshValidator
+            let grid_checker = InvalidValueGridMeshValidator{
+                invalid_value: grid_nodata_value.expect("grid_nodata was None, but a value was expected"),
+                epsilon: F64_TOLERANCE
+            };
+            let interp = GxLinearInterpolator::new();
+            
+            match array1_grid_resampling::<T, V, W, GxLinearInterpolator, InvalidValueGridMeshValidator>(
                     &interp, // interp
                     &grid_checker, //
                     &array_in_arrayview, //ima_in

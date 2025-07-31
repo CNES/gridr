@@ -20,20 +20,77 @@ import tempfile
 import sys
 
 import numpy as np
+import sys
 import rasterio
 import matplotlib.pyplot as plt
 
 from gridr.core.grid.grid_commons import grid_full_resolution_shape
 from gridr.core.grid.grid_resampling import array_grid_resampling
-from gridr.misc.lena import lena
+from gridr.misc.mandrill import mandrill
 #ARRAY_IN_SHAPE = (100, 50)
 #ARRAY_IN = np.arange(ARRAY_IN_SHAPE, dtype=np.float64)
+np.set_printoptions(threshold=sys.maxsize)
+
+def check_interp():
+    array_in = np.arange(7*8, dtype=np.float64).reshape(7, 8)
+    
+    y = np.arange(array_in.shape[0]*2, dtype=np.float64)/2.
+    x = np.arange(array_in.shape[0]*3, dtype=np.float64)/3.
+    xx, yy = np.meshgrid(x,y)
+    print('xx', xx)
+    print('yy', yy)
+    print('in', array_in)
+    out_cubic = array_grid_resampling(
+        interp='cubic',
+        array_in=array_in,
+        grid_row=yy,
+        grid_col=xx,
+        grid_resolution=(1,1),
+        array_out=None,
+        array_in_mask=None,
+        grid_mask=None,
+        array_out_mask=None,
+        nodata_out=-1,
+        )
+    out_nearest = array_grid_resampling(
+        interp='nearest',
+        array_in=array_in,
+        grid_row=yy,
+        grid_col=xx,
+        grid_resolution=(1,1),
+        array_out=None,
+        array_in_mask=None,
+        grid_mask=None,
+        array_out_mask=None,
+        nodata_out=-1,
+        )
+    out_linear = array_grid_resampling(
+        interp='linear',
+        array_in=array_in,
+        grid_row=yy,
+        grid_col=xx,
+        grid_resolution=(1,1),
+        array_out=None,
+        array_in_mask=None,
+        grid_mask=None,
+        array_out_mask=None,
+        nodata_out=-1,
+        )
+    
+    print('cubic', out_cubic)
+    print('linear', out_linear)
+    print('nearest', out_nearest)
+    
+    print("stop array_grid_resampling")
+    
+    
+    
 
 
 def my_resampling_identity():
-    array_in = lena[0].astype(np.float64)
-    y = np.arange(lena.shape[1], dtype=np.float64)
-    x = np.arange(lena.shape[2], dtype=np.float64)
+    array_in = mandrill[0].astype(np.float64)
+    y = np.arange(mandrill.shape[1], dtype=np.float64)
+    x = np.arange(mandrill.shape[2], dtype=np.float64)
     xx, yy = np.meshgrid(x, y)
     
     array_out = np.zeros(xx.shape, dtype=np.float64)
@@ -42,6 +99,7 @@ def my_resampling_identity():
     
     print("start array_grid_resampling")
     array_grid_resampling(
+        interp='cubic',
         array_in=array_in,
         grid_row=yy,
         grid_col=xx,
@@ -61,7 +119,7 @@ def my_resampling_identity():
     fig, axes = plt.subplots(1, 2, figsize=(10, 5))  # 1 ligne, 2 colonnes
 
     # Affichage de l'image 1
-    axes[0].imshow(lena[0])
+    axes[0].imshow(mandrill[0])
     axes[0].axis('off')  # Désactive les axes autour de l'image
     axes[0].set_title('Image 1')  # Titre de l'image 1
 
@@ -74,9 +132,9 @@ def my_resampling_identity():
     plt.show()
     
 def my_resampling_identity_window():
-    array_in = lena[0].astype(np.float64)
-    y = np.arange(lena.shape[1], dtype=np.float64)
-    x = np.arange(lena.shape[2], dtype=np.float64)
+    array_in = mandrill[0].astype(np.float64)
+    y = np.arange(mandrill.shape[1], dtype=np.float64)
+    x = np.arange(mandrill.shape[2], dtype=np.float64)
     xx, yy = np.meshgrid(x, y)
     
     # Lets define a window :
@@ -93,6 +151,7 @@ def my_resampling_identity_window():
     
     print("start array_grid_resampling")
     array_grid_resampling(
+        interp='cubic',
         array_in=array_in,
         grid_row=yy,
         grid_col=xx,
@@ -113,7 +172,7 @@ def my_resampling_identity_window():
     fig, axes = plt.subplots(1, 2, figsize=(10, 5))  # 1 ligne, 2 colonnes
 
     # Affichage de l'image 1
-    axes[0].imshow(lena[0])
+    axes[0].imshow(mandrill[0])
     axes[0].axis('off')  # Désactive les axes autour de l'image
     axes[0].set_title('Image 1')  # Titre de l'image 1
 
@@ -128,17 +187,17 @@ def my_resampling_identity_window():
 def my_resampling_centered_oversampling(res_x, res_y, rgb=True):
     nvar=3
     if rgb:
-        array_in = lena.astype(np.float64)
+        array_in = mandrill.astype(np.float64)
     else:
-        array_in = lena[0].astype(np.float64)
+        array_in = mandrill[0].astype(np.float64)
         nvar=1
     
     # We center the grid on the image center
-    xc = lena.shape[2] // 2
-    yc = lena.shape[1] // 2
+    xc = mandrill.shape[2] // 2
+    yc = mandrill.shape[1] // 2
     
-    gridsize_x = lena.shape[2] // res_x
-    gridsize_y = lena.shape[1] // res_y
+    gridsize_x = mandrill.shape[2] // res_x
+    gridsize_y = mandrill.shape[1] // res_y
     print('gridsize', gridsize_x, gridsize_y)
     
     # we target roughly the same output size
@@ -163,6 +222,7 @@ def my_resampling_centered_oversampling(res_x, res_y, rgb=True):
     
     print("start array_grid_resampling")
     array_grid_resampling(
+        interp='cubic',
         array_in=array_in,
         grid_row=yy,
         grid_col=xx,
@@ -184,7 +244,7 @@ def my_resampling_centered_oversampling(res_x, res_y, rgb=True):
 
     if nvar == 1:
         # Affichage de l'image 1
-        axes[0].imshow(lena[0], cmap='gray')
+        axes[0].imshow(mandrill[0], cmap='gray')
         axes[0].axis('off')  # Désactive les axes autour de l'image
         axes[0].set_title('Image 1')  # Titre de l'image 1
 
@@ -208,12 +268,13 @@ def my_resampling_centered_oversampling(res_x, res_y, rgb=True):
     plt.show()
 
 #my_resampling_centered_oversampling(10,10)
-my_resampling_identity_window()
+#my_resampling_identity_window()
+check_interp()
 
 # import numpy as np
 # import matplotlib.pyplot as plt
 
 # # Afficher l'image avec matplotlib
-# plt.imshow(lena[0], cmap='gray', interpolation='nearest')
+# plt.imshow(mandrill[0], cmap='gray', interpolation='nearest')
 # plt.axis('off')  # Masquer les axes
 # plt.show()
