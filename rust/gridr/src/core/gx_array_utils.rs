@@ -230,7 +230,7 @@ where
     Ok(())
 }
 
-
+/*
 /// Function window_iter_1 - 1 variable optimized
 /// Get an iterator on an 1 variable array given a window
 #[inline(always)]
@@ -271,3 +271,4 @@ fn window_iter_2var<'a, T>(
         })
     })
 }
+*/

@@ -1,6 +1,49 @@
 #![warn(missing_docs)]
-//! # Grid generals 
-
+//! # Grid generals
+//!
+//! This crate provides core functionality for validating grid nodes with flexible strategies.
+//!
+//! ## Trait: GridNodeValidator<W>
+//!
+//! ```rust
+//! pub trait GridNodeValidator<W> {
+//!     fn validate(&self, node_idx: usize, grid_view: &GxArrayView<W>) -> bool;
+//! }
+//! ```
+//!
+//! Standardizes node validation with:
+//! - Generic data type `W`
+//! - Single-node validation method
+//! - Boolean return indicating validity
+//!
+//! ## Implementations
+//!
+//! ### 1. NoCheckGridNodeValidator
+//! - Always returns `true`
+//! - No validation performed
+//! - Most efficient option
+//!
+//! ### 2. InvalidValueGridNodeValidator
+//! - Validates against sentinel values
+//! - Uses epsilon comparison for floats
+//! - Requires `W: Into<f64> + Copy`
+//!
+//! ### 3. MaskGridNodeValidator
+//! - Validates using binary mask
+//! - Requires `W: Copy`
+//! - Checks mask value against `valid_value`
+//!
+//! ## Usage
+//!
+//! ```rust
+//! // Basic usage
+//! let validator = InvalidValueGridNodeValidator { invalid_value: -9999.0, epsilon: 1e-6 };
+//!
+//! // Validation check
+//! if validator.validate(node_idx, grid_view) {
+//!     // Process valid node
+//! }
+//! ```
 
 use crate::core::gx_array::{GxArrayView};
 
@@ -38,6 +81,17 @@ pub trait GridNodeValidator<W> {
 pub struct NoCheckGridNodeValidator;
 
 impl<W> GridNodeValidator<W> for NoCheckGridNodeValidator {
+    /// Validates whether the specified node is suitable for computation.
+    /// This implementation for NoCheckGridNodeValidator always returns true.
+    ///
+    /// # Arguments
+    ///
+    /// * `_node_idx` - The index of the grid node to validate.
+    /// * `_grid_view` - A view into the grid data being validated.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true`.
     #[inline]
     fn validate<'a>(&self, _node_idx: usize, _grid_view: &GxArrayView<'a, W>) -> bool {
         true
@@ -49,13 +103,39 @@ impl<W> GridNodeValidator<W> for NoCheckGridNodeValidator {
 /// This implementation considers a node invalid if its value is within a small threshold (`epsilon`)
 /// of a predefined `invalid_value`. This is typically used to ignore missing or masked data
 /// encoded as sentinel values (e.g., -9999.0).
+///
+/// # Fields
+///
+/// * `invalid_value` - The sentinel value that indicates invalid data.
+/// * `epsilon` - The tolerance threshold for comparing floating-point values.
+///
+/// # Examples
+///
+/// ```
+/// let validator = InvalidValueGridNodeValidator {
+///     invalid_value: -9999.0,
+///     epsilon: 1e-6,
+/// };
+/// `
 #[derive(Debug)]
 pub struct InvalidValueGridNodeValidator {
+    /// The sentinel value that indicates invalid data.
     pub invalid_value: f64,
+    /// The tolerance threshold for comparing floating-point values.
     pub epsilon: f64,
 }
 
 impl InvalidValueGridNodeValidator {
+    /// Checks if a node value is considered invalid based on the epsilon threshold.
+    ///
+    /// # Arguments
+    ///
+    /// * `node` - The index of the node to check.
+    /// * `grid_view` - A view into the grid data being validated.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if the node value is within epsilon of the invalid value, `false` otherwise.
     #[inline]
     fn is_invalid<W>(&self, node: usize, grid_view: &GxArrayView<W>) -> bool
     where
@@ -69,6 +149,16 @@ impl<W> GridNodeValidator<W> for InvalidValueGridNodeValidator
 where
     W: Into<f64> + Copy,
 {
+    /// Validates whether the specified node is suitable for computation.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_idx` - The index of the grid node to validate.
+    /// * `grid_view` - A view into the grid data being validated.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if the node is valid and can be processed, `false` otherwise.
     #[inline]
     fn validate<'a>(&self, node_idx: usize, grid_view: &GxArrayView<'a, W>) -> bool {
         !self.is_invalid(node_idx, grid_view)
@@ -82,7 +172,9 @@ where
 /// regions using precomputed masks (e.g., land/sea masks).
 #[derive(Debug)]
 pub struct MaskGridNodeValidator<'a> {
+    /// Immutable view to the associated mask
     pub mask_view: &'a GxArrayView<'a, u8>,
+    /// Value to consider valid in the mask
     pub valid_value: u8,
 }
 
@@ -90,6 +182,16 @@ impl<'a, W> GridNodeValidator<W> for MaskGridNodeValidator<'a>
 where
     W: Copy,
 {
+    /// Validates whether the specified node is suitable for computation based on the mask.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_idx` - The index of the grid node to validate.
+    /// * `grid_view` - A view into the grid data being validated.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if the mask contains `valid_value` at index `node_idx`, `false` otherwise.
     #[inline]
     fn validate(&self, node_idx: usize, _grid_view: &GxArrayView<W>) -> bool {
         self.mask_view.data[node_idx] == self.valid_value

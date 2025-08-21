@@ -153,9 +153,13 @@ impl GridTransitionMatrix {
 /// are valid.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GeometryBounds<T> {
+    /// Minimum coordinate along the X axis.
     pub xmin: T,
+    /// Maximum coordinate along the X axis.
     pub xmax: T,
+    /// Minimum coordinate along the Y axis.
     pub ymin: T,
+    /// Maximum coordinate along the Y axis.
     pub ymax: T,
 }
 
@@ -255,18 +259,25 @@ where
 /// - `dst_col_edges`: For each **column** in the destination grid, stores the interval of valid **row indices**.
 /// - `src_row_edges`: For each **row** in the destination grid, stores the **source coordinate segment** `((y0, x0), (y1, x1))` that contributes to it.
 /// - `src_col_edges`: For each **column** in the destination grid, stores the **source coordinate segment** `((y0, x0), (y1, x1))` that contributes to it.
-/// - `transition_matrix`: Mapping structure defining how source rows and columns relate to destination ones.
+/// - `transition_matrix`: The grid transition matrix
 ///
 /// # Type Parameters
 /// - `T`: Coordinate type (e.g., `f64`).
 #[derive(Debug, Clone)]
 pub struct GridGeometriesMetrics<T> {
+    /// Bounding box of the destination grid (in pixel indices).
     pub dst_bounds: GeometryBounds<usize>, 
+    /// Bounding box of the source grid (in coordinate units).
     pub src_bounds: GeometryBounds<T>,
+    /// Interval of valid **column indices** for each **row** in the destination grid.
     pub dst_row_edges: EdgeVec<usize>,
+    /// Interval of valid **row indices** for each **column** in the destination grid.
     pub dst_col_edges: EdgeVec<usize>,
+    /// **source coordinate segment** `((y0, x0), (y1, x1))` that contributes to each **row** in the destination grid.
     pub src_row_edges: (EdgeVec<T>, EdgeVec<T>),
+    /// **source coordinate segment** `((y0, x0), (y1, x1))` that contributes to each **column** in the destination grid.
     pub src_col_edges: (EdgeVec<T>, EdgeVec<T>),
+    /// The grid transition matrix
     pub transition_matrix: GridTransitionMatrix,
 }
 
@@ -767,7 +778,7 @@ where
 #[cfg(test)]
 mod gx_grid_geometry_test {
     use super::*;
-    use crate::core::gx_array::{gx_array_data_approx_eq_window};
+    //use crate::core::gx_array::{gx_array_data_approx_eq_window};
     use crate::core::gx_grid::{NoCheckGridNodeValidator, InvalidValueGridNodeValidator, MaskGridNodeValidator};
 
     /// Runs a test case for computing grid geometry metrics.

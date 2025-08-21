@@ -109,11 +109,13 @@ impl<W> GridMeshValidator<W> for NoCheckGridMeshValidator{
 ///
 /// # Fields
 ///
-/// * `invalid_value` - The value that represents invalid or missing data.
+/// * `invalid_value` - The sentinel value that represents invalid or missing data.
 /// * `epsilon` - The tolerance used to compare against `invalid_value`.
 #[derive(Debug)]
 pub struct InvalidValueGridMeshValidator {
+    /// The sentinel value that represents invalid or missing data.
     pub invalid_value: f64,
+    /// The tolerance used to compare against `invalid_value`.
     pub epsilon: f64,
 }
 
@@ -233,7 +235,9 @@ where
 /// * `valid_value` - That value indicates valid, and any different value indicates invalid.
 #[derive(Debug)]
 pub struct MaskGridMeshValidator<'a> {
+    /// A reference to a `GxArrayView` containing `u8` mask values.
     pub mask_view: &'a GxArrayView<'a, u8>,
+    /// That value indicates valid, and any different value indicates invalid.
     pub valid_value: u8,
 }
 
@@ -406,7 +410,7 @@ impl<'a> GridMesh<'a> {
             }
     }
     
-    // Update current weights
+    /// Update current weights - aimed to be called at the start of each output position iteration.
     #[inline]
     pub fn update_weights(&mut self) {
         self.gmi_w1 = self.gmi_col_idx_t * self.gmi_row_idx_t;

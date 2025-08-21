@@ -69,14 +69,14 @@ variables:
 
     # Definition des variables pour la definition de l'image a utiliser pour la creation du venv, build et test.
     # L'image est definie par : "rust_python:rust-${TAG_IMAGE_RUST_VERSION}_python-${TAG_IMAGE_PYTHON_VERSION}_${TAG_IMAGE_OS}"
-    TAG_IMAGE_RUST_VERSION: "1.79"
+    TAG_IMAGE_RUST_VERSION: "1.89"
     TAG_IMAGE_PYTHON_VERSION_311: "3.11.12"
     TAG_IMAGE_PYTHON_VERSION_310: "3.10.17"
     #TAG_IMAGE_OS: "bookworm-slim"
     TAG_IMAGE_OS: "rockylinux8-minimal"
     
     TAG_IMAGE_PYTHON_DEFAULT_VERSION: "3.11.12"
-    TAG_IMAGE_RUST_DEFAULT_VERSION: "1.79"
+    TAG_IMAGE_RUST_DEFAULT_VERSION: "1.89"
     # Set the numpy version (temp)
     NUMPY_VERSION_MIN: "1.25.0"
 
@@ -113,13 +113,13 @@ variables:
     PIP_ARG_MAIN: "--cert ${PIP_CERT} --index-url ${PIP_INDEX_URL} "
 
 
-    # Variable proxy necessaires pour cargo
-    HTTP_PROXY: http://${PROXY_USER}:${PROXY_PWD}@${PROXY_SERVER}
-    HTTPS_PROXY: http://${PROXY_USER}:${PROXY_PWD}@${PROXY_SERVER}
-    NO_PROXY: ${NO_PROXY}
-    http_proxy: http://${PROXY_USER}:${PROXY_PWD}@${PROXY_SERVER}
-    https_proxy: http://${PROXY_USER}:${PROXY_PWD}@${PROXY_SERVER}
-    no_proxy: ${NO_PROXY}
+    # Variable proxy necessaires pour cargo - comment all due to CNES new transparent http proxy
+    #HTTP_PROXY: http://${PROXY_USER}:${PROXY_PWD}@${PROXY_SERVER}
+    #HTTPS_PROXY: http://${PROXY_USER}:${PROXY_PWD}@${PROXY_SERVER}
+    #NO_PROXY: ${NO_PROXY}
+    #http_proxy: http://${PROXY_USER}:${PROXY_PWD}@${PROXY_SERVER}
+    #https_proxy: http://${PROXY_USER}:${PROXY_PWD}@${PROXY_SERVER}
+    #no_proxy: ${NO_PROXY}
 
     #ASDF_RELEASE_DOWNLOAD_URL: https://github.com/asdf-vm/asdf/releases/download/v0.16.1/asdf-v0.16.1-linux-amd64.tar.gz
     #ASDF_INSTALL_PATH: "${WORKSPACE}/asdf"

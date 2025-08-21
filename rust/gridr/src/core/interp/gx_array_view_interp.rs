@@ -51,8 +51,10 @@ pub trait GxArrayViewInterpolatorInputMaskStrategy {
     /// Returns whether the point at index `idx` is valid (1) or invalid (0).
     fn is_valid(&self, idx: usize) -> u8;
     
+    /*
     /// Returns whether the all the points in a array are valid (1) or invalid (0).
     fn is_valid_window(&self, start_idx: usize, height: usize, width: usize, cache: &mut [u8]) -> u8;
+    */
     
     /// Returns whether the all the points in a array are valid (1) or invalid (0).
     fn is_valid_weighted_window(&self, start_idx: usize, height: usize, width: usize, weights_row: &[f64], weights_col: &[f64], cache: &mut [u8]) -> u8;
@@ -67,10 +69,12 @@ impl<T: GxArrayViewInterpolatorInputMaskStrategy> GxArrayViewInterpolatorInputMa
         (*self).is_valid(idx)
     }
     
+    /*
     #[inline(always)]
     fn is_valid_window(&self, start_idx: usize, height: usize, width: usize, cache: &mut [u8]) -> u8 {
         (*self).is_valid_window(start_idx, height, width, cache)
     }
+    */
     
     #[inline(always)]
     fn is_valid_weighted_window(&self, start_idx: usize, height: usize, width: usize, weights_row: &[f64], weights_col: &[f64], cache: &mut [u8]) -> u8 {
@@ -93,13 +97,15 @@ impl GxArrayViewInterpolatorInputMaskStrategy for NoInputMask {
         1
     }
     
+    /*
     #[inline(always)]
-    fn is_valid_window(&self, start_idx: usize, height: usize, width: usize, cache: &mut [u8]) -> u8 {
+    fn is_valid_window(&self, _start_idx: usize, _height: usize, _width: usize, _cache: &mut [u8]) -> u8 {
         1
     }
+    */
     
     #[inline(always)]
-    fn is_valid_weighted_window(&self, start_idx: usize, height: usize, width: usize, weights_row: &[f64], weights_col: &[f64], cache: &mut [u8]) -> u8 {
+    fn is_valid_weighted_window(&self, _start_idx: usize, _height: usize, _width: usize, _weights_row: &[f64], _weights_col: &[f64], _cache: &mut [u8]) -> u8 {
         1
     }
     
@@ -111,6 +117,7 @@ impl GxArrayViewInterpolatorInputMaskStrategy for NoInputMask {
 
 /// Binary input mask based on a `u8` array, where 1 = valid, 0 = invalid.
 pub struct BinaryInputMask<'a> {
+    /// An immutable reference to a `GxArrayView<u8>` corresponding to the binary mask.
     pub mask: &'a GxArrayView<'a, u8>,
 }
 
@@ -120,10 +127,12 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
         self.mask.data[idx]
     }
     
+    /*
     #[inline(always)]
-    fn is_valid_window(&self, start_idx: usize, height: usize, width: usize, cache: &mut [u8]) -> u8 {
+    fn is_valid_window(&self, _start_idx: usize, _height: usize, _width: usize, _cache: &mut [u8]) -> u8 {
         1
     }
+    */
     
     #[inline(always)]
     fn is_valid_weighted_window(&self, start_idx: usize, height: usize, width: usize, weights_row: &[f64], weights_col: &[f64], cache: &mut [u8]) -> u8 {
@@ -168,7 +177,9 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
 
 /// Enum wrapping possible input mask strategies.
 pub enum InputMaskStrategy<'a> {
+    /// Enum item for BinaryInputMask strategy
     Binary(BinaryInputMask<'a>),
+    /// Enum item for NoInputMask strategy
     None(NoInputMask),
 }
 
@@ -183,7 +194,7 @@ pub trait GxArrayViewInterpolatorOutputMaskStrategy {
     /// Returns true if the output mask strategy is enabled.
     fn is_enabled(&self) -> bool;
     
-    // Sets a mask value at the given index.
+    /// Sets a mask value at the given index.
     fn set_value(&mut self, idx: usize, value: u8);
 }
 
@@ -215,6 +226,7 @@ impl GxArrayViewInterpolatorOutputMaskStrategy for NoOutputMask {
 
 /// Binary output mask stored in a mutable `u8` array.
 pub struct BinaryOutputMask<'a> {
+    /// A mutable reference to a `GxArrayViewMut<u8>` corresponding to the output binary mask.
     pub mask: &'a mut GxArrayViewMut<'a, u8>,
 }
 
@@ -233,7 +245,9 @@ impl<'a> GxArrayViewInterpolatorOutputMaskStrategy for BinaryOutputMask<'a> {
 
 /// Enum wrapping possible output mask strategies.
 pub enum OutputMaskStrategy<'a> {
+    /// Enum item for BinaryOutputMask strategy
     Binary(BinaryOutputMask<'a>),
+    /// Enum item for NoOutputMask strategy
     None(NoOutputMask),
 }
 
@@ -246,6 +260,7 @@ pub enum OutputMaskStrategy<'a> {
 /// The `do_check()` method is static, enabling the compiler to optimize away
 /// the checks if disabled.
 pub trait GxArrayViewInterpolatorBoundsCheckStrategy {
+    /// Method that return either true or false depending on the target strategy implementation
     fn do_check() -> bool;
 }
 
@@ -301,8 +316,19 @@ where
 ///
 /// Allows writing generic code that depends on the context.
 pub trait GxArrayViewInterpolationContextTrait {
+    /// Alias for the input mask strategy type.
+    /// 
+    /// This type defines how input masking is handled during interpolation operations.
     type InputMask: GxArrayViewInterpolatorInputMaskStrategy;
+    
+    /// Alias for the output mask strategy type.
+    /// 
+    /// This type defines how output masking is handled during interpolation operations.
     type OutputMask: GxArrayViewInterpolatorOutputMaskStrategy;
+    
+    /// Alias for the bounds check strategy type.
+    /// 
+    /// This type defines how bounds checking is performed during interpolation operations.
     type BoundsCheck: GxArrayViewInterpolatorBoundsCheckStrategy;
 
     /// Returns a reference to the input mask strategy.
@@ -351,8 +377,17 @@ where
 }
 
 
+/// Default context type for array view interpolation.
+/// 
+/// This type provides a convenient default implementation using no masking strategies
+/// and standard bounds checking.
 pub type DefaultCtx<'a> = GxArrayViewInterpolationContext<'a, NoInputMask, NoOutputMask, BoundsCheck>;
 impl<'a> DefaultCtx<'a> {
+    /// Creates a new default context with no input masking, no output masking,
+    /// and standard bounds checking.
+    /// 
+    /// # Returns
+    /// A new instance of `DefaultCtx` with default strategies.
     pub fn default() -> Self {
         Self {
             input_mask: NoInputMask::default(),

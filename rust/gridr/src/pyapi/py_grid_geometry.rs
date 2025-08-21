@@ -4,9 +4,9 @@ use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 
 use numpy::{PyArray1, PyArrayMethods, Element};
-/// We tell here what module/functions we use from the pure rust library (lib.rs)
+
 use crate::{assert_options_exclusive};
-use crate::core::gx_array::{GxArrayWindow, GxArrayView, GxArrayViewMut};
+use crate::core::gx_array::{GxArrayWindow, GxArrayView};
 use crate::core::gx_grid::{NoCheckGridNodeValidator, InvalidValueGridNodeValidator, MaskGridNodeValidator};
 use crate::core::gx_grid_geometry::{GridTransitionMatrix, GeometryBounds, GridGeometriesMetrics, array1_compute_resampling_grid_geometries};
 use crate::core::gx_const::{F64_TOLERANCE};
@@ -14,19 +14,61 @@ use crate::core::gx_utils::{GxToF64};
 
 use super::py_array::{PyArrayWindow2};
 
-/// A transition matrix defining a linear isomorphism between a canonical grid
-/// (e.g., array indexing) and a transformed geometry grid.
+/// A Python-exposed class representing the Rust GridTransitionMatrix.
 ///
-/// This matrix defines a new basis using column and row generator vectors.
-/// If either generator is `None`, the transformation is considered undefined.
+/// This class provides a Python interface to the Rust `GridTransitionMatrix` struct,
+/// which defines a linear isomorphism between a canonical grid (e.g., array indexing)
+/// and a transformed geometry grid. The transition matrix is defined using two generator
+/// vectors (w1 and w2) that establish a new basis for coordinate transformations.
+///
+/// The class acts as a wrapper around the underlying Rust implementation, providing
+/// seamless integration between Python code and the optimized Rust grid transformation
+/// algorithms. The `inner` field contains the actual Rust `GridTransitionMatrix` instance
+/// that performs all computational operations.
+///
+/// # Attributes
+/// - `w1` (Option<(f64, f64)>): First generator vector defining the transformation basis.
+///   If `None`, the transformation is considered undefined.
+/// - `w2` (Option<(f64, f64)>): Second generator vector defining the transformation basis.
+///   If `None`, the transformation is considered undefined.
+///
+/// # Methods
+/// - `new(w1: Option<(f64, f64)>, w2: Option<(f64, f64)>)`: Creates a new `PyGridTransitionMatrix`
+///   with the specified generator vectors.
+/// - `det_w() -> Option<f64>`: Computes the determinant of the transformation matrix.
+/// - `w() -> Option<[f64; 4]>`: Returns the transformation matrix as a flattened array.
+///
+/// # Usage Notes
+/// This class serves as a bridge between Python and Rust implementations. The `inner` field
+/// contains the actual Rust `GridTransitionMatrix` instance that performs all computations.
+/// Conversions between Python and Rust representations are handled automatically through
+/// the `From` trait implementations:
+/// - `From<GridTransitionMatrix> for PyGridTransitionMatrix` - wraps Rust instance
+/// - `From<PyGridTransitionMatrix> for GridTransitionMatrix` - extracts Rust instance
+///
+/// # Implementation Details
+/// The Python class internally stores a `GridTransitionMatrix` instance in its `inner` field.
+/// All method calls are delegated to this inner Rust instance, ensuring consistent behavior
+/// between Python and Rust implementations. The `From` trait implementations allow for
+/// seamless conversion between Python and Rust representations when interfacing with other
+/// components.
 #[pyclass(name = "PyGridTransitionMatrix")]
 #[derive(Debug, Clone, Copy)]
 pub struct PyGridTransitionMatrix {
+    /// Inner Rust GridTransitionMatrix instance that performs all computations.
     inner: GridTransitionMatrix,
 }
 
 #[pymethods]
 impl PyGridTransitionMatrix {
+    /// Creates a new `PyGridTransitionMatrix` with the specified generator vectors.
+    ///
+    /// # Arguments
+    /// - `w1`: First generator vector defining the transformation basis, or `None` to leave undefined
+    /// - `w2`: Second generator vector defining the transformation basis, or `None` to leave undefined
+    ///
+    /// # Returns
+    /// A new `PyGridTransitionMatrix` instance with the specified basis vectors
     #[new]
     fn new(w1: Option<(f64, f64)>, w2: Option<(f64, f64)>) -> Self {
         Self {
@@ -34,45 +76,75 @@ impl PyGridTransitionMatrix {
         }
     }
 
+    /// Gets the first generator vector (w1) of the transformation matrix.
+    ///
+    /// # Returns
+    /// The first generator vector as `Option<(f64, f64)>`
     #[getter]
     fn w1(&self) -> Option<(f64, f64)> {
         self.inner.w1
     }
 
+    /// Sets the first generator vector (w1) of the transformation matrix.
+    ///
+    /// # Arguments
+    /// - `w1`: New first generator vector as `Option<(f64, f64)>`
     #[setter]
     fn set_w1(&mut self, w1: Option<(f64, f64)>) {
         self.inner.w1 = w1;
     }
-
+    
+    /// Gets the second generator vector (w2) of the transformation matrix.
+    ///
+    /// # Returns
+    /// The second generator vector as `Option<(f64, f64)>`
     #[getter]
     fn w2(&self) -> Option<(f64, f64)> {
         self.inner.w2
     }
 
+    /// Sets the second generator vector (w2) of the transformation matrix.
+    ///
+    /// # Arguments
+    /// - `w2`: New second generator vector as `Option<(f64, f64)>`
     #[setter]
     fn set_w2(&mut self, w2: Option<(f64, f64)>) {
         self.inner.w2 = w2;
     }
 
+    /// Computes the determinant of the transformation matrix.
+    ///
+    /// # Returns
+    /// The determinant as `Option<f64>`
     fn det_w(&self) -> Option<f64> {
         self.inner.det_w()
     }
-
+    
+    /// Returns the transformation matrix as a flattened array.
+    ///
+    /// # Returns
+    /// The transformation matrix as `Option<[f64; 4]>`
     fn w(&self) -> Option<[f64; 4]> {
         self.inner.w()
     }
 
+    /// String representation of the transition matrix.
+    ///
+    /// # Returns
+    /// A formatted string showing the current w1 and w2 values
     fn __repr__(&self) -> String {
         format!("GridTransitionMatrix(w1={:?}, w2={:?})", self.inner.w1, self.inner.w2)
     }
 }
 
+/// Conversion from Rust GridTransitionMatrix to Python PyGridTransitionMatrix.
 impl From<GridTransitionMatrix> for PyGridTransitionMatrix {
     fn from(inner: GridTransitionMatrix) -> Self {
         Self { inner }
     }
 }
 
+/// Conversion from Python PyGridTransitionMatrix to Rust GridTransitionMatrix.
 impl From<PyGridTransitionMatrix> for GridTransitionMatrix {
     fn from(wrapper: PyGridTransitionMatrix) -> Self {
         wrapper.inner
@@ -80,9 +152,28 @@ impl From<PyGridTransitionMatrix> for GridTransitionMatrix {
 }
 
 /// Axis-aligned rectangular bounds using usize coordinates.
+///
+/// This Python-exposed class represents axis-aligned rectangular bounds in a 2D space
+/// using unsigned integer coordinates. It provides a bridge between Python code and
+/// the underlying Rust `GeometryBounds<usize>` struct.
+///
+/// The class acts as a wrapper around the Rust `GeometryBounds<usize>` type, storing
+/// the actual bounds data in its `inner` field.
+///
+/// # Attributes
+/// - `xmin` (usize): Minimum x-coordinate of the bounding box (inclusive)
+/// - `xmax` (usize): Maximum x-coordinate of the bounding box (inclusive)
+/// - `ymin` (usize): Minimum y-coordinate of the bounding box (inclusive)
+/// - `ymax` (usize): Maximum y-coordinate of the bounding box (inclusive)
+///
+/// # Implementation Details
+/// The Python class internally stores a `GeometryBounds<usize>` instance in its `inner` field.
+/// All attribute access and modification operations are delegated to this inner Rust instance,
+/// ensuring consistent behavior between Python and Rust implementations.
 #[pyclass(name = "PyGeometryBoundsUsize")]
 #[derive(Debug, Clone)]
 pub struct PyGeometryBoundsUsize {
+    /// Inner Rust GeometryBounds<usize> instance that performs all computations.
     pub inner: GeometryBounds<usize>,
 }
 
@@ -124,9 +215,28 @@ impl PyGeometryBoundsUsize {
 }
 
 /// Axis-aligned rectangular bounds using floating-point coordinates.
+///
+/// This Python-exposed class represents axis-aligned rectangular bounds in a 2D space
+/// using floating-point coordinates. It provides a bridge between Python code and
+/// the underlying Rust `GeometryBounds<f64>` struct.
+///
+/// The class acts as a wrapper around the Rust `GeometryBounds<f64>` type, storing
+/// the actual bounds data in its `inner` field.
+///
+/// # Attributes
+/// - `xmin` (f64): Minimum x-coordinate of the bounding box (inclusive)
+/// - `xmax` (f64): Maximum x-coordinate of the bounding box (inclusive)
+/// - `ymin` (f64): Minimum y-coordinate of the bounding box (inclusive)
+/// - `ymax` (f64): Maximum y-coordinate of the bounding box (inclusive)
+///
+/// # Implementation Details
+/// The Python class internally stores a `GeometryBounds<f64>` instance in its `inner` field.
+/// All attribute access and modification operations are delegated to this inner Rust instance,
+/// ensuring consistent behavior between Python and Rust implementations.
 #[pyclass(name = "PyGeometryBoundsF64")]
 #[derive(Debug, Clone)]
 pub struct PyGeometryBoundsF64 {
+    /// Inner Rust GeometryBounds<f64> instance that performs all computations.
     pub inner: GeometryBounds<f64>,
 }
 
@@ -171,27 +281,60 @@ impl PyGeometryBoundsF64 {
 ///
 /// Includes bounding boxes, edge mappings, and the transition matrix that
 /// defines the linear transformation between grids.
+///
+/// Python wrapper for geometrical metrics between two grids (source and destination).
+///
+/// This Python-exposed class encapsulates comprehensive geometric metrics for grid
+/// resampling operations, including bounding boxes, edge mappings, and transformation
+/// matrices that define the relationship between source and destination grids.
+///
+/// This class acts as a Python interface to the Rust GridGeometriesMetrics struct.
+///
+/// # Attributes
+/// - `dst_bounds` (PyGeometryBoundsUsize): Bounding box of the destination grid (in pixel indices).
+/// - `src_bounds` (PyGeometryBoundsF64): Bounding box of the source grid (in coordinate units).
+/// - `dst_row_edges` (Vec<Option<(usize, usize)>>): For each **row** in the destination grid, stores the interval of valid **column indices**.
+/// - `dst_col_edges` (Vec<Option<(usize, usize)>>): For each **column** in the destination grid, stores the interval of valid **row indices**.
+/// - `src_row_edges` ((Vec<Option<(f64, f64)>>, Vec<Option<(f64, f64)>>)): For each **row** in the destination grid,
+///    stores the **source coordinate segment** `((y0, x0), (y1, x1))` that contributes to it.
+/// - `src_col_edges` ((Vec<Option<(f64, f64)>>, Vec<Option<(f64, f64)>>)): For each **column** in the destination grid,
+///    stores the **source coordinate segment** `((y0, x0), (y1, x1))` that contributes to it.
+/// - `transition_matrix` (PyGridTransitionMatrix): The grid transition matrix
+///
+/// # Implementation Details
+/// This class encapsulates multiple Rust-derived Python wrappers, with each field
+/// containing the corresponding inner Rust instance. The `inner` fields of the
+/// wrapped classes (`PyGeometryBoundsUsize`, `PyGeometryBoundsF64`, and
+/// `PyGridTransitionMatrix`) store the actual Rust implementations that perform
+/// all computational operations.
 #[pyclass(name = "PyGridGeometriesMetricsF64")]
 #[derive(Debug)]
 pub struct PyGridGeometriesMetricsF64 {
+    /// Bounding box of the destination grid (in pixel indices).
     #[pyo3(get)]
     pub dst_bounds: PyGeometryBoundsUsize,
 
+    /// Bounding box of the source grid (in coordinate units).
     #[pyo3(get)]
     pub src_bounds: PyGeometryBoundsF64,
 
+    /// Interval of valid **column indices** for each **row** in the destination grid.
     #[pyo3(get)]
     pub dst_row_edges: Vec<Option<(usize, usize)>>,
 
+    /// Interval of valid **row indices** for each **column** in the destination grid.
     #[pyo3(get)]
     pub dst_col_edges: Vec<Option<(usize, usize)>>,
 
+    /// **source coordinate segment** `((y0, x0), (y1, x1))` that contributes to each **row** in the destination grid.
     #[pyo3(get)]
     pub src_row_edges: (Vec<Option<(f64, f64)>>, Vec<Option<(f64, f64)>>),
-
+    
+    /// **source coordinate segment** `((y0, x0), (y1, x1))` that contributes to each **column** in the destination grid.
     #[pyo3(get)]
     pub src_col_edges: (Vec<Option<(f64, f64)>>, Vec<Option<(f64, f64)>>),
 
+    /// The grid transition matrix
     #[pyo3(get)]
     pub transition_matrix: PyGridTransitionMatrix,
 }

@@ -15,15 +15,112 @@ use crate::core::gx_const::{F64_TOLERANCE};
 
 use super::py_array::{PyArrayWindow2};
 
-
+/// A Python-exposed enum representing different interpolation methods for array operations.
+///
+/// # Variants
+/// - `Nearest`: Nearest neighbor interpolation method
+/// - `Linear`: Linear interpolation method
+/// - `OptimizedBicubic`: Optimized bicubic interpolation method
 #[pyclass]
 #[derive(Clone, Copy)]
 pub enum PyInterpolatorType {
+    /// Nearest neighbor interpolation variant
     Nearest,
+    /// Linear interpolation variant
     Linear,
+    /// Optimized bicubic interpolation variant
     OptimizedBicubic,
 }
 
+/// Performs grid resampling operations on 1D arrays using configurable interpolation methods.
+///
+/// This function applies various interpolation techniques (nearest neighbor, linear, and optimized bicubic)
+/// to resample data from an input array onto a specified grid. It supports optional input and output masks,
+/// grid validation through masks or nodata values, and windowing operations to process only specific regions
+/// of the arrays.
+///
+/// The function wraps the `core::gx_grid_resampling::array1_grid_resampling` implementation and handles 
+/// the complexity of managing different interpolation strategies and validation mechanisms through a unified
+/// Python interface.
+///
+/// # Parameters
+/// - `interp`: The interpolation method to use (Nearest, Linear, or OptimizedBicubic)
+/// - `array_in`: Bound immutable reference to the input 1D array containing source data
+/// - `array_in_shape`: Tuple `(depth, rows, cols)` defining the shape of the input array
+/// - `grid_row`: Bound immutable reference to 1D array of row coordinates for output grid
+/// - `grid_col`: Bound immutable reference to 1D array of column coordinates for output grid
+/// - `grid_shape`: Tuple `(rows, cols)` defining the shape of the grid arrays
+/// - `grid_resolution`: Tuple `(row_resolution, col_resolution)` specifying oversampling factors
+/// - `array_out`: Bound mutable reference to the output 1D array where results are stored
+/// - `array_out_shape`: Tuple `(depth, rows, cols)` defining the shape of the output array
+/// - `nodata_out`: Value to use for nodata pixels in the output array
+/// - `array_in_origin`: Optional tuple `(row_bias, col_bias)` for input array coordinate origin
+/// - `array_in_mask`: Optional bound immutable reference to input validity mask
+/// - `grid_mask`: Optional bound immutable reference to grid validity mask
+/// - `grid_mask_valid_value`: Valid value in grid mask indicating valid nodes (required if grid_mask provided)
+/// - `grid_nodata`: Optional nodata value for grid validation (mutually exclusive with grid_mask)
+/// - `array_out_mask`: Optional bound mutable reference to output validity mask
+/// - `grid_win`: Optional window specifying region of interest in grid coordinates
+/// - `out_win`: Optional window specifying output region that will hold the resampled data
+/// - `check_boundaries`: Boolean flag to enable/disable boundary checking - to be set to false with caution !
+///
+/// # Type Parameters
+/// - `T`: Input array element type implementing Element + Copy + PartialEq + Default + Mul<f64, Output=f64> + Into<f64>
+/// - `V`: Output array element type implementing Element + Copy + PartialEq + Default + From<f64>
+/// - `W`: Grid coordinate type implementing Element + Copy + PartialEq + Default + Mul<f64, Output=f64> + Into<f64>
+///
+/// # Returns
+/// - `Ok(())` if resampling completes successfully
+/// - `Err(PyErr)` if resampling fails due to invalid parameters, computation errors, or internal issues
+///
+/// # Constraints
+/// The function requires that either `grid_mask` or `grid_nodata` is provided (but not both) when
+/// grid validation is needed. When `grid_mask` is provided, `grid_mask_valid_value` must also be specified.
+///
+/// # Behavior
+/// - Supports three interpolation methods
+/// - Handles optional input/output masks for data validity tracking
+/// - Implements windowing support for processing sub-regions
+/// - Applies boundary checking when enabled
+///
+/// # Panics
+/// - If both `grid_mask` and `grid_nodata` are provided simultaneously (mutually exclusive)
+/// - If `grid_mask_valid_value` is not provided when `grid_mask` is specified
+///
+/// # Errors
+/// Returns a Python `ValueError` (`PyValueError`) if:
+/// - Invalid parameter combinations are detected
+/// - Grid validation parameters are missing or inconsistent
+/// - Internal computation failures occur
+/// - Memory allocation or access errors happen during array operations
+///
+/// # Example
+/// ```python
+/// from my_module import py_array1_grid_resampling, PyInterpolatorType
+///
+/// # Resample using linear interpolation with grid validation
+/// py_array1_grid_resampling(
+///     interp=PyInterpolatorType.Linear,
+///     array_in=input_array,
+///     array_in_shape=(1, 100, 100),
+///     grid_row=grid_rows,
+///     grid_col=grid_cols,
+///     grid_shape=(10, 10),
+///     grid_resolution=(1, 1),
+///     array_out=output_array,
+///     array_out_shape=(1, 10, 10),
+///     nodata_out=-9999.0,
+///     array_in_origin=None,
+///     array_in_mask=None,
+///     grid_mask=None,
+///     grid_mask_valid_value=None,
+///     grid_nodata=None,
+///     array_out_mask=None,
+///     grid_win=None,
+///     out_win=None,
+///     check_boundaries=True
+/// )
+/// ```
 fn py_array1_grid_resampling<T, V, W>(
     interp: PyInterpolatorType,
     array_in: &Bound<'_, PyArray1<T>>,
@@ -417,7 +514,7 @@ where
     }
 }
 
-/// This function calls the generic [`py_array1_grid_resampling`] with `T = f64`, `U = u8`, `V = f64` and `W = f64`.
+/// This function calls the generic [`py_array1_grid_resampling`] with `T = f64`, `V = f64` and `W = f64`.
 #[pyfunction]
 #[pyo3(signature = (interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution, array_out, array_out_shape, nodata_out, array_in_origin=None, array_in_mask=None, grid_mask=None, grid_mask_valid_value=None, grid_nodata=None, array_out_mask=None, grid_win=None, out_win=None, check_boundaries=true))]
 #[allow(clippy::too_many_arguments)]

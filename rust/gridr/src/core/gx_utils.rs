@@ -29,12 +29,19 @@
 /// let d: f64 = c.to_f64();
 /// ```
 pub trait GxToF64 {
-    
+    /// Converts the value to `f64`.
+    ///
+    /// # Returns
+    /// The value converted to `f64`.    
     fn to_f64(self) -> f64;
 }
 
 impl GxToF64 for f64 {
     #[inline]
+    /// Converts the value to `f64`.
+    ///
+    /// # Returns
+    /// The value converted to `f64`.
     fn to_f64(self) -> f64 {
         self
     }
@@ -42,6 +49,10 @@ impl GxToF64 for f64 {
 
 impl GxToF64 for f32 {
     #[inline]
+    /// Converts the value to `f64`.
+    ///
+    /// # Returns
+    /// The value converted to `f64`.
     fn to_f64(self) -> f64 {
         self as f64
     }
@@ -49,6 +60,10 @@ impl GxToF64 for f32 {
 
 impl GxToF64 for usize {
     #[inline]
+    /// Converts the value to `f64`.
+    ///
+    /// # Returns
+    /// The value converted to `f64`.
     fn to_f64(self) -> f64 {
         self as f64
     }
@@ -56,6 +71,10 @@ impl GxToF64 for usize {
 
 impl GxToF64 for u32 {
     #[inline]
+    /// Converts the value to `f64`.
+    ///
+    /// # Returns
+    /// The value converted to `f64`.
     fn to_f64(self) -> f64 {
         self as f64
     }

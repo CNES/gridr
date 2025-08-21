@@ -1,11 +1,13 @@
 #![warn(missing_docs)]
-//! Crate doc
+//! Implementation of GxArrayViewInterpolator for a linear interpolator
 use crate::core::gx_array::{GxArrayView, GxArrayViewMut};
 use super::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewInterpolationContextTrait, GxArrayViewInterpolatorBoundsCheckStrategy, GxArrayViewInterpolatorInputMaskStrategy, GxArrayViewInterpolatorOutputMaskStrategy};
 
 
-// The weights are used through a convolution : the order is inverted vs
-// the order of the data.
+/// Computes the linear interpolation kernel weights for a given position.
+///
+/// The weights are used through a convolution : the order is inverted vs
+/// the order of the data.
 #[inline]
 pub fn linear_kernel_weights(x: f64, weights: &mut [f64])
 {
@@ -40,8 +42,14 @@ pub fn linear_kernel_weights(x: f64, weights: &mut [f64])
     }
 }
 
+/// Linear interpolator implementation.
+/// 
+/// This structure implements the `GxArrayViewInterpolator` trait for linear
+/// interpolation operations.
 pub struct GxLinearInterpolator {
+    /// The size of the kernel alongs the rows - it is set to 3 in the implemented new() method.
     kernel_row_size: usize,
+    /// The size of the kernel alongs the columns - it is set to 3 in the implemented new() method.
     kernel_col_size: usize,
 }
 
@@ -123,7 +131,7 @@ impl GxLinearInterpolator {
         let mut array_out_var_shift: usize = 0;
         
         // Loop on multipe variables in input array.
-        for ivar in 0..array_in.nvar {
+        for _ivar in 0..array_in.nvar {
             computed = 0.0;
             
             for irow in 0..=2 {
@@ -218,7 +226,7 @@ impl GxLinearInterpolator {
                     // If we came here the weights are both positivs, we cant
                     // ignore that we go out of bounds as far as the validity is
                     // concerned.
-                    for ivar in 0..array_in.nvar {
+                    for _ivar in 0..array_in.nvar {
                         array_out.data[out_idx + array_out_var_shift] = nodata;
                         array_out_var_shift += array_out_var_size;
                     }
@@ -232,7 +240,7 @@ impl GxLinearInterpolator {
         // Loop on multipe variables in input array.
         // If a iteration condition fails it is equivalent as considering a zero
         // for the corresponding row or column value.
-        for ivar in 0..array_in.nvar {
+        for _ivar in 0..array_in.nvar {
             computed = 0.0;
             
             for irow in 0..=2 {
@@ -343,12 +351,9 @@ impl GxLinearInterpolator {
         let ncol = array_in.ncol;
         let array_in_var_size = array_in.var_size;
         let array_out_var_size = array_out.var_size;
-        let mut arr_irow: usize;
-        let mut arr_icol: usize;
         let mut arr_iflat: usize;
         let mut computed: f64;
         let mut computed_col: f64;
-        let mut array_in_var_shift: usize = 0;
         let mut array_out_var_shift: usize = 0;
         
 
@@ -357,7 +362,7 @@ impl GxLinearInterpolator {
 
         // Pre check mask
         // Ignore mask value where weights are zero
-        let mut valid = 1u8;
+        let valid; // = 1u8;
         arr_iflat = row_c_m1 * ncol + col_c_m1;
 
         let local_cache: Vec<u8> = vec![0; 9];
@@ -367,7 +372,7 @@ impl GxLinearInterpolator {
       
         if valid == 0 {
             
-            for ivar in 0..array_in.nvar {
+            for _ivar in 0..array_in.nvar {
                 array_out.data[out_idx + array_out_var_shift] = nodata;
                 array_out_var_shift += array_out_var_size;
             }
@@ -376,7 +381,7 @@ impl GxLinearInterpolator {
         }
 
         // Loop on multipe variables in input array.      
-        for ivar in 0..array_in.nvar {
+        for _ivar in 0..array_in.nvar {
 
             computed = 0.0;
                         
@@ -533,7 +538,7 @@ impl GxLinearInterpolator {
         }
         
         if valid == 0 {
-            for ivar in 0..array_in.nvar {
+            for _ivar in 0..array_in.nvar {
                 array_out.data[out_idx + array_out_var_shift] = nodata;
                 array_out_var_shift += array_out_var_size;
             }
@@ -545,7 +550,7 @@ impl GxLinearInterpolator {
         // Loop on multipe variables in input array.
         // If a iteration condition fails it is equivalent as considering a zero
         // for the corresponding row or column value.
-        for ivar in 0..array_in.nvar {
+        for _ivar in 0..array_in.nvar {
             computed = 0.0;
             
             for irow in 0..=2 {
@@ -742,7 +747,8 @@ impl GxArrayViewInterpolator for GxLinearInterpolator
 #[cfg(test)]
 mod gx_linear_kernel_tests {
     use super::*;
-    use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolationContext, DefaultCtx};
+    //use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolationContext, DefaultCtx};
+    use crate::core::interp::gx_array_view_interp::{DefaultCtx};
     
     /// Checks if two slices of f64 values are approximately equal within a given tolerance.
     ///

@@ -7,8 +7,9 @@
 //!
 //! ## Overview
 //!
-//! This module defines four key components:
+//! This module defines five key components:
 //!
+//! - [`GxArrayRead`]: A trait that standardizes read access to the array immutable slice storing the data contiguously.
 //! - [`GxArrayShape`]: A trait that standardizes access to array dimensions (`nvar`, `nrow`, `ncol`).
 //! - [`GxArrayWindow`]: Represents a sub-region (window) within an array, allowing for efficient operations on subsets of data.
 //! - [`GxArrayView`]: An immutable view over an array, providing safe and read-only access to data.
@@ -21,6 +22,17 @@
 //! in a linear memory layout, optimizing cache locality and performance.
 //!
 //!
+use crate::core::gx_errors::{GxError};
+
+/// Trait defining the read access to the array immutable slice storing the data contiguously.
+///
+/// # Methods
+///
+/// - [`Self::data()`]: Returns the immutable slice.
+pub trait GxArrayRead<'a, T> {
+    /// Returns the immutable slice.
+    fn data(&'a self) -> &'a [T];
+}
 
 /// Trait defining the shape of a multi-dimensional array.
 ///
@@ -35,15 +47,6 @@
 /// - [`Self::ncol()`]: Returns the number of columns (3rd axis of the structure).
 /// - [`Self::size()`]: Returns the size defined as the product of the number of columns with the
 ///                     number of rows
-
-
-
-use crate::core::gx_errors::{GxError};
-
-pub trait GxArrayRead<'a, T> {
-    fn data(&'a self) -> &'a [T];
-}
-
 pub trait GxArrayShape {
     /// Returns the number of variables (1st axis of the structure).
     fn nvar(&self) -> usize;

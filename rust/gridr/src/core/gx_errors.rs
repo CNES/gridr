@@ -26,6 +26,8 @@ use thiserror::Error;
 ///
 /// - `InsufficientGridCoverage`: Indicates that the grid does not have enough data to be interpolated
 ///
+/// - `WindowOutOfBounds`: Raised if a window is out of bounds relative to the dimensions of the associated array.
+///
 /// - `ErrMessage`: A generic catch-all error containing a descriptive message.
 #[derive(Debug, Error, PartialEq)]
 pub enum GxError {
@@ -39,7 +41,9 @@ pub enum GxError {
     /// - `field2`: Name of the second option field.
     #[error("Both fields `{field1}` and `{field2}` must be Some or both None.")]
     OptionsMismatch {
+        /// Name of the first option field.
         field1: &'static str,
+        /// Name of the second option field.
         field2: &'static str,
     },
 
@@ -53,7 +57,9 @@ pub enum GxError {
     /// - `field2`: Name of the second conflicting option.
     #[error("Fields `{field1}` and `{field2}` must be mutually exclusive.")]
     ExclusiveOptionsMismatch {
+        /// Name of the first conflicting option.
         field1: &'static str,
+        /// Name of the second conflicting option.
         field2: &'static str,
     },
 
@@ -67,7 +73,9 @@ pub enum GxError {
     /// - `field2`: Name of the second array or structure.
     #[error("Shapes mismatch between `{field1}` and `{field2}`.")]
     ShapesMismatch {
+        /// Name of the first array or structure.
         field1: &'static str,
+        /// Name of the second array or structure.
         field2: &'static str,
     },
 
@@ -80,6 +88,7 @@ pub enum GxError {
     /// - `field1`: The field, context, or computation where the `None` occurred.
     #[error("Unexpected None encountered in `{field1}`.")]
     UnexpectedNone {
+        /// The field, context, or computation where the `None` occurred.
         field1: &'static str,
     },
 
@@ -99,6 +108,7 @@ pub enum GxError {
     /// two values along an axis for interpolation.
     #[error("InsufficientGridCoverage for `{field1}`.")]
     InsufficientGridCoverage{
+        /// String identifier of the grid component that originates the error ('rows' or 'columns')
         field1: &'static str,
     },
 
@@ -110,8 +120,12 @@ pub enum GxError {
     ///
     /// # Parameters
     /// - `context`: The name of the array or structure being validated (e.g. `"input_grid"`).
-    /// - `window`: The offending window (start/end rows and columns).
-    /// - `array_shape`: The expected array shape, containing number of rows and columns.
+    /// - `start_row`: First row index of the window.
+    /// - `end_row`: Last row index of the window.
+    /// - `start_col`: First column index of the window.
+    /// - `end_col`: Last column index of the window.
+    /// - `nrows`: Total number of rows of the data being validated.
+    /// - `ncols`: Total number of columns of the data being validated.
     ///
     /// # Example
     /// Trying to apply a window like (start_row=4, end_row=10) on a 5-row array will trigger this error.
@@ -121,12 +135,19 @@ pub enum GxError {
          shape=({nrows} rows × {ncols} cols)"
     )]
     WindowOutOfBounds {
+        /// String identifier of the array or structure being validated (e.g. `"input_grid"`)
         context: &'static str,
+        /// First row index of the window
         start_row: usize,
+        /// Last row index of the window
         end_row: usize,
+        /// First column index of the window
         start_col: usize,
+        /// Last column index of the window
         end_col: usize,
+        /// Total number of rows of the data being validated
         nrows: usize,
+        /// Total number of columns of the data being validated
         ncols: usize,
     },
 

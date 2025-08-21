@@ -1,12 +1,17 @@
 #![warn(missing_docs)]
-//! Crate doc
+//! Implementation of GxArrayViewInterpolator for a nearest neighbor interpolator
 use crate::core::gx_array::{GxArrayView, GxArrayViewMut};
 use super::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewInterpolationContextTrait, GxArrayViewInterpolatorBoundsCheckStrategy, GxArrayViewInterpolatorInputMaskStrategy, GxArrayViewInterpolatorOutputMaskStrategy};
 
 
-
+/// Nearest neighbor interpolator implementation.
+/// 
+/// This structure implements the `GxArrayViewInterpolator` trait for nearest neighbor
+/// interpolation operations.
 pub struct GxNearestInterpolator {
+    /// The size of the kernel alongs the rows - it is set to 1 in the implemented new() method.
     kernel_row_size: usize,
+    /// The size of the kernel alongs the columns - it is set to 1 in the implemented new() method.
     kernel_col_size: usize,
 }
 
@@ -34,7 +39,7 @@ impl GxArrayViewInterpolator for GxNearestInterpolator
     
     fn array1_interp2<T, V, IC>(
             &self,
-            weights_buffer: &mut [f64],
+            _weights_buffer: &mut [f64],
             target_row_pos: f64,
             target_col_pos: f64,
             out_idx: usize,
@@ -49,13 +54,13 @@ impl GxArrayViewInterpolator for GxNearestInterpolator
         IC: GxArrayViewInterpolationContextTrait,
     {
         // Get the nearest corresponding index corresponding to the target position 
-        let kernel_center_row: usize = (target_row_pos + 0.5).floor() as usize;
-        let kernel_center_col: usize = (target_col_pos + 0.5).floor() as usize;
+        let kernel_center_row: i64 = (target_row_pos + 0.5).floor() as i64;
+        let kernel_center_col: i64 = (target_col_pos + 0.5).floor() as i64;
  
         let array_in_var_size: usize = array_in.nrow * array_in.ncol;
         let array_out_var_size: usize = array_out.nrow * array_out.ncol;
         
-        let mut arr_iflat: usize = kernel_center_row * array_in.ncol + kernel_center_col;
+        let mut arr_iflat: usize = (kernel_center_row as usize) * array_in.ncol + (kernel_center_col as usize);
         let mut out_idx_ivar: usize = out_idx;
         
         // Consider mask valid (if any)
@@ -69,9 +74,9 @@ impl GxArrayViewInterpolator for GxNearestInterpolator
             // Here we do not need to check borders inside the inner loops.
             // That should be the most common path.
             if (kernel_center_row >=0)
-                    && (kernel_center_row < array_in.nrow)
+                    && (kernel_center_row < array_in.nrow_i64)
                     && (kernel_center_col >= 0)
-                    && (kernel_center_col < array_in.ncol) {
+                    && (kernel_center_col < array_in.ncol_i64) {
                 
                 if context.input_mask().is_enabled() {
                     // There is a mask
@@ -119,7 +124,7 @@ impl GxArrayViewInterpolator for GxNearestInterpolator
                     array_out.data[out_idx_ivar] = nodata_out;
                             
                     // Prepare indices for next iteration
-                    arr_iflat += array_in_var_size;
+                    //arr_iflat += array_in_var_size;
                     out_idx_ivar += array_out_var_size;
                 }
                 context.output_mask().set_value(out_idx, 0);
