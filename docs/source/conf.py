@@ -36,10 +36,13 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",  # Pour les docstrings Google/NumPy
     "sphinx.ext.viewcode",
+    "sphinx.ext.mathjax",
     "sphinx_autodoc_typehints",
     #"sphinxcontrib.apidoc",
     #"sphinxcontrib.rustdoc",  # Pour la doc Rust
 ]
+
+mathjax_path = 'https://cdn.jsdelivr.net/npm/mathjax@2/MathJax.js?config=TeX-AMS-MML_HTMLorMML'
 
 napoleon_google_docstring = True  # Pour activer le support Google Style
 napoleon_numpy_docstring = True # Pour désactiver le support NumPy Style (si vous ne l'utilisez pas)

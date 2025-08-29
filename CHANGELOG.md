@@ -1,20 +1,64 @@
 # CHANGELOG
 
-## GridR v0.4.0
-Release Date : 2025-MM-DD
+## [0.4.0] - 2025-08-27
 
-### New features
+### [Unreleased]
+- Documentation for antialiasing filter creation
 
-#### New Masking-Related Arguments in the `array_grid_resampling` Method
+### Added
 
-The following new arguments have been introduced to the `gridr.core.grid_resampling.array_grid_resampling` Python method:
+- Grid Masks:
+    - (Rust Core) GridNodeValidator trait and implementation supporting No Mask, Raster mask and Sentinel value options.
+    - Configurable valid cell value in grid masks (replaces hardcoded value of 1)
+    - Configurable sentinel value within grid coordinates to identify invalid cells
+    - Using grid masks or a sentinel value are optional and mutually exclusive
+    - Test coverage for new masking options
+- Grid Geometric Metrics:
+    - New data structure to hold grid geometric metrics
+    - Computation of grid geometric metrics for in-memory grids
+- Grid Resampling 
+    - (Rust Core) Introduced trait strategies design concept for Input data masks, Output data masks and Bound checks
+    - (Rust Core) Implemented strategies traits to cover both with and without options
+    - (Rust Core) Added GxArrayViewInterpolationContextTrait trait to wrap the strategies traits
+    - Nearest neighbor and linear interpolation methods
+    - Configurable interpolation method
+    - Configurable indexing shift for input array coordinates
+    - Configurable target window for output buffer
+    - Safe method `grid_resolution_window_safe` for handling edge cases in grid definitions
+    - Chain module for managing I/O (input/output image, grids and input/output masks) and memory with tiling capabilities
+- Antialiasing
+    - Added reciprocal cell frequential filter functionality
+    - Implemented core method to compute antialiasing filter from a grid using reciprocal cell frequential filter
+- Documentation
+    - Add documentation notebooks for the grid mask and grid resampling chains
+- Branding
+    - Added SVG version of GridR logo
 
-- The value used to denote a valid grid cell in the `grid_mask` is now configurable via the `grid_mask_valid_value` argument, replacing the previous hardcoded value of 1.
+### Changed
 
-- The `grid_nodata` argument now allows direct use of raster grids to determine invalid grid cells.
+- Rust required version is now 1.80+
+- Geometry mask definition
+    - Modified signature of geometry_mask related methods (core and chain) to:
+        - Allow setting both valid and invalid geometry masks
+        - Remove assumptions about mask roles (previously implicit)
+- Mask Default Value:
+    - Changed default valid value for masks from 0 to 1
+    - This change allows to use masks as factors
+    - Note: This is an implicit convention change that may affect existing code
+- Grid Resampling (Rust Core):
+    - Fully embedded grid mesh iteration within the GridMesh implementation
+    - Refactored to use GxArrayViewInterpolationContextTrait trait and related strategies
+- Cubic interpolator (Rust Core)
+    - Optimized weight computation through factorization of common terms for performance improvement
+    - Refactored to use GxArrayViewInterpolationContextTrait trait and related strategies
+- Docstrings
+    - Adopted NumPy-style convention for docstrings
+    - Reformulated code documentation
+- Documentation
+    - Updated core grid resampling notebook documentation to reflect grid resampling masks updates
+    - Cleaned the `notebook_utils.py` module
 
-- Both `grid_nodata` and `grid_mask` are optional and mutually exclusive.
+### Fixed
 
-- **Important Note** : There has been an implicit convention change. The default value considered valid has changed from 0 to 1. This change is driven by upcoming modifications to allow masks to function as factors. It may be propagated across other codes to ensure consistency.
-
-These updates in the Python API correspond to the equivalent changes in the Rust core code.
+- Resolved warning in Sphinx documentation building
+- Fixed warning in Rust code compilation
