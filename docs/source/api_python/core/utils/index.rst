@@ -7,4 +7,5 @@ core.utils
     array_utils
     array_window
     chunks
+    fft
     parameters

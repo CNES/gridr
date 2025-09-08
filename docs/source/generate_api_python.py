@@ -133,7 +133,7 @@ def generate_modules_rst():
     """
     modules_rst = os.path.join(DOCS_DIR, "modules.rst")  # Now inside api_python/
     with open(modules_rst, "w", encoding="utf-8") as f:
-        f.write("API Documentation\n=================\n\n")
+        f.write("API Reference\n=================\n\n")
         f.write(".. toctree::\n    :maxdepth: 2\n    :caption: API\n\n")
         f.write("    chain/index\n")
         f.write("    core/index\n")
