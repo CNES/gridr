@@ -21,5 +21,6 @@ This is the main page of GridR's documentation.
    installation
    _notebooks/index.rst
    api_python/modules.rst
+   license
    
    

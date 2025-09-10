@@ -12,8 +12,6 @@ also provided.
 
 .. toctree::
    :maxdepth: 1
-   :caption:
-   
 
    generated/grid_masking_001
    generated/grid_resampling_001_work
@@ -32,7 +30,6 @@ Several pages are generated from Jupyter notebooks, with links to the original .
 
 .. toctree::
    :maxdepth: 1
-   :caption:
 
    generated/grid_resampling_chain_001
    

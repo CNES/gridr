@@ -7,19 +7,27 @@ build-backend = "setuptools.build_meta"
 name = "gridr"
 version = "0.4.1"
 description = "Geometric and Radiometric Image Data Resampling"
-authors = [ {name="Arnaud Kelbert", email="arnaud.kelbert@cnes.fr"} ]
+authors = [ {name="CNES", email="gridr-cnes@cnes.fr"} ]
 readme = "README.md"
-#license = {file = "LICENSE"}
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Science/Research",
     "Programming Language :: Python",
-    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3",    
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Rust",
     "Topic :: Software Development :: Libraries", 
     "Topic :: Software Development :: Libraries :: Python Modules",
-    "License :: OSI Approved :: Apache Software License"
 ]
 dependencies = [
   "numpy>=1.25",
@@ -32,10 +40,9 @@ dependencies = [
 # Pure Python packages/modules
 find = { where = ["python"] }
 
-# Uncomment when rust will be used
 [[tool.setuptools-rust.ext-modules]]
 # Private Rust extension module to be nested into the Python package
-target = "gridr.cdylib._libgridr"  # The last part of the name (e.g. "_lib") has to match lib.name in Cargo.toml,
-#                             # but you can add a prefix to nest it inside of a Python package.
-path = "rust/gridr/Cargo.toml"      # Default value, can be omitted
-binding = "PyO3"         # Default value, can be omitted
+# The last part of the target name (i.e. "_libgridr") has to match lib.name in Cargo.toml
+target = "gridr.cdylib._libgridr"
+path = "rust/gridr/Cargo.toml"
+binding = "PyO3"

@@ -18,6 +18,9 @@ GRIDR_LIBGRIDR_DOC_BUILD_PATH := $(GRIDR_RUST_CRATE_PATH)/target/doc
 
 GRIDR_DOCS_ROOT_PATH := $(ROOT_DIR)docs
 
+# Scripts path
+GRIDR_SCRIPTS_PATH := $(ROOT_DIR)scripts
+
 # Check cargo
 CHECK_CARGO = $(shell command -v cargo 2> /dev/null)
 
@@ -62,6 +65,7 @@ endif
 ifndef GRIDR_VENV
 	GRIDR_VENV = "$(ROOT_DIR)venv/venv_py$(PYTHON_VERSION_CUR)${NUMPY_VERSION_TAG}"
 endif
+GRIDR_VENV_TEST_BUILD = "${GRIDR_VENV}_test_build"
 
 # PIP_ARG_MAIN is a variable that may contains PIP configuration arguments
 # This variable may be set by the CI
@@ -150,13 +154,23 @@ pylint: venv ## call pylint
 
 # Build package
 .PHONY: build
-build: venv ## build package
+build: venv clean-build ## build package
 	@echo "Build python package"
 	@$(GRIDR_VENV)/bin/python -m build --outdir $(BUILD_DIST_OUTDIR) 
 	@echo "Set wheel for manylinux base on glibc version"
 	@$(GRIDR_VENV)/bin/auditwheel repair $(BUILD_DIST_OUTDIR)/*.whl --plat $(MANYLINUX_GLIBC_TAG)_x86_64 -w $(BUILD_DIST_OUTDIR)_fixed/
 
-
+# Create NOTICE
+.PHONY: check-licenses
+check-licenses: build
+	@echo "Check licenses"
+	@echo "Create isolated venv to install built package"
+	@test -d $(GRIDR_VENV_TEST_BUILD) || rm -rf $(GRIDR_VENV_TEST_BUILD)
+	@python3 -m venv $(GRIDR_VENV_TEST_BUILD)
+	@$(GRIDR_VENV_TEST_BUILD)/bin/python -m pip install $(PIP_ARG_MAIN)--no-cache-dir --upgrade pip
+	@$(GRIDR_VENV_TEST_BUILD)/bin/python -m pip install $(PIP_ARG_MAIN)--no-cache-dir pip-licenses-lib
+	@$(GRIDR_VENV_TEST_BUILD)/bin/python -m pip install $(PIP_ARG_MAIN)--no-cache-dir $(BUILD_DIST_OUTDIR)_fixed/gridr*.whl
+	@$(GRIDR_VENV_TEST_BUILD)/bin/python $(GRIDR_SCRIPTS_PATH)/generate_notice.py
 
 .PHONY: clean
 clean: clean-venv clean-build clean-pyc clean-test clean-sphinx-doc ## remove all build, test, coverage and Python artifacts
@@ -164,7 +178,8 @@ clean: clean-venv clean-build clean-pyc clean-test clean-sphinx-doc ## remove al
 .PHONY: clean-venv
 clean-venv:
 	@echo "+ $@"
-	@rm -rf ${GRIDR_VENV}
+	@test -d $(GRIDR_VENV) || rm -rf ${GRIDR_VENV}
+	@test -d $(GRIDR_VENV_TEST_BUILD) || rm -rf $(GRIDR_VENV_TEST_BUILD)
 
 .PHONY: clean-build
 clean-build:

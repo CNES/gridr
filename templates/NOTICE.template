@@ -1,0 +1,21 @@
+# NOTICE
+
+## GRIDR License
+
+GRIDR Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
+
+This software is distributed under the Apache Software License (ASL) v2.0, see
+LICENSE file or http://www.apache.org/licenses/LICENSE-2.0 for details.
+
+## Third Party Licenses
+
+### Python
+This section lists the licenses of the Python dependencies used in GRIDR.
+
+{python_3rdparty_licenses}
+
+### Rust
+This section lists the licenses of the Rust dependencies used in GRIDR.
+
+{rust_3rdparty_licenses}
+

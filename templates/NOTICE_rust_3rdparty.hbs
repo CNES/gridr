@@ -1,0 +1,10 @@
+{{#each crates}}
+- Dependancy: {{package.name}}
+  Version: {{package.version}}
+  Authors: {{#if package.authors}} {{package.authors}} {{else}} UNKNOWN {{/if}}
+  Website: {{#if package.repository}} {{package.repository}} {{else}} https://crates.io/crates/{{package.name}} {{/if}}
+  License: {{license}}
+
+{{/each}}
+
+

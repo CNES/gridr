@@ -1,0 +1,5 @@
+- Dependancy: {name}
+  Version: {version}
+  Authors: {author}
+  Website: {repository}
+  License: {license}

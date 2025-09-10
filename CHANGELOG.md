@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## [0.4.1] - 2025-xx-xx
+
+### Added
+
+- LICENSE and NOTICE files
+- scripts:
+    - Added scripts directory in project tree
+    - Added generate_notice.py script
+
+### Changed
+
+- Added license related header in python and rust source files
+- Documentation
+
 ## [0.4.0] - 2025-08-27
 
 ### [Unreleased]

@@ -1,24 +1,21 @@
+// Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
+//
+// This file is part of GRIDR
+// (see https://github.com/CNES/gridr).
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #![warn(missing_docs)]
-//! Crate doc
+//! Main gridr library entry
 pub mod core;
 pub mod pyapi;
-
-// Instead of declaring "mod lib_py" from another file you can also directly
-// define the pymodule here ; see bellow.
-//use pyo3::prelude::*;
-// 
-// /// A Python module implemented in Rust. The name of this function must match
-// /// the `lib.name` setting in the `Cargo.toml`, else Python will not be able to
-// /// import the module.
-//#[pymodule]
-//mod _mylib {
-//    use pyo3::prelude::*;
-//    use crate::lib_core::mymodule as core_mymodule;
-//    
-//    /// Formats the sum of two numbers as string.
-//    #[pyfunction]
-//    fn sum_as_string(a: usize, b: usize) -> PyResult<String> {
-//        core_mymodule::sum_a_b_str(a as f64,b as f64)
-//        //Ok((a + b).to_string())
-//    }
-//}

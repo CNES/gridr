@@ -1,0 +1,24 @@
+# NOTICE
+
+## GRIDR License
+
+GRIDR Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
+
+This software is distributed under the Apache Software License (ASL) v2.0, see
+LICENSE file or http://www.apache.org/licenses/LICENSE-2.0 for details.
+
+
+## Third Party Licenses
+
+### Rust
+This section lists the licenses of the Rust dependencies used in GRIDR.
+{{#each crates}}
+- Dependancy: {{package.name}}
+  Version: {{package.version}}
+  Authors: {{#if package.authors}} {{package.authors}} {{else}} UNKNOWN {{/if}}
+  Website: {{#if package.repository}} {{package.repository}} {{else}} https://crates.io/crates/{{package.name}} {{/if}}
+  License: {{license}}
+
+{{/each}}
+
+

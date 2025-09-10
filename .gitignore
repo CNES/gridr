@@ -51,6 +51,7 @@ coverage.xml
 .pytest_cache/
 cover/
 tests/resource_tests/result/
+pylint_*
 
 # Monitoring test
 .pymon
@@ -74,6 +75,7 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/source/_notebooks/generated/
 
 # PyBuilder
 .pybuilder/
