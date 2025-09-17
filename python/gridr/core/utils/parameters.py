@@ -20,7 +20,8 @@
 """
 Parameters operations utils module
 """
-from typing import Union, Tuple, Any
+from typing import Any, Tuple, Union
+
 
 def tuplify(p: Union[Any, Tuple], ndim: int):
     """Utility method to convert a single parameter to a tuple.
@@ -55,5 +56,5 @@ def tuplify(p: Union[Any, Tuple], ndim: int):
     try:
         p[0]
     except TypeError:
-        out = ((p, p), ) * ndim
+        out = ((p, p),) * ndim
     return out

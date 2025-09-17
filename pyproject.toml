@@ -46,3 +46,23 @@ find = { where = ["python"] }
 target = "gridr.cdylib._libgridr"
 path = "rust/gridr/Cargo.toml"
 binding = "PyO3"
+
+
+[tool.black]
+# https://github.com/psf/black
+line-length = 100 
+include = '\.pyi?$'
+exclude = "(.eggs|.git|.mypy_cache|.nox|.tox|_build|build|dist.*|venv.*|doc|docs|notebooks|benchmark)"
+
+[tool.isort]
+profile = 'black'
+line_length = 100 
+known_third_party = [ "dask" ]
+
+[tool.flake8]
+exclude = [".git", "venv*", "doc", "docs", "notebooks", "benchmark", "build", "dist*" ]
+extend-ignore = ["E203", "W503"]
+max-complexity = 27
+max-line-length = 100
+select = ["E", "F", "W", "C", "B9", "C4", "B"]
+

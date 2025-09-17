@@ -43,37 +43,38 @@ class SharedMemoryArray(object):
     ----------
     COUNTER : int
         A class-level counter used for generating unique shared memory names.
-        
+
     shape : tuple of int
         The shape of the NumPy array that will reside in shared memory.
-        
+
     dtype : numpy.dtype
         The data type of the NumPy array elements.
-        
+
     name : str
         The unique name of the shared memory segment.
-        
+
     array_slice : tuple of slice, optional
-        A tuple of slice objects to apply to the array after loading, providing 
+        A tuple of slice objects to apply to the array after loading, providing
         a view of a sub-section of the shared memory.
-        
+
     smh : shared_memory.SharedMemory or None
-        The handler for the shared memory buffer. `None` if not yet created or 
+        The handler for the shared memory buffer. `None` if not yet created or
         loaded, or after `close()`.
-        
+
     array : numpy.ndarray or None
         The NumPy array view onto the shared memory buffer. `None` if not yet
         created or loaded, or after `close()`.
     """
-    
-    COUNTER=0
-    
-    def __init__(self, 
-            shape: Tuple[int, ...], 
-            dtype: np.dtype, 
-            name: str, 
-            array_slice: Optional[Tuple[slice, ...]] = None
-            ):
+
+    COUNTER = 0
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...],
+        dtype: np.dtype,
+        name: str,
+        array_slice: Optional[Tuple[slice, ...]] = None,
+    ):
         """
         Initializes a SharedMemoryArray instance.
 
@@ -81,14 +82,14 @@ class SharedMemoryArray(object):
         ----------
         shape : tuple of int
             The desired shape of the NumPy array.
-            
+
         dtype : numpy.dtype
             The desired data type of the NumPy array.
-            
+
         name : str
             A unique name for the shared memory segment. This name is used
             to create or connect to the shared memory.
-            
+
         array_slice : tuple of slice, optional
             A tuple of slice objects (e.g., `(slice(0, 10), slice(None))`)
             to apply to the NumPy array after it is loaded from the shared
@@ -101,58 +102,56 @@ class SharedMemoryArray(object):
         self.array_slice = array_slice
         self.smh = None
         self.array = None
-    
+
     def create(self) -> NoReturn:
         """
         Creates the shared memory buffer and associates a NumPy array view.
 
         This method allocates a shared memory segment with the specified `name`
         and `size` (derived from `shape` and `dtype`), then creates a NumPy
-        array view that points to this shared memory. The `array_slice` 
-        attribute is not applied during creation; it's used when the array is 
+        array view that points to this shared memory. The `array_slice`
+        attribute is not applied during creation; it's used when the array is
         loaded (e.g., by another process, or via the `load()` method).
         """
         size = np.dtype(self.dtype).itemsize * np.prod(self.shape)
-        self.smh = shared_memory.SharedMemory(create=True, size=size,
-                name=self.name)
-        self.array = np.ndarray(shape=self.shape, dtype=self.dtype,
-                buffer=self.smh.buf)
-        
+        self.smh = shared_memory.SharedMemory(create=True, size=size, name=self.name)
+        self.array = np.ndarray(shape=self.shape, dtype=self.dtype, buffer=self.smh.buf)
+
     def load(self) -> NoReturn:
         """
-        Loads the object by connecting to a previously created shared memory 
+        Loads the object by connecting to a previously created shared memory
         buffer.
 
         This method attempts to connect to an existing shared memory segment
         identified by `self.name`. It then creates a NumPy array view onto
-        this shared memory. If `self.array_slice` is defined, it applies this 
+        this shared memory. If `self.array_slice` is defined, it applies this
         slice to the array, providing a view to a specific region.
         """
         # Reconnect to the Shared Memory buffer
         self.smh = shared_memory.SharedMemory(name=self.name)
-        self.array = np.ndarray(self.shape, dtype=self.dtype,
-                buffer=self.smh.buf)
+        self.array = np.ndarray(self.shape, dtype=self.dtype, buffer=self.smh.buf)
         if self.array_slice:
             self.array = self.array[self.array_slice]
-    
+
     def close(self) -> NoReturn:
         """
         Closes the connection to the shared memory buffer.
 
         This method releases the current process's view of the shared memory
         segment. It does *not* unlink (delete) the shared memory segment itself;
-        it only closes the current process's connection. After calling 
+        it only closes the current process's connection. After calling
         `close()`, `self.smh` and `self.array` are set to `None`.
         """
         self.smh.close()
         self.smh = None
         self.array = None
-    
+
     @classmethod
-    def clone(cls,
-            sma: 'SharedMemoryArray', 
-            **override,
-            ) -> 'SharedMemoryArray':
+    def clone(
+        cls,
+        sma: "SharedMemoryArray",
+        **override,
+    ) -> "SharedMemoryArray":
         """
         Creates a new `SharedMemoryArray` instance by cloning an existing one.
 
@@ -165,7 +164,7 @@ class SharedMemoryArray(object):
         sma : SharedMemoryArray
             The `SharedMemoryArray` instance to clone. Its `shape`, `dtype`,
             `name`, and `array_slice` attributes will be used as defaults.
-            
+
         **override
             Keyword arguments to override any of the cloned attributes.
             For example: `name="new_name"`, `shape=(10, 20)`.
@@ -173,14 +172,18 @@ class SharedMemoryArray(object):
         Returns
         -------
         SharedMemoryArray
-            A new `SharedMemoryArray` instance with the cloned or overridden 
+            A new `SharedMemoryArray` instance with the cloned or overridden
             attributes.
         """
-        kwargs = {'shape': sma.shape, 'dtype': sma.dtype, 'name': sma.name,
-                'array_slice': sma.array_slice}
+        kwargs = {
+            "shape": sma.shape,
+            "dtype": sma.dtype,
+            "name": sma.name,
+            "array_slice": sma.array_slice,
+        }
         kwargs.update(override)
         return cls(**kwargs)
-    
+
     @classmethod
     def build_sma_name(cls, prefix: str) -> str:
         """
@@ -204,12 +207,13 @@ class SharedMemoryArray(object):
             "1-my_prefix-202310-2715-3000-abcdef12-3456-7890-abcd-ef1234567890"
         """
         if prefix is None:
-            prefix=''
+            prefix = ""
         cls.COUNTER += 1
-        sma_name = "-".join((str(cls.COUNTER), prefix,
-                datetime.now().strftime('%Y%m-%d%H-%M%S'), str(uuid4())))
+        sma_name = "-".join(
+            (str(cls.COUNTER), prefix, datetime.now().strftime("%Y%m-%d%H-%M%S"), str(uuid4()))
+        )
         return sma_name
-    
+
     @classmethod
     def clear_buffers(cls, buffer_names: List[str]) -> NoReturn:
         """
@@ -229,6 +233,7 @@ class SharedMemoryArray(object):
             buf = shared_memory.SharedMemory(name=name)
             buf.close()
             buf.unlink()
+
 
 def shmarray_wrap(func):
     """
@@ -250,7 +255,7 @@ def shmarray_wrap(func):
     -------
     callable
         A wrapper function that handles the loading and closing of
-        `SharedMemoryArray` arguments before and after executing the original 
+        `SharedMemoryArray` arguments before and after executing the original
         `func`.
 
     Notes
@@ -261,6 +266,7 @@ def shmarray_wrap(func):
     all detected `SharedMemoryArray` instances, even if the wrapped function
     raises an exception.
     """
+
     @wraps(func)
     def wrapper(*args, **kwargs):
         """
@@ -295,6 +301,7 @@ def shmarray_wrap(func):
             after ensuring all `SharedMemoryArray` instances are closed.
         """
         smas = []
+
         def resolve_arg(arg):
             ret = arg
             if isinstance(arg, SharedMemoryArray):
@@ -302,24 +309,28 @@ def shmarray_wrap(func):
                 arg.load()
                 ret = arg.array
             return ret
+
         func_ret = None
         res_args = [resolve_arg(arg) for arg in args]
-        res_kwargs = {key:resolve_arg(arg) for key, arg in kwargs.items()}
+        res_kwargs = {key: resolve_arg(arg) for key, arg in kwargs.items()}
         try:
             func_ret = func(*res_args, **res_kwargs)
-        except:
+        except Exception:
             raise
         finally:
             for sma in smas:
                 sma.close()
         return func_ret
+
     return wrapper
 
+
 def create_and_register_sma(
-        shape, dtype,
-        register: List[str],
-        prefix:str = None,
-        ) -> SharedMemoryArray:
+    shape,
+    dtype,
+    register: List[str],
+    prefix: str = None,
+) -> SharedMemoryArray:
     """Creates a `SharedMemoryArray` and registers its name in a list.
 
     This helper function simplifies the process of creating a new shared memory
@@ -332,15 +343,15 @@ def create_and_register_sma(
     ----------
     shape : tuple of int
         The desired shape of the NumPy array to be created in shared memory.
-        
+
     dtype : numpy.dtype
         The data type of the NumPy array elements.
-        
+
     register : list of str
         A list to which the generated unique name of the shared memory segment
         will be appended. This list is typically used to keep track of active
         shared memory buffers for later management or clearing.
-        
+
     prefix : str, optional
         An optional string prefix to use when generating the unique name for
         the shared memory segment. Defaults to `None`.
@@ -356,4 +367,3 @@ def create_and_register_sma(
     buffer.create()
     register.append(buffer_name)
     return buffer
-    

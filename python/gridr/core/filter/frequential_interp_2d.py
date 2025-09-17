@@ -22,10 +22,12 @@ from typing import Tuple
 import numpy as np
 
 from gridr.core.filter.filter import Filter2d
-from gridr.core.filter.lattice import Domain, Lattice2d
+from gridr.core.filter.lattice import Lattice2d
+
 
 class CellModel(object):
     pass
+
 
 class ReciprocalCellModel(CellModel):
     """A reciprocal cell model with tunable frequency cutoff characteristics.
@@ -36,39 +38,40 @@ class ReciprocalCellModel(CellModel):
     ----------
     cell_geometry : Lattice2d
         The basis of the vectorial space used for the cell definition.
-        Please note it is different from the working geometry, ie. the lattice 
+        Please note it is different from the working geometry, ie. the lattice
         effectively defining a regular resampling operation in the physical
-        space. 
-        
+        space.
+
     cutoff_tanh_slope : float
         The slope parameter for the hyperbolic tangent function applied to the
         frequency cutoff, controlling the sharpness of the transition
-        
+
     cutoff_shift : float
         The shift parameter for the frequency cutoff, allowing adjustment of
         the cutoff position in the frequency domain
 
     """
-    
-    def __init__(self,
-            cell_geometry: Lattice2d,
-            cutoff_tanh_slope: float = 10.,
-            cutoff_shift: float = 0.,
-            ):
+
+    def __init__(
+        self,
+        cell_geometry: Lattice2d,
+        cutoff_tanh_slope: float = 10.0,
+        cutoff_shift: float = 0.0,
+    ):
         """Initialize the ReciprocalCellModel
 
         Parameters
         ----------
         cell_geometry : Lattice2d
             The basis of the vectorial space used for the cell definition.
-            Please note it is different from the working geometry, ie. the 
-            lattice effectively defining a regular resampling operation in the 
-            physical space. 
-            
+            Please note it is different from the working geometry, ie. the
+            lattice effectively defining a regular resampling operation in the
+            physical space.
+
         cutoff_tanh_slope : float, optional
-            The slope parameter for the hyperbolic tangent function applied to 
+            The slope parameter for the hyperbolic tangent function applied to
             the frequency cutoff (default is 10.0)
-            
+
         cutoff_shift : float, optional
             The shift parameter for the frequency cutoff (default is 0.0)
         """
@@ -76,51 +79,48 @@ class ReciprocalCellModel(CellModel):
         self.cutoff_tanh_slope = cutoff_tanh_slope
         self.cutoff_shift = cutoff_shift
 
-    def compute(self,
-            freq1d_x: np.array,
-            freq1d_y: np.array,
-            working_geometry: Lattice2d):
+    def compute(self, freq1d_x: np.array, freq1d_y: np.array, working_geometry: Lattice2d):
         """Compute the filter
-        
+
         Parameters
         ----------
         freq1d_x : numpy.ndarray
             One-dimensional X-frequency coordinates
-        
+
         freq1d_y : numpy.ndarray
             One-dimensional Y-frequency coordinates
-            
+
         working_geometry: Lattice2d
             The lattice defining the regular resampling operation in either the
             physical space or the reciprocal space.
-            
+
         Returns
         -------
         np.ndarray
-            The computed filter for the meshgrid of the input frequencies. 
+            The computed filter for the meshgrid of the input frequencies.
         """
         # Computation on the cell geometry lattice
         self.cell_geometry.check_singularity()
-        
+
         # The voronoi paving cell computation has to be performed in the dual
         # space.
         v_geometry = self.cell_geometry
         if v_geometry.is_spatial_domain():
             v_geometry = Lattice2d.get_dual_domain_lattice(v_geometry)
-        
+
         v1, v2, v3 = Lattice2d.voronoi_paving_cell(lattice2d=v_geometry)
-        
+
         # Defining the working geometry
         if working_geometry.is_spatial_domain():
             working_geometry = Lattice2d.get_dual_domain_geometry(working_geometry)
-            
+
         u1 = working_geometry.v1
         u2 = working_geometry.v2
-        
-        # Construct the mesh of the spatial frequencies aligned with the 
+
+        # Construct the mesh of the spatial frequencies aligned with the
         # source axis.
         freq_x_grid, freq_y_grid = np.meshgrid(freq1d_x, freq1d_y)
-        
+
         # The working geometry is used to make the change of coordinates
         # to the filter geometry
         #
@@ -145,17 +145,18 @@ class ReciprocalCellModel(CellModel):
 
         if self.cutoff_tanh_slope is None:
             # tensorial product for all frequencies
-            fil[np.where(np.abs(freq1) > (0.5 + self.cutoff_shift))] = 0.
-            fil[np.where(np.abs(freq2) > (0.5 + self.cutoff_shift))] = 0.
+            fil[np.where(np.abs(freq1) > (0.5 + self.cutoff_shift))] = 0.0
+            fil[np.where(np.abs(freq2) > (0.5 + self.cutoff_shift))] = 0.0
             if v3 is not None:
-                fil[np.where(np.abs(freq3) > (0.5 + self.cutoff_shift))] = 0.
+                fil[np.where(np.abs(freq3) > (0.5 + self.cutoff_shift))] = 0.0
         else:
             # tanh
             def freq_tanh(x, r, slope):
                 d = 2 * slope
                 t = r + 0.5
-                p = 0.5 * (np.tanh(d * (x + t)) - np.tanh(d * (x - t)) )
+                p = 0.5 * (np.tanh(d * (x + t)) - np.tanh(d * (x - t)))
                 return p
+
             fil = freq_tanh(freq1, self.cutoff_shift, self.cutoff_tanh_slope)
             fil *= freq_tanh(freq2, self.cutoff_shift, self.cutoff_tanh_slope)
             if v3 is not None:
@@ -169,14 +170,13 @@ class ReciprocalCellModel(CellModel):
 
         return fil
 
+
 class FrequentialInterpolator2d(Filter2d):
     """
     Frequential interpolator 2d
     """
 
-    def __init__(self,
-            working_geometry: Lattice2d,
-            model: CellModel):
+    def __init__(self, working_geometry: Lattice2d, model: CellModel):
         """
         Init a FrequentialInterpolator2d
         :param working_geometry: the working geometry
@@ -184,15 +184,13 @@ class FrequentialInterpolator2d(Filter2d):
         """
         super().__init__()
         if not isinstance(model, ReciprocalCellModel):
-            raise NotImplemented
+            raise NotImplementedError
         self.working_geometry = working_geometry
         self.model = model
 
-    def compute(self,
-            nrow: int,
-            ncol: int,
-            oversampling_row: float,
-            oversampling_col: float) -> Tuple[np.array, np.array, np.array]:
+    def compute(
+        self, nrow: int, ncol: int, oversampling_row: float, oversampling_col: float
+    ) -> Tuple[np.array, np.array, np.array]:
         """
         Compute the filter on nrow x ncol samples.
 
@@ -223,9 +221,5 @@ class FrequentialInterpolator2d(Filter2d):
         self.freq_y = np.fft.fftshift(np.fft.fftfreq(nrow)) * oversampling_row
 
         self.fil = self.model.compute(
-                freq1d_x=self.freq_x,
-                freq1d_y=self.freq_y,
-                working_geometry=u_geometry)
-
-
-
+            freq1d_x=self.freq_x, freq1d_y=self.freq_y, working_geometry=u_geometry
+        )

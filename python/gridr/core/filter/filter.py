@@ -27,13 +27,14 @@ import numpy as np
 
 from gridr.core.utils import fft
 
+
 class Filter2d(object):
     """Two-dimensional filter class for frequency domain processing.
-    
+
     This class represents a 2D filter with methods for computing spatial kernels
     and checking filter properties. The filter operates in the frequency domain
     and can be converted to spatial domain representations.
-    
+
     Attributes
     ----------
     fil : numpy.ndarray
@@ -42,7 +43,7 @@ class Filter2d(object):
         X-frequency coordinates
     freq_y : numpy.ndarray
         Y-frequency coordinates
-        
+
     Examples
     --------
     >>> filter_obj = Filter2d()
@@ -52,7 +53,7 @@ class Filter2d(object):
 
     def __init__(self, **kwargs):
         """Initialise the Filter2d object.
-        
+
         Parameters
         ----------
         **kwargs
@@ -65,17 +66,17 @@ class Filter2d(object):
     def get_spatial_kernel(self, real: bool = True) -> np.ndarray:
         """Compute the spatial convolution kernel from frequency domain
         representation.
-        
-        This method applies the inverse FFT to convert the frequency domain 
+
+        This method applies the inverse FFT to convert the frequency domain
         filter to the spatial domain, with proper frequency shifting to position
         the zero-frequency component at the center of the kernel.
-        
+
         Parameters
         ----------
         real : bool, default True
             If True, returns only the real part of the kernel. If False, returns
             the complex kernel including imaginary components.
-            
+
         Returns
         -------
         numpy.ndarray
@@ -84,25 +85,25 @@ class Filter2d(object):
         """
         # Apply inverse FFT with frequency shifting
         kernel = fft.ifft(self.fil, shift=True, shift_after=True)
-        
+
         if real:
             kernel = kernel.real
-            
+
         return kernel
 
     def is_dirac(self) -> bool:
         """Check if the current filter represents a Dirac delta function.
-        
+
         A filter is considered a Dirac if its spatial kernel satisfies:
         - Sum of all coefficients equals 1
         - Maximum coefficient value equals 1
         - Minimum coefficient value equals 0
-        
+
         Returns
         -------
         bool
             True if the filter is a Dirac delta function, False otherwise
-            
+
         Notes
         -----
         This method uses the real part of the spatial kernel for evaluation.
@@ -114,4 +115,3 @@ class Filter2d(object):
         check_max = np.max(kernel) == 1
         check_min = np.min(kernel) == 0
         return check_sum and check_max and check_min
-

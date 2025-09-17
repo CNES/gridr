@@ -12,16 +12,11 @@ Tests for the gridr.core.utils.array_window module
 Command to run test :
 PYTHONPATH=${PWD}/python/:$PYTHONPATH pytest tests/python/gridr/core/utils/test_chunks.py
 """
-import os
-import numpy as np
-import pytest
-
-from gridr.core.utils.chunks import (
-        get_chunk_boundaries, get_chunk_shapes)
+#from gridr.core.utils.chunks import get_chunk_boundaries, get_chunk_shapes
 
 
 class TestChunks:
-    """Class for test
-    """
+    """Class for test"""
+
     # TODO
     pass
