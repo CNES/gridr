@@ -765,7 +765,7 @@ impl GxArrayViewInterpolator for GxLinearInterpolator
 mod gx_linear_kernel_tests {
     use super::*;
     //use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolationContext, DefaultCtx};
-    use crate::core::interp::gx_array_view_interp::{DefaultCtx};
+    use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolationContext, DefaultCtx, BinaryInputMask, BinaryOutputMask, BoundsCheck, NoOutputMask};
     
     /// Checks if two slices of f64 values are approximately equal within a given tolerance.
     ///
@@ -835,13 +835,195 @@ mod gx_linear_kernel_tests {
     }
     
     #[test]
+    fn test_array1_interp2_idendity_mask_full_valid() {
+        
+        // Input array
+        let data_in = [ 0.0, 1.0, 2.0,
+                        10.0, 20.0, 40.0,
+                        100.0, 1000.0, 10000.0 ];
+        let array_in = GxArrayView::new(&data_in, 1, 3, 3);
+        
+        // Output array
+        let mut data_out = [ -9.0, -9.0, -9.0 ];
+        let mut array_out = GxArrayViewMut::new(&mut data_out, 1, 1, 3);
+        
+        // Input mask
+        let mask_data_in: [u8; 9] = [1; 9];
+        let array_mask_in = GxArrayView::new(&mask_data_in, 1, 3, 3);
+        
+        // Output mask
+        let mut mask_data_out: [u8; 3] = [ 11; 3 ];
+        let mut array_mask_out = GxArrayViewMut::new(&mut mask_data_out, 1, 1, 3);
+        
+        // Strategy context
+        let mut context = GxArrayViewInterpolationContext::new(
+                BinaryInputMask { mask: &array_mask_in},
+                BinaryOutputMask { mask: &mut array_mask_out },
+                BoundsCheck {},
+            );
+        
+        let interp = GxLinearInterpolator::new();
+
+        let mut weights = interp.allocate_kernel_buffer();
+        
+        // Test idendity - with mask context - full valid mask
+        let x = 1.;
+        let y = 1.;
+        let out_idx = 1;
+        let expected = [-9., 20., -9.];
+        let expected_mask = [11, 1, 11];
+        let _ = interp.array1_interp2::<f64, f64, GxArrayViewInterpolationContext<_,_,_>>(&mut weights, y, x, out_idx, &array_in, &mut array_out, 0., &mut context);
+        
+        assert_eq!(array_out.data, expected);
+        assert_eq!(mask_data_out, expected_mask);
+    }
+    
+    #[test]
+    fn test_array1_interp2_idendity_mask_full_invalid() {
+        
+        // Input array
+        let data_in = [ 0.0, 1.0, 2.0,
+                        10.0, 20.0, 40.0,
+                        100.0, 1000.0, 10000.0 ];
+        let array_in = GxArrayView::new(&data_in, 1, 3, 3);
+        
+        // Output array
+        let mut data_out = [ -9.0, -9.0, -9.0 ];
+        let mut array_out = GxArrayViewMut::new(&mut data_out, 1, 1, 3);
+        
+        // Input mask
+        let mask_data_in: [u8; 9] = [0; 9];
+        let array_mask_in = GxArrayView::new(&mask_data_in, 1, 3, 3);
+        
+        // Output mask
+        let mut mask_data_out: [u8; 3] = [ 11; 3 ];
+        let mut array_mask_out = GxArrayViewMut::new(&mut mask_data_out, 1, 1, 3);
+        
+        // Strategy context
+        let mut context = GxArrayViewInterpolationContext::new(
+                BinaryInputMask { mask: &array_mask_in},
+                BinaryOutputMask { mask: &mut array_mask_out },
+                BoundsCheck {},
+            );
+        
+        let interp = GxLinearInterpolator::new();
+
+        let mut weights = interp.allocate_kernel_buffer();
+        
+        // Test idendity - with mask context - full valid mask
+        let x = 1.;
+        let y = 1.;
+        let out_idx = 1;
+        let nodata_value = -7.;
+        let expected = [-9., nodata_value, -9.];
+        let expected_mask = [11, 0, 11];
+        let _ = interp.array1_interp2::<f64, f64, GxArrayViewInterpolationContext<_,_,_>>(&mut weights, y, x, out_idx, &array_in, &mut array_out, nodata_value, &mut context);
+        
+        assert_eq!(array_out.data, expected);
+        assert_eq!(mask_data_out, expected_mask);
+    }
+    
+    #[test]
+    fn test_array1_interp2_idendity_mask() {
+        
+        // Input array
+        let data_in = [ 0.0, 1.0, 2.0,
+                        10.0, 20.0, 40.0,
+                        100.0, 1000.0, 10000.0 ];
+        let array_in = GxArrayView::new(&data_in, 1, 3, 3);
+        
+        // Output array
+        let mut data_out = [ -9.0, -9.0, -9.0 ];
+        let mut array_out = GxArrayViewMut::new(&mut data_out, 1, 1, 3);
+        
+        // Input mask
+        let mask_data_in: [u8; 9] = [1, 1, 1,
+                                     0, 1, 1,
+                                     1, 1, 1];
+        let array_mask_in = GxArrayView::new(&mask_data_in, 1, 3, 3);
+        
+        // Output mask
+        let mut mask_data_out: [u8; 3] = [ 11; 3 ];
+                
+        let interp = GxLinearInterpolator::new();
+
+        let mut weights = interp.allocate_kernel_buffer();
+        
+        {
+            let mut array_mask_out = GxArrayViewMut::new(&mut mask_data_out, 1, 1, 3);
+            
+            // Strategy context
+            let mut context = GxArrayViewInterpolationContext::new(
+                    BinaryInputMask { mask: &array_mask_in},
+                    BinaryOutputMask { mask: &mut array_mask_out },
+                    BoundsCheck {},
+                );
+            
+            // Test idendity - with mask context - at (1.5, 1)
+            let x = 1.5;
+            let y = 1.;
+            let out_idx = 1;
+            let nodata_value = -7.;
+            let expected = [-9., 30., -9.];
+            let expected_mask = [11, 1, 11];
+            let _ = interp.array1_interp2::<f64, f64, GxArrayViewInterpolationContext<_,_,_>>(&mut weights, y, x, out_idx, &array_in, &mut array_out, nodata_value, &mut context);
+            assert_eq!(array_out.data, expected);
+            assert_eq!(mask_data_out, expected_mask);
+        }
+        {
+            let mut array_mask_out = GxArrayViewMut::new(&mut mask_data_out, 1, 1, 3);
+            
+            // Strategy context
+            let mut context = GxArrayViewInterpolationContext::new(
+                    BinaryInputMask { mask: &array_mask_in},
+                    BinaryOutputMask { mask: &mut array_mask_out },
+                    BoundsCheck {},
+                );
+            
+            // Test idendity - with mask context - at (0.5, 1)
+            let x = 0.5;
+            let y = 1.;
+            let out_idx = 1;
+            let nodata_value = -7.;
+            let expected = [-9., nodata_value, -9.];
+            let expected_mask = [11, 0, 11];
+            let _ = interp.array1_interp2::<f64, f64, GxArrayViewInterpolationContext<_,_,_>>(&mut weights, y, x, out_idx, &array_in, &mut array_out, nodata_value, &mut context);
+            assert_eq!(array_out.data, expected);
+            assert_eq!(mask_data_out, expected_mask);
+        }
+        {
+            let mut array_mask_out = GxArrayViewMut::new(&mut mask_data_out, 1, 1, 3);
+            
+            // Strategy context
+            let mut context = GxArrayViewInterpolationContext::new(
+                    BinaryInputMask { mask: &array_mask_in},
+                    BinaryOutputMask { mask: &mut array_mask_out },
+                    BoundsCheck {},
+                );
+                
+            // Test idendity - with mask context - at (0.5, 0.)
+            let x = 0.5;
+            let y = 0.;
+            let out_idx = 1;
+            let nodata_value = -7.;
+            let expected = [-9., 0.5, -9.];
+            let expected_mask = [11, 1, 11];
+            let _ = interp.array1_interp2::<f64, f64, GxArrayViewInterpolationContext<_,_,_>>(&mut weights, y, x, out_idx, &array_in, &mut array_out, nodata_value, &mut context);
+            assert_eq!(array_out.data, expected);
+            assert_eq!(mask_data_out, expected_mask);
+        }
+    }
+    
+    #[test]
     fn test_array1_interp2_001() {
         let data_in = [ 0.0, 1.0, 2.0,
                         10.0, 20.0, 40.0,
                         100.0, 1000.0, 10000.0 ];
-        
+                
         let mut data_out = [ -9.0, -9.0, -9.0 ];
+        
         let array_in = GxArrayView::new(&data_in, 1, 3, 3);
+        
         let mut array_out = GxArrayViewMut::new(&mut data_out, 1, 1, 3);
         let interp = GxLinearInterpolator::new();
 
@@ -849,7 +1031,7 @@ mod gx_linear_kernel_tests {
         
         // Default context
         let mut context = DefaultCtx::default();
-        
+                
         // Test idendity
         // Expect : 20.
         let mut x = 1.;
@@ -858,6 +1040,7 @@ mod gx_linear_kernel_tests {
         let expected = [-9., 20., -9.];
         let _ = interp.array1_interp2::<f64, f64, DefaultCtx>(&mut weights, y, x, out_idx, &array_in, &mut array_out, 0., &mut context);
         assert_eq!(array_out.data, expected);
+        
         
         // Target x = 1.75 y = 1.4
         // Expect : 0.6*(0.75*40 + 0.25*20) + 0.4 * (10000*0.75+1000*0.25) = 
