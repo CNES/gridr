@@ -19,7 +19,12 @@ logger = logging.getLogger(__name__)
 project = 'GridR'
 copyright = '2025, Cnes'
 author = 'Arnaud Kelbert'
-release = '0.4.0'
+release = '0.4.1'
+contact_email = 'gridr-cnes@cnes.fr'
+
+rst_prolog = """
+.. |contact_email| replace:: gridr-cnes@cnes.fr
+"""
 
 sphinx_source_path = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 print(sphinx_source_path)

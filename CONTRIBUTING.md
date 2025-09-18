@@ -34,11 +34,11 @@ GRIDR Classical workflow is :
 * Check Licence and sign [Contributor Licence Agreement](#contribution-license-agreement) (Individual or Corporate)
 * Create an issue (or begin from an existing one)
 * Create a Merge Request from the issue: a MR is created accordingly with "WIP:", "Closes xx" and associated "xx-name-issue" branch
-* GRIDR hacking code from a local working directory or from the forge (less possibilities) following [Developer manual](./docs/source/developer.rst)
+* GRIDR hacking code from a local working directory or from the forge (less possibilities) following [Developer manual](./docs/source/developer_guide)
 * Git add, commit and push from local working clone directory or from the forge directly
 * Follow [Conventional commits](https://www.conventionalcommits.org/) specifications for commit messages
-* Beware that quality pre-commit tools are installed in continuous integration with classical quality code tools (see [Developer manual](./docs/source/developer.rst)).
-* Launch the [tests](./docs/source/developer.rst) on your modifications (or don't forget to add ones).
+* Beware that quality pre-commit tools are installed in continuous integration with classical quality code tools (see [Developer manual](./docs/source/developer_guide)).
+* Launch the [tests](./docs/source/developer_guide) on your modifications (or don't forget to add ones).
 * When finished, change your Merge Request name (erase "WIP:" in title ) and ask `@gridr` to review the code (see below Merge request acceptation process)
 
 
