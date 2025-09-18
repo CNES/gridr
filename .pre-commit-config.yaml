@@ -1,0 +1,47 @@
+repos:
+- repo: local
+  hooks:   
+  - id: end-of-file-fixer
+    name: end-of-file-fixer
+    language: system
+    entry: end-of-file-fixer
+    
+  - id: check-added-large-files
+    name: check-added-large-files
+    language: system
+    entry: check-added-large-files
+    
+  - id: mixed-line-ending
+    name: mixed-line-ending
+    language: system
+    entry: mixed-line-ending
+    args: [--fix=lf]
+    
+  - id: isort
+    name: isort
+    stages: [pre-commit]
+    language: system
+    entry: isort
+    types: [python]
+
+  - id: black
+    name: black
+    stages: [pre-commit]
+    language: system
+    entry: black
+    types: [python]
+
+  - id: flake8
+    name: flake8
+    stages: [pre-commit]
+    language: system
+    entry: flake8
+    types: [python]
+
+  - id: jupyter-nb-clear-output
+    name: jupyter-nb-clear-output
+    files: \.ipynb$
+    stages: [pre-commit]
+    language: system
+    entry: jupyter nbconvert --ClearOutputPreprocessor.enabled=True --inplace
+
