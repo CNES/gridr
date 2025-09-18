@@ -2,16 +2,24 @@
 
 ## [0.4.1] - 2025-xx-xx
 
-### Added
+### [Unreleased]
+- Documentation for antialiasing filter creation
 
-- LICENSE and NOTICE files
+### Added
+- Added usage of pre-commit with flake8, isort and black
+- Added license and opensource related files : LICENSE, NOTICE, AUTHORS.md, CONTRIBUTING.md, Clause of License Aggreements files
+- Added Developer_Guide (WIP) and License sections in sphinx documentation
 - scripts:
     - Added scripts directory in project tree
-    - Added generate_notice.py script
+    - Added generate_notice.py and generate_rust_notice.sh script
+- templates:
+    - Added templates directory in project tree
+    - Added templates to generate main NOTICE and python/rust 3rd party notices sections.
 
 ### Changed
 
 - Added license related header in python and rust source files
+- Apply pre-commit hooks (flake8, isort, black) to existing python source files in python/gridr and tests 
 - Documentation
 
 ## [0.4.0] - 2025-08-27
