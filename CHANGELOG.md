@@ -15,12 +15,17 @@
 - templates:
     - Added templates directory in project tree
     - Added templates to generate main NOTICE and python/rust 3rd party notices sections.
+- Added Rust tests for `GxNearestInterpolator` and `GxLinearInterpolator` to verify mask usage
+- Added Python test for the core `grid.grid_resampling.py` module. The test currently covers only identity grid transforms at full resolution.
 
 ### Changed
 
 - Added license related header in python and rust source files
 - Apply pre-commit hooks (flake8, isort, black) to existing python source files in python/gridr and tests 
 - Documentation
+
+### Fixed
+- Fixed the `array1_interp2` for `GxNearestInterpolator` to properly set the nodata value for masked output pixels.
 
 ## [0.4.0] - 2025-08-27
 
