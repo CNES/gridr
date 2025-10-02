@@ -26,13 +26,62 @@ from gridr.chain.grid_resampling_chain import GEOMETRY_RASTERIZE_KWARGS, basic_g
 from gridr.core.grid.grid_commons import grid_full_resolution_shape
 from gridr.core.grid.grid_mask import Validity, build_mask
 from gridr.core.grid.grid_resampling import array_grid_resampling
-from gridr.core.utils.array_utils import array_replace
+from gridr.core.utils.array_utils import array_convert, array_replace
 from gridr.io.common import GridRIOMode, safe_raster_open
 from gridr.misc.mandrill import mandrill
 
 UNMASKED_VALUE = Validity.VALID
 MASKED_VALUE = Validity.INVALID
 
+def assert_allclose_with_details(actual, desired, rtol=1e-7, atol=1e-8, err_msg=""):
+    """
+    Similar to np.testing.assert_allclose but provides detailed information about
+    mismatches when the test fails.
+
+    Parameters:
+    -----------
+    actual : array_like
+        Array obtained from computation.
+    desired : array_like
+        Array to compare against.
+    rtol : float, optional
+        Relative tolerance parameter (default is 1e-7).
+    atol : float, optional
+        Absolute tolerance parameter (default is 1e-8).
+    err_msg : str, optional
+        Error message to display if the test fails.
+    """
+    actual = np.asarray(actual)
+    desired = np.asarray(desired)
+
+    if actual.shape != desired.shape:
+        raise AssertionError(f"Shape mismatch: actual {actual.shape} vs desired {desired.shape}")
+
+    diff = np.abs(actual - desired)
+    max_diff = np.max(diff)
+
+    # Check if the maximum difference is within tolerance
+    if max_diff <= (atol + rtol * np.max(np.abs(desired))):
+        return True
+
+    # If not, find and display the mismatches
+    error_mask = diff > (atol + rtol * np.abs(desired))
+    error_indices = np.argwhere(error_mask)
+
+    error_message = err_msg + "\n"
+    error_message += f"Maximum difference: {max_diff}\n"
+    error_message += f"Number of elements with differences: {np.sum(error_mask)}\n"
+
+    if len(error_indices) > 0:
+        error_message += "First 10 mismatched elements and their positions:\n"
+        for idx in error_indices[:10]:
+            error_message += (
+                f"Position {idx}: actual={actual[idx[0], idx[1]]}, "
+                f"desired={desired[idx[0], idx[1]]}, "
+                f"difference={diff[idx[0], idx[1]]}\n"
+            )
+
+    raise AssertionError(error_message)
 
 def create_grid(
     nrow, ncol, origin_pos, origin_node, v_row_y, v_row_x, v_col_y, v_col_x, grid_dtype
@@ -90,7 +139,7 @@ def shape2(array):
 class TestGridResamplingChain:
     """Test class"""
 
-    def _generic_test_build_mask_chain(
+    def _generic_test_grid_resampling_chain(
         self,
         request,
         interp,
@@ -111,6 +160,7 @@ class TestGridResamplingChain:
         window,
         array_in_geometry_origin,
         array_in_geometry_pair,
+        array_out_dtype,
         mask_out,
         io_strip_size,
         io_strip_size_target,
@@ -127,9 +177,6 @@ class TestGridResamplingChain:
         grid_mask_in_path = None
         array_mask_in_path = None
         array_mask_out_path = None
-
-        # computation_dtype = np.float64
-        output_dtype = np.float64
 
         try:
             # Write input array
@@ -181,7 +228,7 @@ class TestGridResamplingChain:
 
             array_out_open_kwargs = {
                 "driver": "GTiff",
-                "dtype": output_dtype,
+                "dtype": array_out_dtype,
                 "height": output_shape[0],
                 "width": output_shape[1],
                 "count": len(array_in_bands),
@@ -201,7 +248,7 @@ class TestGridResamplingChain:
                 }
 
             array_out_validate, mask_out_validate = None, None
-            #F = 1
+            # F = 1
             with (
                 rasterio.open(grid_in_path, "r") as grid_in_ds,
                 rasterio.open(array_in_path, "r") as array_in_ds,
@@ -305,8 +352,22 @@ class TestGridResamplingChain:
                 rasterio.open(array_out_path, "r") as array_out_ds,
                 safe_raster_open(array_mask_out_path, "r") as array_mask_out_ds,
             ):
+                # cast array_out_validate if array_out_dtype for dataset is not float64
+                if array_out_dtype != np.float64:
+                    array_out_validate_tmp = np.empty(
+                        array_out_validate.shape, dtype=array_out_dtype
+                    )
+                    rounding_method = "round" if array_out_dtype.kind in "iu" else None
+                    array_convert(
+                        array_out_validate,
+                        array_out_validate_tmp,
+                        clip="auto",
+                        rounding_method=rounding_method,
+                    )
+                    array_out_validate = array_out_validate_tmp
 
-                np.testing.assert_allclose(
+                #np.testing.assert_allclose(
+                assert_allclose_with_details(
                     np.squeeze(array_out_ds.read()),
                     array_out_validate,
                     rtol=1e-7,
@@ -336,7 +397,7 @@ class TestGridResamplingChain:
                 os.unlink(array_mask_out_path)
             os.rmdir(output_dir)
 
-    @pytest.mark.parametrize("interp", ["cubic"])
+    @pytest.mark.parametrize("interp", ["cubic", "linear"]) #, "nearest"]) => nearest not stable yet 
     @pytest.mark.parametrize(
         "array_in, array_in_mask_positions, array_in_bands",
         [
@@ -388,11 +449,13 @@ class TestGridResamplingChain:
             ),
         ],
     )
+    @pytest.mark.parametrize("array_out_dtype", [np.dtype("float64")])
     @pytest.mark.parametrize("mask_out", [True, False])
     # @pytest.mark.parametrize("grid_resolution", [(3, 4),])
     @pytest.mark.parametrize(
         "io_strip_size, io_strip_size_target, tile_shape",
         [
+            (0, GridRIOMode.OUTPUT, None),
             (100, GridRIOMode.OUTPUT, None),
             (100, GridRIOMode.OUTPUT, (80, 200)),
             (100, GridRIOMode.INPUT, (80, 200)),
@@ -405,7 +468,7 @@ class TestGridResamplingChain:
     # @pytest.mark.parametrize("ncpu", [1, 2])
     # @pytest.mark.parametrize("cpu_tile_shape", [(1000,1000),])
     # @pytest.mark.parametrize("computation_dtype", [DTYPE_00,])
-    def test_build_mask_chain(
+    def test_grid_resampling_chain(
         self,
         request,
         interp,
@@ -424,13 +487,14 @@ class TestGridResamplingChain:
         window,
         array_in_geometry_origin,
         array_in_geometry_pair,
+        array_out_dtype,
         mask_out,
         io_strip_size,
         io_strip_size_target,
         tile_shape,
     ):
         """Test the grid_resampling_chain - compare results with results in the core method"""
-        self._generic_test_build_mask_chain(
+        self._generic_test_grid_resampling_chain(
             request=request,
             interp=interp,
             array_in=array_in,
@@ -450,6 +514,7 @@ class TestGridResamplingChain:
             window=window,
             array_in_geometry_origin=array_in_geometry_origin,
             array_in_geometry_pair=array_in_geometry_pair,
+            array_out_dtype=array_out_dtype,
             mask_out=mask_out,
             io_strip_size=io_strip_size,
             io_strip_size_target=io_strip_size_target,
@@ -497,6 +562,7 @@ class TestGridResamplingChain:
             ),
         ],
     )
+    @pytest.mark.parametrize("array_out_dtype", [np.dtype("float64")])
     @pytest.mark.parametrize("mask_out", [True])
     # @pytest.mark.parametrize("grid_resolution", [(3, 4),])
     @pytest.mark.parametrize(
@@ -519,7 +585,7 @@ class TestGridResamplingChain:
     # @pytest.mark.parametrize("ncpu", [1, 2])
     # @pytest.mark.parametrize("cpu_tile_shape", [(1000,1000),])
     # @pytest.mark.parametrize("computation_dtype", [DTYPE_00,])
-    def test_build_mask_chain_array_mask_values_and_dtype(
+    def test_grid_resampling_chain_array_mask_values_and_dtype(
         self,
         request,
         interp,
@@ -540,13 +606,14 @@ class TestGridResamplingChain:
         window,
         array_in_geometry_origin,
         array_in_geometry_pair,
+        array_out_dtype,
         mask_out,
         io_strip_size,
         io_strip_size_target,
         tile_shape,
     ):
         """Test the grid_resampling_chain - compare results with results in the core method"""
-        self._generic_test_build_mask_chain(
+        self._generic_test_grid_resampling_chain(
             request=request,
             interp=interp,
             array_in=array_in,
@@ -566,6 +633,131 @@ class TestGridResamplingChain:
             window=window,
             array_in_geometry_origin=array_in_geometry_origin,
             array_in_geometry_pair=array_in_geometry_pair,
+            array_out_dtype=array_out_dtype,
+            mask_out=mask_out,
+            io_strip_size=io_strip_size,
+            io_strip_size_target=io_strip_size_target,
+            tile_shape=tile_shape,
+        )
+
+    @pytest.mark.parametrize("interp", ["cubic"])
+    @pytest.mark.parametrize(
+        "array_in, array_in_mask_positions, array_in_bands",
+        [
+            (
+                mandrill[0],
+                [
+                    (60, 160),
+                ],
+                [
+                    1,
+                ],
+            ),
+        ],
+    )
+    @pytest.mark.parametrize("array_in_dtype", [np.float64])
+    @pytest.mark.parametrize(
+        "grid_vec_row, grid_vec_col, grid_origin_pos, grid_origin_node, grid_dtype, grid_mask",
+        [((5.2, 1.2), (-2.7, 7.1), (0.3, 0.2), (0.0, 0.0), np.float64, False)],
+    )
+    @pytest.mark.parametrize(
+        "grid_shape, grid_resolution, window",
+        [
+            ((50, 40), (10, 10), None),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "array_in_geometry_origin, array_in_geometry_pair",
+        [
+            (None, None),
+            (
+                (0.5, 0.5),
+                (
+                    None,
+                    shapely.geometry.Polygon(
+                        [(10.5, 12.5), (30.5, 12.5), (30.5, 40.5), (10.5, 40.5)]
+                    ),
+                ),
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "array_out_dtype",
+        [
+            np.dtype("float64"),
+            np.dtype("float32"),
+            np.dtype("int16"),
+            np.dtype("uint16"),
+            np.dtype("int8"),
+            np.dtype("uint8"),
+        ],
+    )
+    @pytest.mark.parametrize("mask_out", [True])
+    # @pytest.mark.parametrize("grid_resolution", [(3, 4),])
+    @pytest.mark.parametrize(
+        "io_strip_size, io_strip_size_target, tile_shape",
+        [
+            (100, GridRIOMode.OUTPUT, (80, 200)),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "array_in_mask_validity_pair, array_in_mask_type",
+        [
+            ((Validity.VALID, Validity.INVALID), np.uint8),
+        ],
+    )
+    # @pytest.mark.parametrize("ncpu", [1, 2])
+    # @pytest.mark.parametrize("cpu_tile_shape", [(1000,1000),])
+    # @pytest.mark.parametrize("computation_dtype", [DTYPE_00,])
+    def test_grid_resampling_chain_array_out_dtype(
+        self,
+        request,
+        interp,
+        array_in,
+        array_in_mask_positions,
+        array_in_mask_validity_pair,
+        array_in_mask_type,
+        array_in_bands,
+        array_in_dtype,
+        grid_vec_row,
+        grid_vec_col,
+        grid_origin_pos,
+        grid_origin_node,
+        grid_dtype,
+        grid_mask,
+        grid_shape,
+        grid_resolution,
+        window,
+        array_in_geometry_origin,
+        array_in_geometry_pair,
+        array_out_dtype,
+        mask_out,
+        io_strip_size,
+        io_strip_size_target,
+        tile_shape,
+    ):
+        """Test the grid_resampling_chain - compare results with results in the core method"""
+        self._generic_test_grid_resampling_chain(
+            request=request,
+            interp=interp,
+            array_in=array_in,
+            array_in_mask_positions=array_in_mask_positions,
+            array_in_mask_validity_pair=array_in_mask_validity_pair,
+            array_in_mask_type=array_in_mask_type,
+            array_in_bands=array_in_bands,
+            array_in_dtype=array_in_dtype,
+            grid_vec_row=grid_vec_row,
+            grid_vec_col=grid_vec_col,
+            grid_origin_pos=grid_origin_pos,
+            grid_origin_node=grid_origin_node,
+            grid_dtype=grid_dtype,
+            grid_mask=grid_mask,
+            grid_shape=grid_shape,
+            grid_resolution=grid_resolution,
+            window=window,
+            array_in_geometry_origin=array_in_geometry_origin,
+            array_in_geometry_pair=array_in_geometry_pair,
+            array_out_dtype=array_out_dtype,
             mask_out=mask_out,
             io_strip_size=io_strip_size,
             io_strip_size_target=io_strip_size_target,

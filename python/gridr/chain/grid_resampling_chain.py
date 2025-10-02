@@ -35,7 +35,7 @@ from gridr.core.grid.grid_rasterize import GeometryType, GridRasterizeAlg
 from gridr.core.grid.grid_resampling import array_grid_resampling
 from gridr.core.grid.grid_utils import array_compute_resampling_grid_geometries
 from gridr.core.utils import chunks
-from gridr.core.utils.array_utils import ArrayProfile, array_replace
+from gridr.core.utils.array_utils import ArrayProfile, array_convert, array_replace
 from gridr.core.utils.array_window import (
     as_rio_window,
     window_check,
@@ -1105,9 +1105,26 @@ def basic_grid_resampling_chain(
     write_buffer_shape = np.insert(write_buffer_shape2, 0, len(array_src_bands))
 
     # Create shared memory array for output
-    logger.debug(f"Create write array buffer with shape {write_buffer_shape}")
-    sma_w_array_buffer = register_sma(write_buffer_shape, np.dtype(array_out_ds.dtypes[0]))
-    logger.debug(f"Create write array buffer with shape {write_buffer_shape} DONE")
+    # The core resampling method currently supports float64 buffers only.
+    # If the output dataset has a type other than float64, we create two buffers:
+    # - The first buffer holds the computation in float64.
+    # - The second buffer maintains the target dtype and is written to disk.
+    array_out_ds_dtype = np.dtype(array_out_ds.dtypes[0])
+
+    # `sma_w_array_buffer_convert` determines if conversion is needed
+    # - If the buffer is None, no conversion is required
+    # - If the buffer is defined, conversion is required and it will contain the converted data
+    #   ready for writing
+    sma_w_array_buffer_convert = None
+
+    logger.debug(f"Create float64 computation array buffer with shape {write_buffer_shape}")
+    sma_w_array_buffer = register_sma(write_buffer_shape, np.float64)
+    logger.debug(f"Create float64 computation array buffer with shape {write_buffer_shape} DONE")
+
+    if array_out_ds_dtype != np.dtype("float64"):
+        logger.debug(f"Create write array buffer with shape {write_buffer_shape}")
+        sma_w_array_buffer_convert = register_sma(write_buffer_shape, array_out_ds_dtype)
+        logger.debug(f"Create write array buffer with shape {write_buffer_shape} DONE")
 
     # Manage output mask
     sma_w_mask_buffer = None
@@ -1120,7 +1137,17 @@ def basic_grid_resampling_chain(
 
     # Define here the margins required by interpolation
     # TODO : make it generic / for now set the 2 margin for bicubic interp
-    margin = np.array(((2, 2), (2, 2)))
+    # margin = np.array(((2, 2), (2, 2)))
+    margin = None
+    match interp:
+        case "nearest":
+            margin = np.array(((1, 1), (1, 1)))
+        case "linear":
+            margin = np.array(((1, 1), (1, 1)))
+        case "cubic":
+            margin = np.array(((2, 2), (2, 2)))
+        case _:
+            raise ValueError(f"Unknown interpolator {interp}")
 
     try:
         for chunk_idx, (chunk_win, (win_read, win_rel)) in enumerate(
@@ -1330,9 +1357,31 @@ def basic_grid_resampling_chain(
 
             # Write full chunk at once
             logger.debug(f"Chunk {chunk_idx} - write for full strip...")
-            array_out_ds.write(
-                sma_w_array_buffer.array[cslices3], window=as_rio_window(cstrip_target_win)
-            )
+
+            # Manage output data type conversion
+            if sma_w_array_buffer_convert is None:
+                array_out_ds.write(
+                    sma_w_array_buffer.array[cslices3], window=as_rio_window(cstrip_target_win)
+                )
+            else:
+                # We have to convert the data from float64 (computation type) to output type
+                logger.debug(f"Chunk {chunk_idx} - convert data type for full strip")
+
+                rounding_method = "round" if array_out_ds_dtype.kind in "iu" else None
+
+                # TODO : limit data dtype conversion to cslices3
+                array_convert(
+                    sma_w_array_buffer.array,
+                    sma_w_array_buffer_convert.array,
+                    clip="auto",
+                    rounding_method=rounding_method,
+                )
+
+                logger.debug(f"Chunk {chunk_idx} - write converted data for full strip...")
+                array_out_ds.write(
+                    sma_w_array_buffer_convert.array[cslices3],
+                    window=as_rio_window(cstrip_target_win),
+                )
 
             logger.debug(f"Chunk {chunk_idx} - write ends.")
 

@@ -22,7 +22,7 @@ Array utils module
 """
 # pylint: disable=C0413
 import sys
-from typing import NoReturn, Optional, Tuple, Union
+from typing import Any, Literal, NoReturn, Optional, Tuple, Union
 
 import numpy as np
 import rasterio
@@ -161,6 +161,218 @@ def array_replace(
         py_array_replace_func[(array.dtype, array.dtype)](
             array, nrow, ncol, val_cond, val_true, val_false, None, None, py_window
         )
+
+
+def is_clip_required(in_dtype: np.dtype, out_dtype: np.dtype) -> bool:
+    """
+    Determines if clipping is required when converting between data types.
+
+    Args:
+        in_dtype: The source data type
+        out_dtype: The destination data type
+
+    Returns:
+        bool: True if clipping is required, False otherwise
+
+    Raises:
+        ValueError: If the conversion between types is not managed
+    """
+    in_dtype_info = np.iinfo(in_dtype) if in_dtype.kind in "iu" else np.finfo(in_dtype)
+    out_dtype_info = np.iinfo(out_dtype) if out_dtype.kind in "iu" else np.finfo(out_dtype)
+    in_min, in_max = np.float64(in_dtype_info.min), np.float64(in_dtype_info.max)
+    out_min, out_max = np.float64(out_dtype_info.min), np.float64(out_dtype_info.max)
+
+    match (in_dtype.kind, out_dtype.kind):
+        # Cases where we need to check if source values fit in destination range
+        case ("f", "f") | ("i", "f") | ("i", "i") | ("f", "i"):
+            clip_required = in_min < out_min or in_max > out_max
+
+        # Cases where clipping is always required
+        case ("f", "u") | ("i", "u"):
+            clip_required = True
+
+        # Unsigned to unsigned conversion
+        case ("u", "u") | ("u", "i") | ("u", "f"):
+            clip_required = in_max > out_max
+
+        case _:
+            raise ValueError(f"Conversion from {in_dtype} to {out_dtype} is not managed")
+
+    return clip_required
+
+
+def is_clip_to_dtype_limits_safe(in_dtype: np.dtype, out_dtype: np.dtype) -> bool:
+    """
+    Determines whether clipping from an input type to the type limits of a target data type is safe.
+
+    This function checks if converting from a data type to a target data type and clipping it to the
+    target type's limits will preserve all values without overflow.
+
+    Parameters:
+    -----------
+    in_dtype : np.dtype
+        The input type to be checked for safe clipping.
+    out_dtype : np.dtype
+        The target data type to which the array would be converted.
+
+    Returns:
+    --------
+    bool
+        True if clipping to the target type limits is safe (no overflow will occur and the target
+        limit can be expressed in the input data type with precision),
+        False otherwise.
+
+    Description:
+    ------------
+    This function is necessary when performing type conversions between different numerical
+    data types, especially when converting between floating-point and integer types or
+    between different floating-point precisions. The main concern is to prevent overflow
+    when clipping values to the target type's limits.
+
+    The function performs the following checks:
+    1. Only floating-point input types are considered for this check (integer inputs
+       are assumed to be safe by default).
+    2. Checks if clipping is actually required between the input and output types.
+    3. Attempts to convert the maximum value of the output type to the input type and convert it
+       back to the output type.
+    6. If this conversion results in an OverflowError or if the converted value
+       doesn't match the expected maximum value of the output type, returns False.
+
+    The function is particularly important when processing numerical data where preserving
+    the integrity of values is critical, such as in scientific computing, financial
+    applications, or any domain where numerical precision matters.
+
+    Notes
+    -----
+    The test is only performed on the max as the min of an integer type is a power of 2 and can
+    safely expressed when clipping is required.
+    """
+    is_safe = True
+    # The test has only to be done considering float inputs
+    if in_dtype.kind == "f" and is_clip_required(in_dtype, out_dtype):
+        type_info = None
+        if out_dtype.kind == "f":
+            type_info = np.finfo(out_dtype)
+        else:
+            type_info = np.iinfo(out_dtype)
+        try:
+            is_safe = out_dtype.type(in_dtype.type(type_info.max)) == type_info.max
+        except OverflowError:
+            is_safe = False
+    return is_safe
+
+
+def array_convert(
+    array_in: np.ndarray,
+    array_out: np.ndarray,
+    clip: Union[Literal["auto"], Tuple[Any, Any]] = "auto",
+    safe: bool = True,
+    rounding_method: Optional[Literal["round", "ceil", "floor"]] = "round",
+) -> None:
+    """
+    Convert an input array to a target dtype with optional clipping and rounding.
+
+    The function performs type conversion from the input array to the output array,
+    with optional clipping and rounding operations based on the specified parameters.
+
+    Parameters
+    ----------
+    array_in : numpy.ndarray
+        The input array containing the data to convert. The dtype of this array
+        determines the source data type.
+
+    array_out : numpy.ndarray
+        The output array that will contain the converted data. The dtype of this
+        array determines the target data type.
+
+    clip : Union[Literal['auto'], Tuple[Any, Any]]]
+        Controls value clipping behavior:
+
+        -   'auto': Automatic clipping based on the target dtype's range
+        -   Tuple: Specific numeric range for clipping (e.g., (min_value, max_value)).
+                 The tuple values should correspond to the target dtype's range
+
+    safe : bool
+        If True, check are performed to garanty that the automatic clipping can be performed without
+        overflow caused by floating point precision loss.
+
+    rounding_method : Optional[Literal['round', 'ceil', 'floor']], optional
+        Specifies the rounding method to use when converting from float to integer:
+
+        -   'round': Standard rounding (default)
+        -   'ceil': Round up to nearest integer
+        -   'floor': Round down to nearest integer
+        -   None: No rounding is performed
+
+    Returns
+    -------
+    None
+        The function modifies both the input array and the output array inplace
+        and returns nothing.
+
+    Notes
+    -----
+
+    -   The function checks if clipping is required based on the input and output
+        dtypes and the specified clipping range.
+    -   When 'auto' clipping is specified, the function automatically clips to the
+        range of the output dtype.
+    -   The function currently raises an Exception if clipping from input type to output type is not
+        safe.
+    -   The function raises ValueError if the specified clipping range is invalid
+        for the output dtype.
+    -   No safety check is performed when the clipping range is not automatic
+
+    """
+    in_dtype = array_in.dtype
+    out_dtype = array_out.dtype
+
+    # Get output dtype min and max codable values.
+    out_dtype_info = np.iinfo(out_dtype) if out_dtype.kind in "iu" else np.finfo(out_dtype)
+    out_dtype_range = (out_dtype_info.min, out_dtype_info.max)
+
+    # Determines from types if clip is required
+    clip_required = is_clip_required(in_dtype, out_dtype)
+
+    # Define clip range
+    clip_range = None
+    if clip == "auto" and clip_required:
+        clip_range = (out_dtype_range[0], out_dtype_range[1])
+
+        if safe and not is_clip_to_dtype_limits_safe(in_dtype, out_dtype):
+            raise Exception(
+                f"Clipping to output dtype limits is not safe from {in_dtype} to {out_dtype}"
+            )
+
+    elif clip != "auto":
+        clip_range = clip
+        if min(clip_range) < out_dtype_info.min or max(clip_range) > out_dtype_info.max:
+            raise ValueError(f"Clipping range {clip_range} is not allowed on type {out_dtype}")
+
+    match rounding_method:
+        case "round":
+            np.round(array_in, decimals=0, out=array_in)
+
+        case "ceil":
+            np.ceil(array_in, out=array_in)
+
+        case "floor":
+            np.floor(array_in, out=array_in)
+
+        case _:
+            pass
+
+    if clip_range is not None:
+        clip_range_in = (in_dtype.type(clip_range[0]), in_dtype.type(clip_range[1]))
+        np.clip(array_in, a_min=clip_range_in[0], a_max=clip_range_in[1], out=array_in)
+        overflow = (array_in < clip_range[0]) | (array_in > clip_range[1])
+        if np.any(overflow):
+            raise Exception(f"Some value(s) are out of {out_dtype} range after clipping")
+        # raise Exception(array_in)
+        array_out[:] = array_in
+
+    else:
+        array_out[:] = array_in
 
 
 class ArrayProfile(object):

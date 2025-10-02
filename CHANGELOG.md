@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## [0.4.1] - 2025-xx-xx
+## [0.4.1] - 2025-10-02
 
 ### [Unreleased]
 - Documentation for antialiasing filter creation
@@ -17,15 +17,21 @@
     - Added templates to generate main NOTICE and python/rust 3rd party notices sections.
 - Added Rust tests for `GxNearestInterpolator` and `GxLinearInterpolator` to verify mask usage
 - Added Python test for the core `grid.grid_resampling.py` module. The test currently covers only identity grid transforms at full resolution.
+- Added `array_convert`, `is_clip_required` and `is_clip_to_dtype_limits_safe` python methods in the `gridr.core.utils.array_utils.py` module as well as corresponding tests. These methods are used by the `grid_resampling_chain` to convert data type before writing to disk in order to match the output dataset type.
 
 ### Changed
-
 - Added license related header in python and rust source files
 - Apply pre-commit hooks (flake8, isort, black) to existing python source files in python/gridr and tests 
 - Documentation
+- Added a temporary change in `grid_resampling_chain` to adapt margin to the interpolation function.
+- Tests for `grid_resampling_chain` have been enhanced to include interpolators other than `cubic` and output types different from `np.float64`. The `linear` interpolator is now tested, while the `nearest` interpolator is not due to an identified bug.
+- Tests for `grid_resampling_chain` now use the newly local implemented utility method `assert_all_close_with_details`, which provides detailed information about differences when they occur.
 
 ### Fixed
 - Fixed the `array1_interp2` for `GxNearestInterpolator` to properly set the nodata value for masked output pixels.
+- Fixed the `grid_resampling_chain` method to work with output datasets whose types are different from float64.
+- Fixed the test class name in `test_array_utils` from TestArrayWindow to TestArrayUtils.
+
 
 ## [0.4.0] - 2025-08-27
 
