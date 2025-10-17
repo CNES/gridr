@@ -28,26 +28,22 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import rasterio
 
-from gridr.cdylib import PyGridGeometriesMetricsF64
 from gridr.core.grid.grid_commons import grid_full_resolution_shape, grid_resolution_window_safe
 from gridr.core.grid.grid_mask import Validity, build_mask
 from gridr.core.grid.grid_rasterize import GeometryType, GridRasterizeAlg
-from gridr.core.grid.grid_resampling import array_grid_resampling
-from gridr.core.grid.grid_utils import (
-    array_compute_resampling_grid_geometries,
-    array_compute_resampling_grid_src_boundaries,
-    array_shift_grid_coordinates,
-)
+from gridr.core.grid.grid_resampling import array_grid_resampling, calculate_source_extent
+from gridr.core.grid.grid_utils import array_shift_grid_coordinates
+from gridr.core.interp.bspline_prefiltering import array_bspline_prefiltering
+from gridr.core.interp.interpolator import Interpolator, InterpolatorIdentifier, get_interpolator, is_bspline
 from gridr.core.utils import chunks
+from gridr.core.utils.array_pad import pad_inplace
 from gridr.core.utils.array_utils import ArrayProfile, array_convert, array_replace
 from gridr.core.utils.array_window import (
     as_rio_window,
     window_check,
-    window_extend,
     window_from_chunk,
     window_from_indices,
     window_indices,
-    window_overflow,
     window_shape,
     window_shift,
 )
@@ -78,174 +74,8 @@ required.
 SAFECHECK_SOURCE_BOUNDARIES = True
 
 
-def read_win_from_grid_metrics(
-    grid_metrics: PyGridGeometriesMetricsF64,
-    array_src_profile_2d: ArrayProfile,
-    margins: np.ndarray,
-    logger: logging.Logger,
-    logger_msg_prefix: str = "",
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Computes the source read window from grid metrics.
-
-    This function determines the read window (`src_win_read`) from the
-    source array based on the destination and source bounds contained in
-    `grid_metrics`. It applies the necessary margins to ensure sufficient
-    neighborhood data is available for operations such as interpolation,
-    while handling cases where the window exceeds the array boundaries.
-
-    Parameters
-    ----------
-    grid_metrics : PyGridGeometriesMetricsF64
-        Object containing geometric metrics of the grid, including source and
-        destination bounds.
-
-    array_src_profile_2d : ArrayProfile
-        Metadata/profile of the 2D source array, including shape and number of
-        dimensions information.
-
-    margins : numpy.ndarray of shape (2, 2)
-        Margins to apply to the read window, formatted as
-        ``[[top_margin, bottom_margin], [left_margin, right_margin]]``.
-
-    logger : logging.Logger
-        Logger instance used for debugging messages.
-
-    logger_msg_prefix : str, optional
-        Optional prefix to include in log messages for better traceability.
-        Defaults to ''.
-
-    Returns
-    -------
-    src_win_read : numpy.ndarray of shape (2, 2)
-        Final source read window adjusted for margins and boundary constraints.
-        Format: ``[[row_start, row_end], [col_start, col_end]]``. This is the
-        window that should be used for the raster read IO.
-
-    src_win_marged : numpy.ndarray of shape (2, 2)
-        Desired read window with margins applied, before boundary correction
-        (padding).
-
-    pad : numpy.ndarray of shape (2, 2)
-        Amount of padding required if the marged window extends outside the
-        source array. Format: ``[[top_pad, bottom_pad], [left_pad, right_pad]]``.
-
-    Notes
-    -----
-    This function is critical for operations requiring contextual data beyond
-    the immediate processing area, such as filtering or interpolation, ensuring
-    that no data loss or edge artifacts occur due to insufficient neighborhood
-    information.
-    """
-
-    def DEBUG(msg):
-        logger.debug(f"{logger_msg_prefix} - {msg}")
-
-    # The metrics have been computed, ie there is at least one
-    # valid point in the grid regarding the masking options.
-    # We can get the dst and src window :
-    # - the dst bounds are given relative to the current strip
-    #   low resolute shape.
-    # - the src bounds are absolute coordinates value in the
-    #   input array.
-    dst_lowres_bounds = grid_metrics.dst_bounds
-    src_bounds = grid_metrics.src_bounds
-
-    DEBUG(f"dst low res bounds : {dst_lowres_bounds} ")
-    DEBUG(f"src bounds : {src_bounds} ")
-
-    # Define the strip low res computing window (upper limit included)
-    dst_lowres_win = np.array(
-        (
-            (dst_lowres_bounds.ymin, dst_lowres_bounds.ymax),
-            (dst_lowres_bounds.xmin, dst_lowres_bounds.xmax),
-        )
-    )
-    DEBUG(f"dst win : {dst_lowres_win}")
-
-    src_win_read = None
-    src_win_marged = None
-    pad = None
-
-    if (
-        (src_bounds.ymin < 0 and src_bounds.ymax < 0)
-        or (src_bounds.xmin < 0 and src_bounds.xmax < 0)
-        or (
-            src_bounds.ymin > array_src_profile_2d.shape[0] - 1
-            and src_bounds.ymax > array_src_profile_2d.shape[0] - 1
-        )
-        or (
-            src_bounds.xmin > array_src_profile_2d.shape[1] - 1
-            and src_bounds.xmax > array_src_profile_2d.shape[1] - 1
-        )
-    ):
-        # The source is not readable from raster - fully outside for at least
-        # one direction.
-        DEBUG(
-            "The source read window is not available ; it goes fully "
-            "outside of raster in one direction at least"
-        )
-
-    else:
-        # Define the input read window
-        src_win = np.array(
-            (
-                (int(np.floor(src_bounds.ymin)), int(np.ceil(src_bounds.ymax))),
-                (int(np.floor(src_bounds.xmin)), int(np.ceil(src_bounds.xmax))),
-            )
-        )
-        DEBUG(f"src read win (preliminary) : {src_win}")
-
-        # Here we got a preliminary read window, but :
-        # - That window may overflow (ie. adress coordinates outside
-        #   of the raster
-        # - We have to consider some margins :
-        #   -- margin required for the interpolation kernel
-        #   -- margin required for spline interpolation preprocessing.
-        #   -- margin that may be required for other processing (egg.
-        #      antialiasing filtering)
-        #   A marged window may also overflow but we may have to
-        #   manage edges here : the passed array has to cover for
-        #   margins.
-        #
-        # Strategy :
-        # 1. compute overflow of the preliminary window and limit it
-        #    to the available region
-        # 2. Add margins
-        # 3. Compute overflow of the marged window
-        # 4. Read the valid window and perform edge management if
-        #    needed
-
-        # 1. compute overflow
-        src_win_overflow = window_overflow(array_src_profile_2d, src_win)
-        DEBUG(f"src read win (preliminary) overflow : {src_win_overflow}")
-
-        # 2. compute marged window
-        # 2.1 first crop the overflow if any
-        src_win_marged = window_extend(src_win, src_win_overflow, reverse=True)
-        DEBUG(f"src read win before margin : {src_win_marged}")
-
-        # 2.2 apply the margin
-        src_win_marged = window_extend(src_win_marged, margins, reverse=False)
-        DEBUG(f"src read win after margin : {src_win_marged}")
-
-        # 3. Compute overflow of the marged window
-        src_win_marged_overflow = window_overflow(array_src_profile_2d, src_win_marged)
-        DEBUG(f"src read win required pad : {src_win_marged_overflow}")
-
-        # `cstrip_read_win` corresponds to the window to read from src array
-        src_win_read = window_extend(src_win_marged, src_win_marged_overflow, reverse=True)
-        src_win_read_shape = window_shape(src_win_read)
-        DEBUG(f"src read win read : {src_win_read} with shape {src_win_read_shape}")
-
-        pad = np.array([[0, 0], [0, 0]])
-        if not np.all(src_win_marged_overflow == 0):
-            pad = src_win_marged_overflow
-
-    return src_win_read, src_win_marged, pad
-
-
 def basic_grid_resampling_array(
-    interp: str,
+    interp: Interpolator,
     grid_arr: np.ndarray,
     grid_arr_shape: Tuple[int, int],
     grid_resolution: Tuple[int, int],
@@ -264,6 +94,7 @@ def basic_grid_resampling_array(
     sma_out_buffer: SharedMemoryArray,
     out_win: np.ndarray,
     nodata_out: Optional[Union[int, float]],
+    boundary_condition: Optional[str],
     sma_out_mask_buffer: Optional[SharedMemoryArray],
     logger_msg_prefix: str,
     logger: logging.Logger,
@@ -279,7 +110,7 @@ def basic_grid_resampling_array(
 
     Parameters
     ----------
-    interp : str
+    interp : Interpolator
         The interpolator.
 
     grid_arr : numpy.ndarray
@@ -327,6 +158,7 @@ def basic_grid_resampling_array(
 
     array_src_mask_validity_pair : tuple of int, optional
         A tuple containing two integer :
+
           - The first integer corresponds to the value to consider as valid in
             the mask array.
           - The second integer corresponds to the value to consider as invalid
@@ -347,6 +179,7 @@ def basic_grid_resampling_array(
 
     array_src_geometry_pair : tuple of (GeometryType or None), optional
         A tuple containing two optional `GeometryType` elements:
+
           - The first element: Represents the **valid** geometries.
           - The second element: Represents the **invalid** geometries.
 
@@ -376,6 +209,14 @@ def basic_grid_resampling_array(
     nodata_out : scalar or None
         NoData value to fill the output if the grid metrics are invalid or if
         no valid data points can be found.
+
+    boundary_condition: str or None
+        Optional padding mode when required data for interpolation lies outside
+        the source dataset domain. Available values are a subset of the
+        `numpy.pad` method modes: 'edge', 'reflect', 'symmetric',
+        or 'wrap'.
+        Uses a GridR-specific in-place padding implementation instead of
+        `numpy.pad` to avoid unnecessary memory allocation.
 
     sma_out_mask_buffer : SharedMemoryArray or numpy.ndarray or None, optional
         Optional output array (or shared memory buffer) where output mask
@@ -422,10 +263,14 @@ def basic_grid_resampling_array(
     def WARNING(msg):
         logger.warning(f"{logger_msg_prefix} - {msg}")
 
-    # Determine the minimal coarse-grid window containing the oversampled window
-    # `oversamped_grid_win`.
-    grid_arr_win, _ = grid_resolution_window_safe(
-        resolution=grid_resolution, win=oversampled_grid_win, grid_shape=grid_arr_shape
+    # By default consider everything will be nodata as we dont know yet if
+    # the inputs are valid in the targeted area.
+    full_nodata = True
+
+    array_src_profile_2d = ArrayProfile(
+        shape=(array_src_ds.height, array_src_ds.width),
+        ndim=2,
+        dtype=np.dtype(array_src_ds.dtypes[array_src_bands[0] - 1]),
     )
 
     # Check grid_mask_arr - no change done here but the grid_mask_arr
@@ -446,377 +291,361 @@ def basic_grid_resampling_array(
         if grid_mask_arr.dtype == np.int8:
             grid_mask_arr = grid_mask_arr.view(np.uint8)
 
-    # Compute strip grid metrics for current tile
-    DEBUG("Computing grid metrics... ")
-    grid_metrics = array_compute_resampling_grid_geometries(
+    # Compute source boundaries from all valid coordinates
+    array_src_win_read, array_src_win_marged, pad = calculate_source_extent(
+        interp=interp,
+        array_in=array_src_profile_2d,
         grid_row=grid_arr[0],
         grid_col=grid_arr[1],
         grid_resolution=grid_resolution,
-        win=grid_arr_win,
+        grid_nodata=None,  # TODO : Not yet supported
         grid_mask=grid_mask_arr,
         grid_mask_valid_value=grid_mask_in_unmasked_value,
-        grid_nodata=None,  # TODO : manage grid_nodata input
+        win=oversampled_grid_win,
+        safecheck_src_boundaries=SAFECHECK_SOURCE_BOUNDARIES,
+        logger_msg_prefix=logger_msg_prefix,
+        logger=logger,
     )
 
-    full_nodata = True
+    if array_src_win_read is not None:
 
-    if grid_metrics:
+        # Read data is available
+        full_nodata = False
 
-        if SAFECHECK_SOURCE_BOUNDARIES:
-            DEBUG("SAFECHECK_SOURCE_BOUNDARIES : Computing source boundaries... ")
+        array_src_win_read_shape = window_shape(array_src_win_read)
 
-            # Compute source boundaries from all valid coordinates
-            safe_src_boundaries = array_compute_resampling_grid_src_boundaries(
-                grid_row=grid_arr[0],
-                grid_col=grid_arr[1],
-                win=grid_arr_win,
-                grid_mask=grid_mask_arr,
-                grid_mask_valid_value=grid_mask_in_unmasked_value,
-                grid_nodata=None,  # TODO : manage grid_nodata input
+        # memory required - for array_src
+        DEBUG("Computing required memory for array source read")
+        array_src_win_memory = 0
+
+        for band in array_src_bands:
+            array_src_win_band_memory = np.dtype("float64").itemsize * np.prod(
+                np.diff(array_src_win_read, axis=1)
             )
-            DEBUG(f"SAFECHECK_SOURCE_BOUNDARIES : {safe_src_boundaries}")
-
-            # Check that the grid preserve the source topology
-            if (
-                safe_src_boundaries.xmin < grid_metrics.src_bounds.xmin
-                or safe_src_boundaries.xmax > grid_metrics.src_bounds.xmax
-                or safe_src_boundaries.ymin < grid_metrics.src_bounds.ymin
-                or safe_src_boundaries.ymax > grid_metrics.src_bounds.ymax
-            ):
-                # Boundaries extend is required !
-                WARNING(
-                    "SAFECHECK_SOURCE_BOUNDARIES : The grid does not respect the source topology"
-                    " - the source boundaries have to be expanded"
-                )
-                # Replace the source boundaries
-                DEBUG("SAFECHECK_SOURCE_BOUNDARIES : Expanding grid metrics source boundaries... ")
-                grid_metrics.src_bounds = safe_src_boundaries
-
-        array_src_profile_2d = ArrayProfile(
-            shape=(array_src_ds.height, array_src_ds.width),
-            ndim=2,
-            dtype=np.dtype(array_src_ds.dtypes[array_src_bands[0] - 1]),
-        )
-
-        array_src_win_read, array_src_win_marged, pad = read_win_from_grid_metrics(
-            grid_metrics=grid_metrics,
-            array_src_profile_2d=array_src_profile_2d,
-            margins=margin,
-            logger=logger,
-            logger_msg_prefix=logger_msg_prefix,
-        )
-
-        if array_src_win_read is not None:
-
-            # Read data is available
-            full_nodata = False
-
-            array_src_win_read_shape = window_shape(array_src_win_read)
-
-            # memory required - for array_src
-            DEBUG("Computing required memory for array source read")
-            array_src_win_memory = 0
-
-            for band in array_src_bands:
-                array_src_win_band_memory = np.dtype("float64").itemsize * np.prod(
-                    np.diff(array_src_win_read, axis=1)
-                )
-                array_src_win_memory += array_src_win_band_memory
-                DEBUG(
-                    f"memory needed for array_src_win + margin band {band}: "
-                    f"{array_src_win_band_memory} bytes"
-                )
-
-            # memory required - for array_src_mask
-
-            DEBUG("Computing required memory for array source mask read")
-
-            array_src_mask_win_memory = 0
-            array_src_mask_dtype = np.uint8
-            array_src_mask_read_dtype = np.uint8
-            if array_src_mask_ds is not None:
-                array_src_mask_read_dtype = np.dtype(
-                    array_src_mask_ds.dtypes[array_src_mask_band - 1]
-                )
-
-                # Check array_src_mask dtype is an 8 bit integer
-                # We will ensure it is passed as uint8 later
-                if array_src_mask_read_dtype not in (np.int8, np.uint8):
-                    raise TypeError("The mask array must be an 8 bit integer " "raster.")
-
-                array_src_mask_win_memory = array_src_mask_read_dtype.itemsize * np.prod(
-                    np.diff(array_src_win_read, axis=1)
-                )
-                DEBUG(
-                    f"Memory required for array_src_mask_win + margin : "
-                    f"{array_src_mask_win_memory} bytes"
-                )
-
-                array_src_win_memory += array_src_mask_win_memory
-
-            else:
-                DEBUG("No available mask for array source\n")
-
+            array_src_win_memory += array_src_win_band_memory
             DEBUG(
-                "Memory required for array_src_mask + margin : "
+                f"memory needed for array_src_win + margin band {band}: "
+                f"{array_src_win_band_memory} bytes"
+            )
+
+        # memory required - for array_src_mask
+        DEBUG("Computing required memory for array source mask read")
+        array_src_mask_win_memory = 0
+        array_src_mask_dtype = np.uint8
+        array_src_mask_read_dtype = np.uint8
+
+        if array_src_mask_ds is not None:
+            array_src_mask_read_dtype = np.dtype(array_src_mask_ds.dtypes[array_src_mask_band - 1])
+
+            # Check array_src_mask dtype is an 8 bit integer
+            # We will ensure it is passed as uint8 later
+            if array_src_mask_read_dtype not in (np.int8, np.uint8):
+                raise TypeError("The mask array must be an 8 bit integer " "raster.")
+
+            array_src_mask_win_memory = array_src_mask_read_dtype.itemsize * np.prod(
+                np.diff(array_src_win_read, axis=1)
+            )
+            DEBUG(
+                f"Memory required for array_src_mask_win + margin : "
                 f"{array_src_mask_win_memory} bytes"
             )
 
+            array_src_win_memory += array_src_mask_win_memory
+
+        else:
+            DEBUG("No available mask for array source\n")
+
+        DEBUG("Memory required for array_src_mask + margin : " f"{array_src_mask_win_memory} bytes")
+
+        DEBUG(
+            f"Total memory required for array_src_win and mask : " f"{array_src_win_memory} bytes"
+        )
+
+        # The `tile_read_buffer_shape` corresponds to the shape of the buffer
+        # that will hold the read data. It can be larger than the actual read
+        # window set in the `tile_src_sin_read` variable in order to also hold
+        # "virtual" margins.
+        array_src_read_buffer_shape = window_shape(array_src_win_marged)
+        array_src_read_buffer_shape = np.insert(
+            array_src_read_buffer_shape, 0, len(array_src_bands)
+        )
+        DEBUG(f"tile read buffer shape : {array_src_read_buffer_shape}")
+
+        # TODO : do not force float 64 here => requires bound core function to handle other
+        # types
+        # cstrip_read_buffer = np.zeros(cstrip_read_buffer_shape, dtype=array_src_profile.dtype)
+        # Note : the read buffer is initialize with zeros. If no boundary
+        # condition, the marged border strips will remain at zero.
+        array_src_read_buffer = np.zeros(array_src_read_buffer_shape, dtype=np.float64, order="C")
+
+        # Manage the mask assuming here the same shape as image
+        # Default value to 0 in order to init as not valid
+        # Here we init in all cases (array_src_mask_ds given or not)
+        array_src_mask_read_buffer_shape = window_shape(array_src_win_marged)
+        array_src_mask_read_buffer = np.full(
+            array_src_mask_read_buffer_shape,
+            Validity.INVALID,
+            dtype=array_src_mask_dtype,
+            order="C",
+        )
+
+        # Read the source array.
+        # - Due to "virtual" margins we have to compute the correct indices in
+        #   the tile_read_buffer that will hold the
+        # read array for each band.
+        DEBUG("Reading tiles...")
+
+        def get_read_buffer_indices(b, p, s):
+            return (
+                b,
+                slice(p[0][0], p[0][0] + s[0], None),
+                slice(p[1][0], p[1][0] + s[1], None),
+            )
+
+        def get_mask_read_buffer_indices(p, s):
+            return (
+                slice(p[0][0], p[0][0] + s[0], None),
+                slice(p[1][0], p[1][0] + s[1], None),
+            )
+
+        for band_read, band_in in enumerate(array_src_bands):
+            indices = get_read_buffer_indices(band_read, pad, array_src_win_read_shape)
+
+            # TODO : the bellow commented line should be decommented when f64 is not forced.
+            # array_src_ds.read(band+1, window = as_rio_window(ctile_src_win_read),
+            #        out=ctile_read_buffer[indices])
+            # Save read data in the buffer at `indices`.
+
             DEBUG(
-                f"Total memory required for array_src_win and mask : "
-                f"{array_src_win_memory} bytes"
+                f"Reading source window for source band {band_in} "
+                f"- source window : {array_src_win_read} "
+                f"- target indices : {indices} ..."
             )
 
-            # The `tile_read_buffer_shape` corresponds to the shape of the buffer
-            # that will hold the read data. It can be larger than the actual read
-            # window set in the `tile_src_sin_read` variable in order to also hold
-            # "virtual" margins.
-            array_src_read_buffer_shape = window_shape(array_src_win_marged)
-            array_src_read_buffer_shape = np.insert(
-                array_src_read_buffer_shape, 0, len(array_src_bands)
-            )
-            DEBUG(f"tile read buffer shape : {array_src_read_buffer_shape}")
+            array_src_read_buffer[indices] = array_src_ds.read(
+                band_in, window=as_rio_window(array_src_win_read)
+            ).astype(np.float64)
 
-            # TODO : do not force float 64 here => requires bound core function to handle other
-            # types
-            # cstrip_read_buffer = np.zeros(cstrip_read_buffer_shape, dtype=array_src_profile.dtype)
-            array_src_read_buffer = np.zeros(
-                array_src_read_buffer_shape, dtype=np.float64, order="C"
+            DEBUG(
+                f"Reading source window for source band {band_in} "
+                f"- source window : {array_src_win_read} "
+                f"- target indices : {indices} [DONE]"
             )
 
-            # Manage the mask assuming here the same shape as image
-            # Default value to 0 in order to init as not valid
-            # Here we init in all cases (array_src_mask_ds given or not)
-            array_src_mask_read_buffer_shape = window_shape(array_src_win_marged)
-            array_src_mask_read_buffer = np.full(
-                array_src_mask_read_buffer_shape,
-                Validity.INVALID,
-                dtype=array_src_mask_dtype,
-                order="C",
+            # Boundary conditions
+            if boundary_condition is not None and np.any(pad != 0):
+                # array_src_read_buffer is 3d
+                # we must convert pad to 3d here
+                pad_inplace(
+                    array=array_src_read_buffer[band_read],
+                    src_win=indices[1:],
+                    pad_width=pad,
+                    mode=boundary_condition,
+                    strict_size=True,
+                )
+
+        # Manage raster mask
+        if array_src_mask_ds:
+            indices = get_mask_read_buffer_indices(pad, array_src_win_read_shape)
+
+            DEBUG(
+                f"Reading source window for source mask "
+                f"- source window : {array_src_win_read} "
+                f"- target indices : {indices} ..."
             )
 
-            # Read the source array.
-            # - Due to "virtual" margins we have to compute the correct indices in
-            #   the tile_read_buffer that will hold the
-            # read array for each band.
-            DEBUG("Reading tiles...")
+            mask_buffer_tmp = array_src_mask_ds.read(
+                array_src_mask_band, window=as_rio_window(array_src_win_read)
+            )
 
-            def get_read_buffer_indices(b, p, s):
-                return (
-                    b,
-                    slice(p[0][0], p[0][0] + s[0], None),
-                    slice(p[1][0], p[1][0] + s[1], None),
+            # We do not use the second element of `array_src_mask_validity_pair`
+            # It must be given in order to check if we have to force replacement
+            # even if the input valid value corresponds to `Validity.VALID`
+            if array_src_mask_validity_pair != (Validity.VALID, Validity.INVALID):
+                DEBUG("Replacing read mask values to comply with internal convention")
+                array_replace(
+                    mask_buffer_tmp,
+                    array_src_mask_validity_pair[0],
+                    Validity.VALID,
+                    Validity.INVALID,
                 )
 
-            def get_mask_read_buffer_indices(p, s):
-                return (
-                    slice(p[0][0], p[0][0] + s[0], None),
-                    slice(p[1][0], p[1][0] + s[1], None),
-                )
-
-            for band_read, band_in in enumerate(array_src_bands):
-                indices = get_read_buffer_indices(band_read, pad, array_src_win_read_shape)
-
-                # TODO : the bellow commented line should be decommented when f64 is not forced.
-                # array_src_ds.read(band+1, window = as_rio_window(ctile_src_win_read),
-                #        out=ctile_read_buffer[indices])
-                # Save read data in the buffer at `indices`.
-
-                DEBUG(
-                    f"Reading source window for source band {band_in} "
-                    f"- source window : {array_src_win_read} "
-                    f"- target indices : {indices} ..."
-                )
-
-                array_src_read_buffer[indices] = array_src_ds.read(
-                    band_in, window=as_rio_window(array_src_win_read)
-                ).astype(np.float64)
-
-                DEBUG(
-                    f"Reading source window for source band {band_in} "
-                    f"- source window : {array_src_win_read} "
-                    f"- target indices : {indices} [DONE]"
-                )
-
-            # Manage raster mask
-            if array_src_mask_ds:
-                indices = get_mask_read_buffer_indices(pad, array_src_win_read_shape)
-
-                DEBUG(
-                    f"Reading source window for source mask "
-                    f"- source window : {array_src_win_read} "
-                    f"- target indices : {indices} ..."
-                )
-
-                mask_buffer_tmp = array_src_mask_ds.read(
-                    array_src_mask_band, window=as_rio_window(array_src_win_read)
-                )
-
-                # We do not use the second element of `array_src_mask_validity_pair`
-                # It must be given in order to check if we have to force replacement
-                # even if the input valid value corresponds to `Validity.VALID`
-                if array_src_mask_validity_pair != (Validity.VALID, Validity.INVALID):
-                    DEBUG("Replacing read mask values to comply with internal convention")
-                    array_replace(
-                        mask_buffer_tmp,
-                        array_src_mask_validity_pair[0],
-                        Validity.VALID,
-                        Validity.INVALID,
-                    )
-
-                if mask_buffer_tmp.dtype == np.uint8:
-                    array_src_mask_read_buffer[indices] = mask_buffer_tmp
-
-                else:
-                    # Due to previous test it is int8
-                    # In that case we just get a view
-                    array_src_mask_read_buffer[indices] = mask_buffer_tmp.view(np.uint8)
-
-                DEBUG(
-                    f"Reading source window for source mask "
-                    f"- source window : {array_src_win_read} "
-                    f"- target indices : {indices} [DONE]"
-                )
+            if mask_buffer_tmp.dtype == np.uint8:
+                array_src_mask_read_buffer[indices] = mask_buffer_tmp
 
             else:
-                # TODO : should we activate this code only if there is pad ?
+                # Due to previous test it is int8
+                # In that case we just get a view
+                array_src_mask_read_buffer[indices] = mask_buffer_tmp.view(np.uint8)
 
-                # The mask was not given but we can still fill the mask buffer
-                # to be valid on indices where we can read data VS virtual margins.
-                indices = get_mask_read_buffer_indices(pad, array_src_win_read_shape)
-
-                array_src_mask_read_buffer[indices] = Validity.VALID
-
-            # TODO : implement edge management. For now we leave it
-            # as it is considering the init zero value.
-
-            # The grid stores absolute source coordinates. However, when operating
-            # on a localized sub-region of the raster, we must compensate for the
-            # relative shift of its origin.
-            # This calculated offset is then provided to the resampling function,
-            # which will apply it during the target coordinate to interpolate.
-            # We avoid modifying the grid in place to prevent unintended side
-            # effects if it's used concurrently by other processes.
-            #
-            # Specifically, 'tile_src_origin' is derived by adjusting for any
-            # 'tile_pad' (virtual padding) relative to the absolute upper-left
-            # corner of the read window ('tile_src_win_read'). This value precisely
-            # defines the origin of the 'tile_read_buffer' in the context of the
-            # overall 'array_src' coordinate system.
-            array_src_origin = (
-                pad[0][0] - array_src_win_read[0][0],
-                pad[1][0] - array_src_win_read[1][0],
+            DEBUG(
+                f"Reading source window for source mask "
+                f"- source window : {array_src_win_read} "
+                f"- target indices : {indices} [DONE]"
             )
 
-            # Manage geometry mask
-            if array_src_geometry_pair is not None:
-
-                # We have to define the rasterization mesh so that is will be
-                # aligned with the current raster mask.
-                # Here the rasterize grid is given by :
-                # - its origin : `array_src_origin`
-                # - its shape : `array_src_mask_read_buffer` shape
-                #
-                # The `array_src_mask_read_buffer` is defined in all cases
-                # (with or without `array_src_mask_ds` defined)
-                # The goal here is to use build_mask in order to merge the
-                # existing `array_src_mask_read_buffer` with the geometry
-                # masks
-
-                # `array_src_origin` defines the origin of the current sub-array
-                # in the full array using GridR's internal convention, ie using
-                # (0, 0) as origin.
-                #
-                # ┌────────────────────────────────────────────────────────────┐
-                # │ WARN :                                                     │
-                # │                                                            │
-                # │ `array_src_origin` is a negative shift (see definition)    │
-                # │ We need to take its opposite here                          │
-                # └────────────────────────────────────────────────────────────┘
-                # In order to rasterize we have to take care of the
-                # `array_src_geometry_origin`
-
-                cgeometry_origin = -np.asarray(array_src_origin).astype(np.float64)
-
-                if array_src_geometry_origin is not None:
-                    cgeometry_origin += array_src_geometry_origin
-
-                # ┌────────────────────────────────────────────────────────────┐
-                # │ NOTE :                                                     │
-                # │                                                            │
-                # │ The build_mask core method adopts the same convention :    │
-                # │ - Validity.VALID (1) is considered valid                   │
-                # │ - Validity.INVALID (0) is considered invalid               │
-                # └────────────────────────────────────────────────────────────┘
-
-                # We do not pass the mask_in here as it will currently result in
-                # non necessary thresholding
-                # In that case we cant pass the out with the current code as
-                # it will result in a overwrite of the buffer.
-                geom_mask = build_mask(
-                    shape=array_src_mask_read_buffer.shape,
-                    resolution=(1, 1),
-                    out=None,
-                    geometry_origin=cgeometry_origin,
-                    geometry_pair=array_src_geometry_pair,
-                    mask_in=None,
-                    mask_in_target_win=None,
-                    mask_in_resolution=None,
-                    oversampling_dtype=None,
-                    mask_in_binary_threshold=None,
-                    rasterize_kwargs=GEOMETRY_RASTERIZE_KWARGS,
-                    init_out=False,
+            # Boundary conditions
+            if boundary_condition is not None and np.any(pad != 0):
+                pad_inplace(
+                    array=array_src_mask_read_buffer,
+                    src_win=indices,
+                    pad_width=pad,
+                    mode=boundary_condition,
+                    strict_size=True,
                 )
 
-                array_src_mask_read_buffer &= geom_mask
+        else:
+            # TODO : should we activate this code only if there is pad ?
 
-            # TODO/TOCHECK We may reset the sma_w_array_buffer.array if the cslices
-            # is limited (not the case for now)
+            # The mask was not given but we can still fill the mask buffer
+            # to be valid on indices where we can read data VS virtual margins.
+            indices = get_mask_read_buffer_indices(pad, array_src_win_read_shape)
 
-            array_in_mask = array_src_mask_read_buffer
+            array_src_mask_read_buffer[indices] = Validity.VALID
+            
+            # We also have to pad the mask if boundary condition is not None
+            if boundary_condition is not None and np.any(pad != 0):
+                pad_inplace(
+                    array=array_src_mask_read_buffer,
+                    src_win=indices,
+                    pad_width=pad,
+                    mode=boundary_condition,
+                    strict_size=True,
+                )
 
-            # array_out_mask
-            array_out_mask = sma_out_mask_buffer.array if sma_out_mask_buffer is not None else None
+        # The grid stores absolute source coordinates. However, when operating
+        # on a localized sub-region of the raster, we must compensate for the
+        # relative shift of its origin.
+        # This calculated offset is then provided to the resampling function,
+        # which will apply it during the target coordinate to interpolate.
+        # We avoid modifying the grid in place to prevent unintended side
+        # effects if it's used concurrently by other processes.
+        #
+        # Specifically, 'tile_src_origin' is derived by adjusting for any
+        # 'tile_pad' (virtual padding) relative to the absolute upper-left
+        # corner of the read window ('tile_src_win_read'). This value precisely
+        # defines the origin of the 'tile_read_buffer' in the context of the
+        # overall 'array_src' coordinate system.
+        array_src_origin = (
+            pad[0][0] - array_src_win_read[0][0],
+            pad[1][0] - array_src_win_read[1][0],
+        )
 
-            # Call the resampling method - this method returns a tuple containing
-            # the output array and the output mask.
-            # Here both are returned as None as the buffer are given as input
+        # Manage geometry mask
+        if array_src_geometry_pair is not None:
 
-            # min_row, max_row = grid_arr[0].min(), grid_arr[0].max()
-            # min_col, max_col = grid_arr[1].min(), grid_arr[1].max()
+            # We have to define the rasterization mesh so that is will be
+            # aligned with the current raster mask.
+            # Here the rasterize grid is given by :
+            # - its origin : `array_src_origin`
+            # - its shape : `array_src_mask_read_buffer` shape
+            #
+            # The `array_src_mask_read_buffer` is defined in all cases
+            # (with or without `array_src_mask_ds` defined)
+            # The goal here is to use build_mask in order to merge the
+            # existing `array_src_mask_read_buffer` with the geometry
+            # masks
 
-            # min_row += array_src_origin[0]
-            # max_row += array_src_origin[0]
-            # min_col += array_src_origin[1]
-            # max_col += array_src_origin[1]
+            # `array_src_origin` defines the origin of the current sub-array
+            # in the full array using GridR's internal convention, ie using
+            # (0, 0) as origin.
+            #
+            # ┌────────────────────────────────────────────────────────────┐
+            # │ WARN :                                                     │
+            # │                                                            │
+            # │ `array_src_origin` is a negative shift (see definition)    │
+            # │ We need to take its opposite here                          │
+            # └────────────────────────────────────────────────────────────┘
+            # In order to rasterize we have to take care of the
+            # `array_src_geometry_origin`
 
-            check_boundaries = False
-            if np.any(pad != 0):
-                check_boundaries = True
-            # if min_row < 0 \
-            #        or max_row > array_src_read_buffer.shape[0] - 1 \
-            #        or min_col < 0 \
-            #        or max_col > array_src_read_buffer.shape[1] - 1:
-            #    check_boundaries = True
+            cgeometry_origin = -np.asarray(array_src_origin).astype(np.float64)
 
-            _ = array_grid_resampling(
-                interp=interp,
-                array_in=array_src_read_buffer,  # thats the previously read buffer
-                grid_row=grid_arr[0],  # the grid rows
-                grid_col=grid_arr[1],  # the grid columns
-                grid_resolution=grid_resolution,
-                array_out=sma_out_buffer.array,
-                array_out_win=out_win,  # dst window in the array_out
-                nodata_out=nodata_out,
-                array_in_origin=array_src_origin,
-                win=oversampled_grid_win,  # the production window
-                array_in_mask=array_in_mask,  # TODO : Optional[np.ndarray] = None,
-                grid_mask=grid_mask_arr,  # TO CHECK: Optional[np.ndarray] = None,
-                grid_mask_valid_value=grid_mask_in_unmasked_value,  #: Optional[int] = 1,
-                grid_nodata=None,  # TODO : manage grid_nodata input
-                array_out_mask=array_out_mask,  # TODO: Optional[np.ndarray] = None,
-                check_boundaries=check_boundaries,  # We are sure we pass all the required data
+            if array_src_geometry_origin is not None:
+                cgeometry_origin += array_src_geometry_origin
+
+            # ┌────────────────────────────────────────────────────────────┐
+            # │ NOTE :                                                     │
+            # │                                                            │
+            # │ The build_mask core method adopts the same convention :    │
+            # │ - Validity.VALID (1) is considered valid                   │
+            # │ - Validity.INVALID (0) is considered invalid               │
+            # └────────────────────────────────────────────────────────────┘
+
+            # We do not pass the mask_in here as it will currently result in
+            # non necessary thresholding
+            # In that case we cant pass the out with the current code as
+            # it will result in a overwrite of the buffer.
+            geom_mask = build_mask(
+                shape=array_src_mask_read_buffer.shape,
+                resolution=(1, 1),
+                out=None,
+                geometry_origin=cgeometry_origin,
+                geometry_pair=array_src_geometry_pair,
+                mask_in=None,
+                mask_in_target_win=None,
+                mask_in_resolution=None,
+                oversampling_dtype=None,
+                mask_in_binary_threshold=None,
+                rasterize_kwargs=GEOMETRY_RASTERIZE_KWARGS,
+                init_out=False,
             )
+
+            array_src_mask_read_buffer &= geom_mask
+
+        # TODO/TOCHECK We may reset the sma_w_array_buffer.array if the cslices
+        # is limited (not the case for now)
+
+        array_in_mask = array_src_mask_read_buffer
+        # array_out_mask
+        array_out_mask = sma_out_mask_buffer.array if sma_out_mask_buffer is not None else None
+
+        # In case of a B-Spline interpolator, call B-Spline prefiltering first
+        # Please note the previously margin must integrate the domain extension
+        # required for the pre-filtering - which is the case if the margins were
+        # calculated using the interpolator `total_margins()` method.
+        # Here the mask does not enter the same pre-filtering routine as the
+        # image. Instead a propagation of invalid data is performed base on
+        # the interpolator `mask_influence_threshold` parameter.
+        if is_bspline(interp):
+            array_bspline_prefiltering(
+                array_in=array_src_read_buffer,  # thats the previously read buffer
+                array_in_mask=array_in_mask,
+                interp=interp,  # The interpolator
+            )
+
+        # For performance we go with check_boundaries is False by default.
+        # This activate a rust code branch where no explicit tests are performed
+        # on boundaries. Please note, the rust code will Panic if out of bounds
+        # index are used.
+        check_boundaries = False
+
+        # Note : Safety measure but may not be required
+        if np.any(pad != 0):
+            check_boundaries = True
+
+        # Call the resampling method - this method returns a tuple containing
+        # the output array and the output mask.
+        # Here both are returned as None as the buffer are given as input
+        _ = array_grid_resampling(
+            interp=interp,
+            array_in=array_src_read_buffer,  # thats the previously read buffer
+            grid_row=grid_arr[0],  # the grid rows
+            grid_col=grid_arr[1],  # the grid columns
+            grid_resolution=grid_resolution,
+            array_out=sma_out_buffer.array,
+            array_out_win=out_win,  # dst window in the array_out
+            nodata_out=nodata_out,
+            array_in_origin=array_src_origin,
+            win=oversampled_grid_win,  # the production window
+            array_in_mask=array_in_mask,  # the input mask optionnaly prefiltered,
+            grid_mask=grid_mask_arr,  # TO CHECK: Optional[np.ndarray] = None,
+            grid_mask_valid_value=grid_mask_in_unmasked_value,  #: Optional[int] = 1,
+            grid_nodata=None,  # TODO : manage grid_nodata input
+            array_out_mask=array_out_mask,  # output mask buffer,
+            check_boundaries=check_boundaries,
+            standalone=False,  # We are not in standalone mode
+        )
 
     if full_nodata:
         # Write NODATA
@@ -838,9 +667,11 @@ def basic_grid_resampling_chain(
     array_src_ds: rasterio.io.DatasetReader,
     array_src_bands: Union[int, List[int]],
     array_out_ds: rasterio.io.DatasetWriter,
-    interp: str,
+    interp: InterpolatorIdentifier,
     nodata_out: Union[int, float],
     grid_col_ds: Union[rasterio.io.DatasetReader, None] = None,
+    interp_kwargs: Optional[dict] = None,
+    boundary_condition: Optional[str] = None,
     win: Optional[np.ndarray] = None,
     grid_shift: Optional[Union[Tuple[int, int], Tuple[float, float]]] = None,
     array_src_mask_ds: Optional[rasterio.io.DatasetReader] = None,
@@ -892,10 +723,15 @@ def basic_grid_resampling_chain(
     array_out_ds : rasterio.io.DatasetWriter
         Output dataset where the resampled raster data will be written.
 
-    interp : str
-        Interpolation method to use (e.g., 'nearest', 'linear', 'cubic').
-        Specific interpolation options are delegated to the underlying
-        resampling engine.
+    interp: InterpolatorIdentifier
+        The interpolator identifier to use. It can be:
+
+        - A string representing the interpolator name (e.g., "nearest", "linear"
+          , "cubic", "bspline3", "bspline11", etc.).
+        - A `PyInterpolatorType` enum value.
+        - An instance of an interpolator class.
+
+        See `gridr.core.interp.interpolator` for further details
 
     nodata_out : scalar
         NoData value to fill the output raster when no valid data points
@@ -904,6 +740,20 @@ def basic_grid_resampling_chain(
     grid_col_ds : rasterio.io.DatasetReader or None, optional
         Optional separate dataset for grid column coordinates if they are not
         in `grid_ds`. Defaults to None.
+
+    interp_kwargs : Any, default None
+        Optional keyword parameters that will be passed for the interpolator
+        creation to the `get_interpolator` function. They will be used if the
+        interpolator passed through the `interp` is either of type `str` or
+        `PyInterpolatorType`.
+
+    boundary_condition: str, default None
+        Optional padding mode when required data for interpolation lies outside
+        the source dataset domain. Available values are a subset of the
+        `numpy.pad` method modes: 'edge', 'reflect', 'symmetric',
+        or 'wrap'.
+        Uses a GridR-specific in-place padding implementation instead of
+        `numpy.pad` to avoid unnecessary memory allocation.
 
     win : numpy.ndarray, optional
         Optional output window of the `grid_ds` to process, defined as
@@ -1197,19 +1047,20 @@ def basic_grid_resampling_chain(
         sma_w_mask_buffer = register_sma(write_buffer_shape2, mask_out_dtype)
         logger.debug(f"Create write mask buffer with shape {write_buffer_shape2} DONE")
 
-    # Define here the margins required by interpolation
-    # TODO : make it generic / for now set the 2 margin for bicubic interp
-    # margin = np.array(((2, 2), (2, 2)))
-    margin = None
-    match interp:
-        case "nearest":
-            margin = np.array(((1, 1), (1, 1)))
-        case "linear":
-            margin = np.array(((1, 1), (1, 1)))
-        case "cubic":
-            margin = np.array(((2, 2), (2, 2)))
-        case _:
-            raise ValueError(f"Unknown interpolator {interp}")
+    # Setting the interpolator
+    if interp_kwargs is None:
+        interp = get_interpolator(interp)
+    else:
+        interp = get_interpolator(interp, **interp_kwargs)
+
+    # Interpolator internal initialization
+    logger.debug(f"Initializing interpolator {interp.shortname()}")
+    interp.initialize()
+
+    # Computing total required margins
+    # (top, bottom, left, right)
+    margin = np.asarray(interp.total_margins()).reshape((2, 2))
+    logger.debug(f"Required margins for interpolator {interp.shortname()} : {margin}")
 
     try:
         for chunk_idx, (chunk_win, (win_read, win_rel)) in enumerate(
@@ -1397,6 +1248,7 @@ def basic_grid_resampling_chain(
                         sma_out_buffer=sma_w_array_buffer,
                         out_win=ctile_win,
                         nodata_out=nodata_out,
+                        boundary_condition=boundary_condition,
                         sma_out_mask_buffer=sma_w_mask_buffer,
                         logger_msg_prefix=f"Chunk {chunk_idx} - tile {ctile} - ",
                         logger=logger,
@@ -1426,6 +1278,7 @@ def basic_grid_resampling_chain(
                     sma_out_buffer=sma_w_array_buffer,
                     out_win=cslices_as_win,
                     nodata_out=nodata_out,
+                    boundary_condition=boundary_condition,
                     sma_out_mask_buffer=sma_w_mask_buffer,
                     logger_msg_prefix=f"Chunk {chunk_idx} - ",
                     logger=logger,

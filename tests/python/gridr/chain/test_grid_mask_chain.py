@@ -311,9 +311,9 @@ class TestGridMaskChain:
         """
         test_id = request.node.nodeid.split("::")[-1].replace("[", "-").replace("]", "")
         shape, resolution, _ = data
-        #mask_data_out_expected = expected
+        # mask_data_out_expected = expected
 
-        #mask_in_ds = None
+        # mask_in_ds = None
         output_dir = None
         mask_out = None
         try:

@@ -502,21 +502,6 @@ mod gx_array_utils_tests {
     use super::*;
     use crate::core::gx_array::{GxArrayWindow, GxArrayView, GxArrayViewMut};
     
-    /// Checks if two slices of f64 values are approximately equal within a given tolerance.
-    ///
-    /// # Arguments
-    /// * `a` - First slice of f64 values.
-    /// * `b` - Second slice of f64 values.
-    /// * `tol` - The allowed tolerance for differences.
-    ///
-    /// # Returns
-    /// * `true` if all corresponding elements of `a` and `b` differ by at most `tol`, otherwise `false`.
-    fn approx_eq(a: &[f64], b: &[f64], tol: f64) -> bool {
-        a.iter()
-            .zip(b.iter())
-            .all(|(x, y)| (*x - *y).abs() <= tol)
-    }
-
     #[test]
     fn test_array1_add_with_condition_array() {
         // Test with condition array

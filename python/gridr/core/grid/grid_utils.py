@@ -20,6 +20,7 @@
 """
 Grid utils module
 """
+import logging
 from typing import NoReturn, Optional, Tuple, Union
 
 import numpy as np
@@ -37,6 +38,8 @@ from gridr.core.utils.array_window import (
     window_apply,
     window_check,
     window_expand_ndim,
+    window_extend,
+    window_overflow,
     window_shape,
 )
 
@@ -520,6 +523,173 @@ def array_shift_grid_coordinates(
             grid_col += grid_shift[1]
 
     return None
+
+
+def read_win_from_grid_metrics(
+    grid_metrics: PyGridGeometriesMetricsF64,
+    array_src_profile_2d: ArrayProfile,
+    margins: np.ndarray,
+    logger: logging.Logger,
+    logger_msg_prefix: str = "",
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Computes the source read window from grid metrics.
+
+    This function determines the read window (`src_win_read`) from the
+    source array based on the destination and source bounds contained in
+    `grid_metrics`. It applies the necessary margins to ensure sufficient
+    neighborhood data is available for operations such as interpolation,
+    while handling cases where the window exceeds the array boundaries.
+
+    Parameters
+    ----------
+    grid_metrics : PyGridGeometriesMetricsF64
+        Object containing geometric metrics of the grid, including source and
+        destination bounds.
+
+    array_src_profile_2d : ArrayProfile
+        Metadata/profile of the 2D source array, including shape and number of
+        dimensions information.
+
+    margins : numpy.ndarray of shape (2, 2)
+        Margins to apply to the read window, formatted as
+        ``[[top_margin, bottom_margin], [left_margin, right_margin]]``.
+
+    logger : logging.Logger
+        Logger instance used for debugging messages.
+
+    logger_msg_prefix : str, optional
+        Optional prefix to include in log messages for better traceability.
+        Defaults to ''.
+
+    Returns
+    -------
+    src_win_read : numpy.ndarray of shape (2, 2)
+        Final source read window adjusted for margins and boundary constraints.
+        Format: ``[[row_start, row_end], [col_start, col_end]]``. This is the
+        window that should be used for the raster read IO.
+
+    src_win_marged : numpy.ndarray of shape (2, 2)
+        Desired read window with margins applied, before boundary correction
+        (padding).
+
+    pad : numpy.ndarray of shape (2, 2)
+        Amount of padding required if the marged window extends outside the
+        source array. Format: ``[[top_pad, bottom_pad], [left_pad, right_pad]]``.
+
+    Notes
+    -----
+    This function is critical for operations requiring contextual data beyond
+    the immediate processing area, such as filtering or interpolation, ensuring
+    that no data loss or edge artifacts occur due to insufficient neighborhood
+    information.
+    """
+
+    def DEBUG(msg):
+        if logger:
+            logger.debug(f"{logger_msg_prefix} - {msg}")
+
+    # The metrics have been computed, ie there is at least one
+    # valid point in the grid regarding the masking options.
+    # We can get the dst and src window :
+    # - the dst bounds are given relative to the current strip
+    #   low resolute shape.
+    # - the src bounds are absolute coordinates value in the
+    #   input array.
+    dst_lowres_bounds = grid_metrics.dst_bounds
+    src_bounds = grid_metrics.src_bounds
+
+    DEBUG(f"dst low res bounds : {dst_lowres_bounds} ")
+    DEBUG(f"src bounds : {src_bounds} ")
+
+    # Define the strip low res computing window (upper limit included)
+    dst_lowres_win = np.array(
+        (
+            (dst_lowres_bounds.ymin, dst_lowres_bounds.ymax),
+            (dst_lowres_bounds.xmin, dst_lowres_bounds.xmax),
+        )
+    )
+    DEBUG(f"dst win : {dst_lowres_win}")
+
+    src_win_read = None
+    src_win_marged = None
+    pad = None
+
+    if (
+        (src_bounds.ymin < 0 and src_bounds.ymax < 0)
+        or (src_bounds.xmin < 0 and src_bounds.xmax < 0)
+        or (
+            src_bounds.ymin > array_src_profile_2d.shape[0] - 1
+            and src_bounds.ymax > array_src_profile_2d.shape[0] - 1
+        )
+        or (
+            src_bounds.xmin > array_src_profile_2d.shape[1] - 1
+            and src_bounds.xmax > array_src_profile_2d.shape[1] - 1
+        )
+    ):
+        # The source is not readable from raster - fully outside for at least
+        # one direction.
+        DEBUG(
+            "The source read window is not available ; it goes fully "
+            "outside of raster in one direction at least"
+        )
+
+    else:
+        # Define the input read window
+        src_win = np.array(
+            (
+                (int(np.floor(src_bounds.ymin)), int(np.ceil(src_bounds.ymax))),
+                (int(np.floor(src_bounds.xmin)), int(np.ceil(src_bounds.xmax))),
+            )
+        )
+        DEBUG(f"src read win (preliminary) : {src_win}")
+
+        # Here we got a preliminary read window, but :
+        # - That window may overflow (ie. adress coordinates outside
+        #   of the raster
+        # - We have to consider some margins :
+        #   -- margin required for the interpolation kernel
+        #   -- margin required for spline interpolation preprocessing.
+        #   -- margin that may be required for other processing (egg.
+        #      antialiasing filtering)
+        #   A marged window may also overflow but we may have to
+        #   manage edges here : the passed array has to cover for
+        #   margins.
+        #
+        # Strategy :
+        # 1. compute overflow of the preliminary window and limit it
+        #    to the available region
+        # 2. Add margins
+        # 3. Compute overflow of the marged window
+        # 4. Read the valid window and perform edge management if
+        #    needed
+
+        # 1. compute overflow
+        src_win_overflow = window_overflow(array_src_profile_2d, src_win)
+        DEBUG(f"src read win (preliminary) overflow : {src_win_overflow}")
+
+        # 2. compute marged window
+        # 2.1 first crop the overflow if any
+        src_win_marged = window_extend(src_win, src_win_overflow, reverse=True)
+        DEBUG(f"src read win before margin : {src_win_marged}")
+
+        # 2.2 apply the margin
+        src_win_marged = window_extend(src_win_marged, margins, reverse=False)
+        DEBUG(f"src read win after margin : {src_win_marged}")
+
+        # 3. Compute overflow of the marged window
+        src_win_marged_overflow = window_overflow(array_src_profile_2d, src_win_marged)
+        DEBUG(f"src read win required pad : {src_win_marged_overflow}")
+
+        # `cstrip_read_win` corresponds to the window to read from src array
+        src_win_read = window_extend(src_win_marged, src_win_marged_overflow, reverse=True)
+        src_win_read_shape = window_shape(src_win_read)
+        DEBUG(f"src read win read : {src_win_read} with shape {src_win_read_shape}")
+
+        pad = np.array([[0, 0], [0, 0]])
+        if not np.all(src_win_marged_overflow == 0):
+            pad = src_win_marged_overflow
+
+    return src_win_read, src_win_marged, pad
 
 
 def interpolate_grid(

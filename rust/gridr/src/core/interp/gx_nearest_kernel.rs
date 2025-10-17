@@ -18,13 +18,15 @@
 #![warn(missing_docs)]
 //! Implementation of GxArrayViewInterpolator for a nearest neighbor interpolator
 use crate::core::gx_array::{GxArrayView, GxArrayViewMut};
-use super::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewInterpolationContextTrait, GxArrayViewInterpolatorBoundsCheckStrategy, GxArrayViewInterpolatorInputMaskStrategy, GxArrayViewInterpolatorOutputMaskStrategy};
+use crate::core::gx_errors::GxError;
+use super::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewInterpolatorArgs, GxArrayViewInterpolationContextTrait, GxArrayViewInterpolatorBoundsCheckStrategy, GxArrayViewInterpolatorInputMaskStrategy, GxArrayViewInterpolatorOutputMaskStrategy};
 
 
-/// Nearest neighbor interpolator implementation.
+/// Nearest neighbor interpolator implementation
 /// 
 /// This structure implements the `GxArrayViewInterpolator` trait for nearest neighbor
 /// interpolation operations.
+#[derive(Clone, Debug)]
 pub struct GxNearestInterpolator {
     /// The size of the kernel alongs the rows - it is set to 1 in the implemented new() method.
     kernel_row_size: usize,
@@ -34,11 +36,23 @@ pub struct GxNearestInterpolator {
 
 impl GxArrayViewInterpolator for GxNearestInterpolator
 {
-    fn new() -> Self {
+    fn new(_args: &dyn GxArrayViewInterpolatorArgs) -> Self {
         Self {
             kernel_row_size: 1,
             kernel_col_size: 1,
         }
+    }
+    
+    /// Get the short name of the interpolator
+    ///
+    /// # Returns
+    /// A string representing the short name of the interpolator
+    fn shortname(&self) -> String {
+        "nearest".to_string()
+    }
+    
+    fn initialize(&mut self) -> Result<(), String> {
+        Ok(())
     }
     
     fn kernel_row_size(&self) -> usize {
@@ -47,6 +61,21 @@ impl GxArrayViewInterpolator for GxNearestInterpolator
     
     fn kernel_col_size(&self) -> usize {
         self.kernel_col_size
+    }
+    
+    /// Computes and returns the total margins required on each side for the entire interpolation process.
+    ///
+    /// The margins are provided as a 4-element `usize` array representing the top, bottom, left, and right sides respectively.
+    ///
+    /// # Returns
+    /// A 4-element `usize` array where each element corresponds to:
+    /// - Index 0: Top margin
+    /// - Index 1: Bottom margin
+    /// - Index 2: Left margin
+    /// - Index 3: Right margin
+    #[inline(always)]
+    fn total_margins(&self) -> Result<[usize; 4], GxError> {
+        Ok([1, 1, 1, 1])
     }
     
     fn allocate_kernel_buffer<'a>(&'a self) -> Box<[f64]> {
@@ -198,24 +227,8 @@ impl GxArrayViewInterpolator for GxNearestInterpolator
 #[cfg(test)]
 mod gx_linear_kernel_tests {
     use super::*;
-    //use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolationContext, DefaultCtx};
-    use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolationContext, DefaultCtx, BinaryInputMask, BinaryOutputMask, BoundsCheck, NoOutputMask};
+    use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolatorNoArgs, GxArrayViewInterpolationContext, BinaryInputMask, BinaryOutputMask, BoundsCheck};
 
-    /// Checks if two slices of f64 values are approximately equal within a given tolerance.
-    ///
-    /// # Arguments
-    /// * `a` - First slice of f64 values.
-    /// * `b` - Second slice of f64 values.
-    /// * `tol` - The allowed tolerance for differences.
-    ///
-    /// # Returns
-    /// * `true` if all corresponding elements of `a` and `b` differ by at most `tol`, otherwise `false`.
-    fn approx_eq(a: &[f64], b: &[f64], tol: f64) -> bool {
-        a.iter()
-            .zip(b.iter())
-            .all(|(x, y)| (*x - *y).abs() <= tol)
-    }
-    
     #[test]
     fn test_array1_interp2_idendity_mask_full_valid() {
         
@@ -244,7 +257,7 @@ mod gx_linear_kernel_tests {
                 BoundsCheck {},
             );
         
-        let interp = GxNearestInterpolator::new();
+        let interp = GxNearestInterpolator::new(&GxArrayViewInterpolatorNoArgs{});
 
         let mut weights = interp.allocate_kernel_buffer();
         
@@ -288,7 +301,7 @@ mod gx_linear_kernel_tests {
                 BoundsCheck {},
             );
         
-        let interp = GxNearestInterpolator::new();
+        let interp = GxNearestInterpolator::new(&GxArrayViewInterpolatorNoArgs{});
 
         let mut weights = interp.allocate_kernel_buffer();
         
@@ -327,7 +340,7 @@ mod gx_linear_kernel_tests {
         // Output mask
         let mut mask_data_out: [u8; 3] = [ 11; 3 ];
                 
-        let interp = GxNearestInterpolator::new();
+        let interp = GxNearestInterpolator::new(&GxArrayViewInterpolatorNoArgs{});
 
         let mut weights = interp.allocate_kernel_buffer();
         

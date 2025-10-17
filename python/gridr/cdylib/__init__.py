@@ -18,6 +18,14 @@
 # limitations under the License.
 #
 from ._libgridr import (  # from py_grid_geometry
+    BSpline3Interpolator,
+    BSpline5Interpolator,
+    BSpline7Interpolator,
+    BSpline9Interpolator,
+    BSpline11Interpolator,
+    LinearInterpolator,
+    NearestInterpolator,
+    OptimizedBicubicInterpolator,
     PyArrayWindow2,
     PyGeometryBoundsF64,
     PyGeometryBoundsUsize,
@@ -30,6 +38,7 @@ from ._libgridr import (  # from py_grid_geometry
     py_array1_add_f64_u8,
     py_array1_add_i8,
     py_array1_add_u8,
+    py_array1_bspline_prefiltering_f64,
     py_array1_compute_resampling_grid_geometries_f64_f64,
     py_array1_compute_resampling_grid_src_boundaries_f64_f64,
     py_array1_grid_resampling_f64,
@@ -39,6 +48,8 @@ from ._libgridr import (  # from py_grid_geometry
     py_array1_replace_f64_u8,
     py_array1_replace_i8,
     py_array1_replace_u8,
+    py_compute_2d_domain_extension,
+    py_compute_2d_truncation_index,
 )
 
 __all__ = [
@@ -63,4 +74,15 @@ __all__ = [
     "PyGridGeometriesMetricsF64",
     "py_array1_compute_resampling_grid_geometries_f64_f64",
     "py_array1_compute_resampling_grid_src_boundaries_f64_f64",
+    "py_array1_bspline_prefiltering_f64",
+    "py_compute_2d_truncation_index",
+    "py_compute_2d_domain_extension",
+    "NearestInterpolator",
+    "LinearInterpolator",
+    "OptimizedBicubicInterpolator",
+    "BSpline3Interpolator",
+    "BSpline5Interpolator",
+    "BSpline7Interpolator",
+    "BSpline9Interpolator",
+    "BSpline11Interpolator",
 ]

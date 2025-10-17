@@ -54,6 +54,7 @@
 //!
 use std::marker::PhantomData;
 use crate::core::gx_array::{GxArrayView, GxArrayViewMut};
+use crate::core::gx_errors::GxError;
 
 
 /// Generic strategy trait to validate whether a given input point is valid.
@@ -415,6 +416,96 @@ impl<'a> DefaultCtx<'a> {
     }
 }
 
+
+/// Trait defining arguments for GxArrayViewInterpolator instantiation.
+///
+/// This trait provides a generic interface for specifying interpolation parameters
+/// required during the construction of GxArrayViewInterpolator instances.
+/// It serves as an abstraction layer that enables flexible parameter passing
+/// while maintaining type safety across different interpolation methods.
+///
+/// The trait is designed to accommodate various interpolation algorithms including:
+/// - Nearest neighbor interpolation
+/// - Linear interpolation
+/// - Cubic spline interpolation
+/// - Cardinal B-spline prefiltering and interpolation
+///
+/// Implementation of this trait allows for compile-time verification of required
+/// parameters and provides a consistent interface for interpolation configuration.
+///
+/// ## Design Considerations
+///
+/// While maintaining generality, the trait intentionally includes knowledge of
+/// existing interpolator types to provide appropriate parameter exposure. This
+/// design choice ensures that each interpolator receives only the parameters it
+/// requires, preventing misuse and enabling compile-time validation.
+///
+/// ## Usage
+///
+/// Implementors of this trait must provide appropriate parameter handling for
+/// their specific interpolation algorithm. The trait provides default implementations
+/// for common cases, allowing simple interpolators to implement only the minimal
+/// required functionality.
+///
+/// ## Interpolation Methods Supported
+///
+/// - **Nearest Neighbor**: Requires no parameter
+/// - **Linear**: Requires no parameter
+/// - **Cubic**: Requires no parameter
+/// - **B-spline**: Requires the prefiltering precision parameter. (Note that the B-spline order
+///    is passed as a const generic parameter in the corresponding monomorphic implementation)
+///
+/// ## Implementation Requirements
+///
+/// Implementors must ensure that the returned parameter sets are valid for the
+/// intended interpolation algorithm and that parameter combinations are mutually
+/// compatible. The trait's default implementations provide sensible fallbacks
+/// while allowing specialized behavior for specific interpolator types.
+pub trait GxArrayViewInterpolatorArgs {
+    
+    /// Basic function for interpolator that require no arguments.
+    /// 
+    /// Returns `true` if the interpolator can be instantiated with no parameter,
+    /// indicating that no extra configuration is needed beyond basic setup.
+    /// 
+    /// # Returns
+    /// - `true` if no arguments are required
+    /// - `false` if parameters are needed
+    fn no_args(&self) -> bool {
+        true
+    }
+    
+    /// Retrieves B-spline specific arguments for interpolation.
+    /// 
+    /// Provides access to parameters required for B-spline interpolation methods.
+    /// The targeted parameters correspond :
+    ///  - to the accepted error, aka `precision`, for the infinite sum approximation.
+    ///  - to the accepted influence of masked invalid data during the prefiltering
+    /// 
+    /// # Returns
+    /// - `Some((f64, f64))` containing the B-spline `precision` and `influence` parameters
+    /// - `None` if B-spline parameters are not applicable or required
+    fn bspline_args(&self) -> Option<(f64, f64)> {
+        None
+    }
+}
+
+/// Concrete implementation for interpolators requiring no additional arguments.
+///
+/// This struct implements the `GxArrayViewInterpolatorArgs` trait for interpolators
+/// that can operate with minimal configuration. It serves as a default implementation
+/// for simple interpolation methods like nearest neighbor interpolation where
+/// basic coordinate mapping is sufficient.
+///
+/// The implementation provides a clean, zero-cost abstraction that requires no
+/// additional memory allocation or complex parameter handling.
+pub struct GxArrayViewInterpolatorNoArgs;
+
+
+impl GxArrayViewInterpolatorArgs for GxArrayViewInterpolatorNoArgs {
+    // Default implementation inherited from trait
+}
+
 /// Trait defining the core 2D interpolation methods for resampling.
 ///
 /// This trait provides a low-level abstraction for computing interpolated values at a given
@@ -460,10 +551,20 @@ impl<'a> DefaultCtx<'a> {
 /// - `GxArrayView`: View of the input 3D array
 /// - `GxArrayViewMut`: Mutable view of the output 3D array
 /// - `GxArrayViewInterpolationContextTrait`: Trait for generic interpolation context controlling masks and bounds
-pub trait GxArrayViewInterpolator
+pub trait GxArrayViewInterpolator: Send + Sync
 {
     /// Constructs a new instance of the interpolator.
-    fn new() -> Self;
+    fn new(args: &dyn GxArrayViewInterpolatorArgs) -> Self;
+    
+    /// Get the short name of the interpolator
+    ///
+    /// # Returns
+    /// A string representing the short name of the interpolator
+    fn shortname(&self) -> String;
+    
+    /// Inializes internal parameters of buffer. For simple interpolation method (nearest, linear or cubic) the 
+    /// implementation will be empty, while it will serves for B-Spline interpolation to precompute some stuff.
+    fn initialize(&mut self) -> Result<(), String>;
     
     /// Allocates a buffer for kernel weights.
     fn allocate_kernel_buffer<'a>(&'a self) -> Box<[f64]>;
@@ -509,5 +610,17 @@ pub trait GxArrayViewInterpolator
     
     /// Returns the kernel size in rows.
     fn kernel_col_size(&self) -> usize;
+    
+    /// Computes and returns the total margins required on each side for the entire interpolation process.
+    ///
+    /// The margins are provided as a 4-element `usize` array representing the top, bottom, left, and right sides respectively.
+    ///
+    /// # Returns
+    /// A 4-element `usize` array where each element corresponds to:
+    /// - Index 0: Top margin
+    /// - Index 1: Bottom margin
+    /// - Index 2: Left margin
+    /// - Index 3: Right margin
+    fn total_margins(&self) -> Result<[usize; 4], GxError>;
 }
 

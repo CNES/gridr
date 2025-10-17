@@ -1119,6 +1119,7 @@ where
 #[cfg(test)]
 mod gx_grid_resampling_test {
     use super::*;
+    use crate::core::interp::gx_array_view_interp::GxArrayViewInterpolatorNoArgs;
     use crate::core::interp::gx_optimized_bicubic_kernel::{GxOptimizedBicubicInterpolator};
     use crate::core::gx_array::{gx_array_data_approx_eq_window};
     
@@ -1140,7 +1141,7 @@ mod gx_grid_resampling_test {
     /// This test makes sure that an identity transformation is correct
     #[test]
     fn test_array1_grid_resampling_optimized_bicubic_identity() {
-        let interp = GxOptimizedBicubicInterpolator::new();
+        let interp = GxOptimizedBicubicInterpolator::new(&GxArrayViewInterpolatorNoArgs{});
         
         let nrow_in = 15;
         let ncol_in = 10;
@@ -1205,7 +1206,7 @@ mod gx_grid_resampling_test {
     // is correct
     #[test]
     fn test_array1_grid_resampling_optimized_bicubic_identity_w_grid_nodata() {
-        let interp = GxOptimizedBicubicInterpolator::new();
+        let interp = GxOptimizedBicubicInterpolator::new(&GxArrayViewInterpolatorNoArgs{});
         
         let nrow_in = 6;
         let ncol_in = 5;
@@ -1329,7 +1330,7 @@ mod gx_grid_resampling_test {
     // is correct
     #[test]
     fn test_array1_grid_resampling_optimized_bicubic_identity_w_grid_mask() {
-        let interp = GxOptimizedBicubicInterpolator::new();
+        let interp = GxOptimizedBicubicInterpolator::new(&GxArrayViewInterpolatorNoArgs{});
         
         let nrow_in = 6;
         let ncol_in = 5;
@@ -1438,7 +1439,7 @@ mod gx_grid_resampling_test {
     /// TODO
     #[test]
     fn test_array1_grid_resampling_optimized_bicubic_identity_zoom_win() {
-        let interp = GxOptimizedBicubicInterpolator::new();
+        let interp = GxOptimizedBicubicInterpolator::new(&GxArrayViewInterpolatorNoArgs{});
         
         let nrow_in = 15;
         let ncol_in = 10;
@@ -1504,7 +1505,7 @@ mod gx_grid_resampling_test {
     /// TODO
     #[test]
     fn test_array1_grid_resampling_optimized_bicubic_translate() {
-        let interp = GxOptimizedBicubicInterpolator::new();
+        let interp = GxOptimizedBicubicInterpolator::new(&GxArrayViewInterpolatorNoArgs{});
         
         let dx = 10.5;
         let dy = -20.5;
@@ -1574,7 +1575,7 @@ mod gx_grid_resampling_test {
     ///   from the full image.
     #[test]
     fn test_array1_grid_resampling_optimized_bicubic_identity_oversampling_window() {
-        let interp = GxOptimizedBicubicInterpolator::new();
+        let interp = GxOptimizedBicubicInterpolator::new(&GxArrayViewInterpolatorNoArgs{});
         let tol = 1e-6;
         
         let oversampling_row = 6;
@@ -1674,7 +1675,7 @@ mod gx_grid_resampling_test {
     /// This test aims to check the respect of the output windowing 
     #[test]
     fn test_array1_grid_resampling_optimized_bicubic_identity_output_window() {
-        let interp = GxOptimizedBicubicInterpolator::new();
+        let interp = GxOptimizedBicubicInterpolator::new(&GxArrayViewInterpolatorNoArgs{});
         let tol = 1e-6;
         
         let oversampling_row = 6;

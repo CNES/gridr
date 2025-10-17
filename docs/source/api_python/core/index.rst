@@ -7,4 +7,5 @@ core
     convolution/index
     filter/index
     grid/index
+    interp/index
     utils/index

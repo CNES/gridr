@@ -14,11 +14,11 @@ also provided.
    :maxdepth: 1
 
    generated/grid_masking_001
-   generated/grid_resampling_001_work
+   generated/grid_resampling_001
    
 *Jupyter source for Core build mask:* :download:`notebooks/grid_masking_001.ipynb <../../../notebooks/grid_masking_001.ipynb>`
 
-*Jupyter source for Core grid resampling:* :download:`notebooks/grid_resampling_001_work.ipynb <../../../notebooks/grid_resampling_001_work.ipynb>`
+*Jupyter source for Core grid resampling:* :download:`notebooks/grid_resampling_001.ipynb <../../../notebooks/grid_resampling_001.ipynb>`
 
 
 Chain API Guide

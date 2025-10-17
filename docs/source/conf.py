@@ -43,11 +43,33 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.mathjax",
     "sphinx_autodoc_typehints",
+    "sphinxcontrib.bibtex",
     #"sphinxcontrib.apidoc",
     #"sphinxcontrib.rustdoc",  # Pour la doc Rust
 ]
 
-mathjax_path = 'https://cdn.jsdelivr.net/npm/mathjax@2/MathJax.js?config=TeX-AMS-MML_HTMLorMML'
+myst_enable_extensions = [
+    "dollarmath",  # Enable $...$ et $$...$$ for math
+    "amsmath",     # Support advanced math environment
+]
+
+# Optionnel : configuration supplémentaire pour MyST
+myst_dmath_double_inline = True  # Enable inline $$...$$
+
+mathjax_path = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js'
+#mathjax_path = 'https://cdn.jsdelivr.net/npm/mathjax@2/MathJax.js?config=TeX-AMS-MML_HTMLorMML'
+
+mathjax3_config = {
+    'tex': {
+        'inlineMath': [['$', '$'], ['\\(', '\\)']],
+        'displayMath': [['$$', '$$'], ['\\[', '\\]']],
+    }
+}
+
+# BibTeX file(s)
+bibtex_bibfiles = ['references.bib']
+# Citation style (optional)
+bibtex_default_style = 'plain'  # or 'alpha', 'unsrt', etc.
 
 napoleon_google_docstring = True  # Pour activer le support Google Style
 napoleon_numpy_docstring = True # Pour désactiver le support NumPy Style (si vous ne l'utilisez pas)

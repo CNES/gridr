@@ -22,3 +22,5 @@ pub mod gx_array_view_interp;
 pub mod gx_optimized_bicubic_kernel;
 pub mod gx_nearest_kernel;
 pub mod gx_linear_kernel;
+pub mod gx_bspline_kernel;
+pub mod gx_bspline_prefiltering;

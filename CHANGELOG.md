@@ -1,46 +1,172 @@
 # CHANGELOG
 
-
 ## [0.x.y] - yyyy-mm-dd
 
 ### Added
-- **Grid Resampling Enhancement**:
-  - Added `array1_add` and `array1_add_win2` Rust functions to `gx_array_utils.rs` module
-  - Created Python bindings for `array1_add` and `array1_add_win2` Rust functions
-  - Implemented `array_add` method in `gridr.core.array_utils` with comprehensive tests
-  - Added `array_shift_grid_coordinates` method to `core.grid.grid_utils` for in-place grid coordinate shifting
-  - Introduced `grid_shift` parameter to `basic_grid_resampling_chain` to apply a global bias to grid coordinates
-  - Expanded user documentation with details about the grid shift feature
-  
-- **Safe Grid Source Boundaries Computation**:
-  - Added `array1_compute_resampling_grid_src_boundaries` Rust function to `gx_grid_geometry.rs` module
-  - Created Python bindings for `array1_compute_resampling_grid_src_boundaries` Rust functions
-  - Implemented `array_compute_resampling_grid_src_boundaries` method in `gridr.core.grid.grid_utils` with comprehensive tests
-  - Introduced the constant `SAFECHECK_SOURCE_BOUNDARIES` (True) to `basic_grid_resampling_chain` to determine the read window using all valid coordinates within the working grid subset.
 
-- **Documentation**
-  - Initialized the "Theoretical Foundations" section with image geometry's definition and details about grid resampling convention.
+#### Interpolation
+
+- **B-Spline Interpolation Implementation**
+  - Added B-Spline interpolation support for orders 3, 5, 7, 9, and 11
+  - Added Rust module `core/interp/gx_bspline_prefiltering` implementing B-Spline prefiltering methods and mask handling
+  - Added Rust module `core/interp/gx_bspline_kernel` implementing `GxArrayViewInterpolator` trait for B-Spline
+  - Implemented `GxBSplineInterpolatorTrait<const N: usize>` trait using monomorphic approach for compile-time B-Spline order specification
+  - Created Python bindings for `BSpline<N>Interpolator` classes for all supported orders
+  - Added Rust test suite for B-Spline interpolation
+  - Created API documentation
+
+- **Interpolator Margins**
+  - Added `total_margins()` method to `GxArrayViewInterpolator` trait to compute required margins on each side for interpolation
+  - For B-Spline interpolators, `total_margins()` includes pre-filtering domain extension for controlled precision in infinite sum approximations
+  - Note: `initialize()` method must be called before `total_margins()` on B-Spline interpolator objects
+  - Created Python bindings for `total_margins()` method
+  - Added Python test suite for margin computation
+
+#### Grid Operations
+
+- **Array Arithmetic Functions**
+  - Added `array1_add` Rust function in `gx_array_utils.rs` module
+  - Added `array1_add_win2` Rust function in `gx_array_utils.rs` module
+  - Created Python bindings for `array1_add` and `array1_add_win2` functions
+  - Implemented `array_add` method in `gridr.core.array_utils` with comprehensive tests
+
+- **Grid Coordinate Operations**
+  - Added `array_shift_grid_coordinates` method to `core.grid.grid_utils` for in-place grid coordinate shifting
+
+- **Source Boundary Computation**
+  - Added `array1_compute_resampling_grid_src_boundaries` Rust function in `gx_grid_geometry.rs` module
+  - Created Python bindings for `array1_compute_resampling_grid_src_boundaries` function
+  - Implemented `array_compute_resampling_grid_src_boundaries` method in `gridr.core.grid.grid_utils` with comprehensive tests
+
+#### Grid Resampling
+
+- **Core Grid Resampling (`array_grid_resampling`)**
+  - Added `check_boundaries` boolean parameter to activate safe grid boundaries computation (see Source Boundary Computation)
+  - Added `boundary_condition` parameter accepting values: 'edge', 'reflect', 'symmetric', 'wrap'
+  - Added `standalone` parameters to `gridr.core.grid.grid_resampling.array_grid_resampling`
+  - Standalone mode performs: automatic grid metrics computation, source image required region computation (considering interpolation margins), optional padding operation, and B-Spline prefiltering
+  - Updated test suite to include standalone mode validation
+
+- **Grid Resampling Chain (`basic_grid_resampling_chain`)**
+  - Added `grid_shift` parameter to apply global bias to grid coordinates
+  - Added `boundary_condition` parameter accepting values: 'edge', 'reflect', 'symmetric', 'wrap'
+  - Added `SAFECHECK_SOURCE_BOUNDARIES` constant (default: True) to determine read window using all valid coordinates within working grid subset (see Source Boundary Computation)
+  - Method now creates and initialize interpolator objects internally
+
+#### Boundary Handling
+
+- **Array Padding**
+  - Added `gridr.core.utils.array_pad` Python module derived from `numpy.pad`
+  - Operates in-place with limited mode support
+  - Created API documentation for `core.utils.array_pad`
+
+#### Documentation
+
+- **Theoretical Foundations**
+  - Initialized "Theoretical Foundations" section in documentation
+  - Added image geometry definitions
+  - Added detailed grid resampling convention documentation
+
+- **API Documentation Structure**
+  - Added `core.interp` section to API documentation
+  - Added `core.interp.bspline_prefiltering` documentation page
+  - Added `core.interp.interpolator` documentation page
+  - Added `core.utils.array_pad` documentation page
+
+- **User Guides**
+  - Expanded user documentation with standalone mode details
+  - Added documentation for grid shift feature
+  - Added documentation for boundary conditions
+  - Added documentation for B-Spline mask handling
+
+#### Dependencies
+
+- **Rust**
+  - Added `transpose` crate dependency (v0.2.6)
+  - Upgraded `pyo3` crate dependency to version 0.27.2
+
 
 ### Changed
-- **Precision Handling**:
-  - Implemented controlled rounding (12 decimal digits) for internal full-resolution grid calculations in `gx_grid_resampling.rs`.
 
-- **Documentation**!
-  - Changed sphinx documentation main menu organization.
+#### Interpolator Architecture
+
+- **Interpolator Interface**
+  - Added `Send` trait implementation to `GxArrayViewInterpolator`
+  - Introduced `GxArrayViewInterpolatorArgs` trait to provide arguments for interpolator creation
+
+- **Interpolator Type System**
+  - Moved `PyInterpolatorType` to dedicated Rust module `pyapi/interp/py_interp.rs`
+  - Added `AnyInterpolator` enum to replace `PyInterpolatorType` in `py_grid_resampling`
+  - Changed interpolator passing mechanism: now passed as Python object instead of string literal
+  - Implemented `FromPyObject` trait for `AnyInterpolator` to retrieve Rust object from Python object
+  - `AnyInterpolator` enum variants wrap interpolator implementations using `Arc` (Atomic Reference Counting) and `RwLock` for thread-safe shared ownership
+  - Note: This change requires interpolator creation on Python side before passing to Rust functions
+
+#### Code Organization
+
+- **Function Location**
+  - Moved `read_win_from_grid_metrics()` function from `gridr.chain.grid_resampling_chain` to `gridr.core.grid.grid_utils`
+
+#### Numerical Precision
+
+- **Grid Coordinate Calculations**
+  - Implemented controlled rounding to 12 decimal digits for internal full-resolution grid calculations in `gx_grid_resampling.rs`
+
+#### Documentation Infrastructure
+
+- **Sphinx Configuration**
+  - Updated MathJax from version 2 to version 3
+  - Changed MathJax CDN URL from `https://cdn.jsdelivr.net/npm/mathjax@2/MathJax.js?config=TeX-AMS-MML_HTMLorMML` to `https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js`
+  - Added `mathjax3_config` with inline math delimiters: `[['$', '$'], ['\\(', '\\)']]` and display math delimiters: `[['$$', '$$'], ['\\[', '\\]']]`
+  - Added `sphinxcontrib.bibtex` extension
+  - Configured `bibtex_bibfiles` to `['references.bib']`
+  - Set `bibtex_default_style` to `'plain'`
+  - Added MyST extensions: `dollarmath` and `amsmath`
+  - Set `myst_dmath_double_inline` to `True`
+
+- **Documentation Structure**
+  - Changed page title from "API Documentation" to "API Reference" in `docs/source/api_python/modules.rst`
+  - Reorganized Sphinx main menu structure
+  - Removed `docs/source/developer_guide/index.rst` section heading
+  - Removed `docs/source/api_python/misc/index.rst` module documentation
+  - Removed `docs/source/api_python/misc/mandrill.rst` documentation page
+
+- **Notebook References**
+  - Updated notebook reference from `grid_resampling_001_work.ipynb` to `grid_resampling_001.ipynb` in `docs/source/_notebooks/index.rst`
+
+- **Images**
+  - Added new SVG file `docs/source/images/numeric_image.svg`
+
+#### Project Metadata
+
+- **README Badges**
+  - Updated minimum pyo3 version badge from "0.26+" to "0.27.2+"
+  - Changed logo image source from `./doc/images/gridr_logo.svg` to `https://github.com/CNES/gridr/tree/main/doc/images/gridr_logo.svg`
 
 ### Fixed
-- **Grid resampling chain**:
-  - Resolved 'panic' when adressing index out-of-bounds of the source array. This was occuring for "bad" grid that do not preserve the source topology. See *Safe Grid Source Boundaries Computation*.
 
-- **Numerical Stability**:
-  - Resolved floating-point precision issues in grid coordinate calculations in `gx_grid_resampling.rs`.
+#### Grid Resampling
+
+- **Out-of-Bounds Access**
+  - Resolved panic when addressing index out-of-bounds of source array
+  - Issue occurred for grids that do not preserve source topology
+  - Fixed through implementation of safe grid source boundaries computation
+
+#### Numerical Stability
+
+- **Floating-Point Precision**
+  - Resolved floating-point precision issues in grid coordinate calculations in `gx_grid_resampling.rs`
   - Fixed nearest neighbor interpolation bug caused by precision limitations
   - Addressed discrepancies between chain method and monolithic core method
-  
-- **Dependencies**:
+
+#### Dependencies
+
+- **Missing Dependencies**
   - Added missing Shapely dependency in `pyproject.toml`
-  
-- **Documentation**:
+
+#### Documentation
+
+- **Styling**
   - Improved CSS styling of log extracts in `grid_resampling_chain` notebook for proper line breaking
 
 
@@ -86,17 +212,17 @@
 - Added Developer_Guide (WIP) and License sections in sphinx documentation
 - scripts:
     - Added scripts directory in project tree
-    - Added generate_notice.py and generate_rust_notice.sh script
+    - Added generate_notice.py and generate_Rust_notice.sh script
 - templates:
     - Added templates directory in project tree
-    - Added templates to generate main NOTICE and python/rust 3rd party notices sections.
+    - Added templates to generate main NOTICE and Python/Rust 3rd party notices sections.
 - Added Rust tests for `GxNearestInterpolator` and `GxLinearInterpolator` to verify mask usage
 - Added Python test for the core `grid.grid_resampling.py` module. The test currently covers only identity grid transforms at full resolution.
-- Added `array_convert`, `is_clip_required` and `is_clip_to_dtype_limits_safe` python methods in the `gridr.core.utils.array_utils.py` module as well as corresponding tests. These methods are used by the `grid_resampling_chain` to convert data type before writing to disk in order to match the output dataset type.
+- Added `array_convert`, `is_clip_required` and `is_clip_to_dtype_limits_safe` Python methods in the `gridr.core.utils.array_utils.py` module as well as corresponding tests. These methods are used by the `grid_resampling_chain` to convert data type before writing to disk in order to match the output dataset type.
 
 ### Changed
-- Added license related header in python and rust source files
-- Apply pre-commit hooks (flake8, isort, black) to existing python source files in python/gridr and tests 
+- Added license related header in Python and Rust source files
+- Apply pre-commit hooks (flake8, isort, black) to existing Python source files in Python/gridr and tests 
 - Documentation
 - Added a temporary change in `grid_resampling_chain` to adapt margin to the interpolation function.
 - Tests for `grid_resampling_chain` have been enhanced to include interpolators other than `cubic` and output types different from `np.float64`. The `linear` interpolator is now tested, while the `nearest` interpolator is not due to an identified bug.
