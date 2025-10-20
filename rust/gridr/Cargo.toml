@@ -16,7 +16,7 @@ lto = "fat"
 codegen-units = 1   
 
 [dependencies]
-pyo3 = { version = "0.21.2", features = ["extension-module", "experimental-declarative-modules"]}
+pyo3 = { version = "0.21.2", features = ["extension-module", "experimental-declarative-modules", "abi3-py310"]}
 numpy = "0.21.0"
 ndarray = { version = "0.15.6", features = ["approx", "rayon"] }
 approx = "0.5.1"

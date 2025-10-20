@@ -32,9 +32,12 @@ ifeq (, $(PYTHON))
 endif
 
 # Check Python version
-PYTHON_VERSION_MIN = 3.8
+PYTHON_VERSION_MIN = 3.10
 PYTHON_VERSION_CUR = $(shell $(PYTHON) -c 'import sys; print("%d.%d"% sys.version_info[0:2])')
 PYTHON_VERSION_OK = $(shell $(PYTHON) -c 'import sys; cur_ver = sys.version_info[0:2]; min_ver = tuple(map(int, "$(PYTHON_VERSION_MIN)".split("."))); print(int(cur_ver >= min_ver))')
+
+# Extra Build configuration (abi3 feature)
+BUILD_EXTRA_CONFIG := $(ROOT_DIR)dist_extra_config.cfg
 
 NUMPY_VERSION_TAG = ""
 ifndef NUMPY_VERSION
@@ -156,7 +159,7 @@ pylint: venv ## call pylint
 .PHONY: build
 build: venv clean-build ## build package
 	@echo "Build python package"
-	@$(GRIDR_VENV)/bin/python -m build --outdir $(BUILD_DIST_OUTDIR) 
+	@DIST_EXTRA_CONFIG=${BUILD_EXTRA_CONFIG} $(GRIDR_VENV)/bin/python -m build --outdir $(BUILD_DIST_OUTDIR) 
 	@echo "Set wheel for manylinux base on glibc version"
 	@$(GRIDR_VENV)/bin/auditwheel repair $(BUILD_DIST_OUTDIR)/*.whl --plat $(MANYLINUX_GLIBC_TAG)_x86_64 -w $(BUILD_DIST_OUTDIR)_fixed/
 
