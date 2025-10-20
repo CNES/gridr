@@ -1,5 +1,30 @@
 # CHANGELOG
 
+## [0.4.2] - 2025-10-20
+
+### [Unreleased]
+- Documentation for antialiasing filter creation
+
+### Fixed
+- Updated the pyo3 required version to 0.26.0 in order to fix a security issue
+
+### Added
+- **Documentation**: Added `.readthedocs.yaml` for automated docs builds.
+- **Build**: Support for custom Sphinx HTML output directory in `Makefile`.
+
+### Changed
+- **CI/CD**: Release jobs now trigger **only** on semantic version tags (e.g., `vX.Y.Z`).
+- **Dependencies**: Upgraded `pyo3` to **v0.26.0** to address security vulnerability .
+- **Documentation**: Changed the contributing part in order to adhere the strict linear trunk-based branching strategy.
+
+### Fixed
+- **Build**: Generate ABI3-compatible wheels for Python 3.10+.
+- **Documentation**: Fix indentations in array_utils.py docstrings.
+
+### Security
+- **Dependencies**: Patched `pyo3` to v0.26.0 (addresses GHSA-pph8-gcv7-4qj5).
+
+
 ## [0.4.1] - 2025-10-02
 
 ### [Unreleased]
