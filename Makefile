@@ -1,4 +1,10 @@
-
+# Used environment variables
+# NUMPY_VERSION : set to force numpy version
+# GRIDR_SPHINX_BUILD_PATH : set sphinx output path
+# BUILD_DIST_OUTDIR
+# COVERAGE_REPORT_TAG
+# GRIDR_VENV
+# PIP_ARG_MAIN
 ROOT_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 
 .DEFAULT_GOAL := help
@@ -17,6 +23,11 @@ GRIDR_LIBGRIDR_SO_PYTEST_TARGET := $(GRIDR_PYTHON_PATH)/cdylib/_libgridr.so
 GRIDR_LIBGRIDR_DOC_BUILD_PATH := $(GRIDR_RUST_CRATE_PATH)/target/doc
 
 GRIDR_DOCS_ROOT_PATH := $(ROOT_DIR)docs
+ifdef GRIDR_SPHINX_BUILD_PATH
+	GRIDR_SPHINX_DOC_BUILD_PATH = "$(GRIDR_SPHINX_BUILD_PATH)"
+else
+	GRIDR_SPHINX_DOC_BUILD_PATH = "$(GRIDR_DOCS_ROOT_PATH)/build"
+endif
 
 # Scripts path
 GRIDR_SCRIPTS_PATH := $(ROOT_DIR)scripts
@@ -136,8 +147,9 @@ build-rust-doc: venv ## build the rust project
 build-sphinx-doc: venv $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET) clean-sphinx-doc ## build the sphinx documentation
 	@echo "Building sphinx documentation..."
 	@echo "Sphinx documentation location : $(GRIDR_DOCS_ROOT_PATH)"
-	@source $(GRIDR_VENV)/bin/activate && cd $(GRIDR_DOCS_ROOT_PATH) && make html
-	tar cf $(GRIDR_DOCS_ROOT_PATH).tar $(GRIDR_DOCS_ROOT_PATH)
+	@source $(GRIDR_VENV)/bin/activate && sphinx-build -M html $(GRIDR_DOCS_ROOT_PATH)/source $(GRIDR_SPHINX_DOC_BUILD_PATH)
+#	@source $(GRIDR_VENV)/bin/activate && cd $(GRIDR_DOCS_ROOT_PATH) && make html
+#	tar cf $(GRIDR_DOCS_ROOT_PATH).tar $(GRIDR_DOCS_ROOT_PATH)
 
 
 .PHONY: test-python
@@ -222,7 +234,7 @@ clean-test:
 .PHONY: clean-sphinx-doc
 clean-sphinx-doc:
 	@echo "+ $@"
-	@rm -rf $(GRIDR_DOCS_ROOT_PATH)/build
+	@rm -rf $(GRIDR_SPHINX_DOC_BUILD_PATH)
 	@rm -rf $(GRIDR_DOCS_ROOT_PATH)/source/_notebooks/generated
 
 #ifndef GRIDR_VENV

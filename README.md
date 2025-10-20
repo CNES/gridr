@@ -58,4 +58,4 @@
 - **Optimized I/O**: Designed to handle large datasets efficiently.
 
 ## Getting Started
-To install and use GRIDR, refer to the [online documentation](https://dali.pages.cnes.fr/gridr/gridr)
+To install and use GRIDR, refer to the [online documentation](https://gridr.readthedocs.io/en/stable/)
