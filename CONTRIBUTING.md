@@ -21,7 +21,7 @@ In the problem description, be as accurate as possible. Include:
 
 # Contributing workflow
 
-Any code modification requires a Merge Request. It is forbidden to push patches directly into main or dev (those branches are protected).
+Any code modification requires a Merge Request. It is forbidden to push patches directly into main (this branch is protected).
 
 It is recommended to open your Merge Request as soon as possible in order to inform the developers of your ongoing work.
 Please add `WIP:` before your Merge Request title if your work is in progress: This prevents an accidental merge and informs the other developers of the unfinished state of your work.
@@ -44,22 +44,11 @@ GRIDR Classical workflow is :
 
 # Contribution license agreement
 
-GRIDR requires that contributors sign out a [Contributor License
-Agreement](https://en.wikipedia.org/wiki/Contributor_License_Agreement). The
-purpose of this CLA is to ensure that the project has the necessary ownership or
-grants of rights over all contributions to allow them to distribute under the
-chosen license (Apache License Version 2.0)
+GRIDR requires that contributors sign out a [Contributor License Agreement](https://en.wikipedia.org/wiki/Contributor_License_Agreement). The purpose of this CLA is to ensure that the project has the necessary ownership or grants of rights over all contributions to allow them to distribute under the chosen license (Apache License Version 2.0)
 
-To accept your contribution, we need you to complete, sign and email to *gridr-cnes [at]
-cnes [dot] fr* an [Individual Contributor Licensing
-Agreement](./docs/source/CLA/ICLA-GRIDR.doc) (ICLA) form and a
-[Corporate Contributor Licensing
-Agreement](./docs/source/CLA/CCLA-GRIDR.doc) (CCLA) form if you are
-contributing on behalf of your company or another entity which retains copyright
-for your contribution.
+To accept your contribution, we need you to complete, sign and email to *gridr-cnes [at] cnes [dot] fr* an [Individual Contributor Licensing Agreement](./docs/source/CLA/ICLA-GRIDR.doc) (ICLA) form and a [Corporate Contributor Licensing Agreement](./docs/source/CLA/CCLA-GRIDR.doc) (CCLA) form if you are contributing on behalf of your company or another entity which retains copyright for your contribution.
 
-The copyright owner (or owner's agent) must be mentioned in headers of all modified source files and also added to the [AUTHORS.md
-file](./AUTHORS.md).
+The copyright owner (or owner's agent) must be mentioned in headers of all modified source files and also added to the [AUTHORS.md file](./AUTHORS.md).
 
 
 # Merge request acceptation process

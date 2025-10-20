@@ -69,73 +69,184 @@ It is possible to test pre-commit before committing:
   pre-commit run pylint                             # Run only pylint hook
 
 
-Gitflow
-=======
+Branching Strategy : a Strict Linear Variant of Trunk-Based Development
+=======================================================================
 
-Main branches
--------------
+Overview
+--------
+This section outlines our **Linear Branch Model**, a Git workflow designed to maintain a **clean, linear history** in the ``main`` branch. Unlike traditional branching models (e.g., GitFlow), this approach enforces strict rebase and squash rules to ensure:
 
-The development model is greatly inspired by existing models such as `nvie's model <https://nvie.com/posts/a-successful-git-branching-model/>`_. The central repository holds two main branches with an infinite lifetime:
+- **No merge commits** in ``main``
+- **No direct pushes** to ``main``
+- **All changes** come from feature branches, rebased and squashed before merging
 
-- ``main``
-- ``dev``
+This model is inspired by **Trunk-Based Development** but with stricter rebase and squash requirements.
 
-The stable production branch: ``origin/main``
----------------------------------------------
+Main Branch: ``main``
+---------------------
+**Purpose**
+  - The **only protected branch** in the repository
+  - Represents the **stable, production-ready** state of the codebase
+  - **Must always be linear** (no merge commits)
 
-Branch ``origin/main`` is considered here as the default branch. The source code of ``HEAD`` should reflect a stable production state. Therefore some rules must be respected:
+**Rules**
 
-- Do not directly commit to it.
-- Update to the ``origin/main`` branch should only be made through a merge request from the ``origin/dev`` branch (or an optional release branch)
+1. **No direct pushes**
+   - All changes must come from feature branches
+   - Use **fast-forward merges** where possible
 
-To summarize: your ``origin/main`` branch is your "do not touch it clean and stable branch".
+2. **Rebase before merging**
+   - Feature branches must be rebased onto ``main`` before merging
+   - Use ``git rebase -i`` to squash unnecessary commits
 
-The developers integration branch: ``origin/dev``
--------------------------------------------------
+3. **Fast-forward merges only**
+   - If a fast-forward merge is not possible, the branch must be rebased further to resolve conflicts
 
-Branch ``origin/dev`` is considered to hold a source code of ``HEAD`` that is always reflecting a state with the latest delivered and integrated changes for the next release: it is the ``integration branch`` on which developers are merging to.
+Feature Branches
+----------------
+**Purpose**
+  - Used for **all new development**
+  - Must be **rebased and squashed** before merging into ``main``
 
-Here are some rules to respect:
+**Rules**
 
-- Do not directly push to this branch but perform merge request from "a new feature branch" to "origin/dev".
-- After the ``origin/dev`` branch has been merged into ``origin/main``, the ``origin/dev`` must be updated in order to be in the same state as the ``master``. This is performed in your local development repo:
+1. **Create from ``main``**
 
 .. code-block:: bash
 
-   git checkout dev
+   git checkout main
    git fetch origin
-   git merge origin/main
+   git rebase origin/main
+   git checkout -b feature/your-feature
 
-When the source code in the ``dev`` branch reaches a stable point and is ready to be released, all of the changes should be merged back into ``main`` through a ``merge request``. When you are ready for a new release you should perform a merge request from 'dev' to 'main'.
+2. **Rebase before merging**
+   - Fetch latest changes from remote:
 
-Supporting branches
--------------------
+.. code-block:: bash
 
-Next to the main branches ``main`` and ``develop``, our development model uses a variety of supporting branches to aid parallel development between team members, ease tracking of features, prepare for production releases and to assist in quickly fixing live production problems.
+   git fetch origin
 
-Unlike the main branches, these branches always have a limited life time, since they will be removed eventually. The different types of branches we may use are:
+   - Rebase onto ``main`` to incorporate the latest changes:
 
-- Feature branches
-- Release branches
-- Hotfix branches
+.. code-block:: bash
 
-Each of these branches have a specific purpose and are bound to strict rules as to which branches may be their originating branch and which branches must be their merge targets. By no means are these branches "special" from a technical perspective. The branch types are categorized by how we use them. They are of course plain old Git branches.
+   git checkout feature/your-feature
+   git rebase origin/main
 
-In order to make it simple we will only force you to use ``feature`` branches. Releases and associated tags are automatically created through CI.
+   - Squash unnecessary commits with ``git rebase -i HEAD~N`` (replace ``N`` with the number of commits to squash)
 
-New features branch
--------------------
+3. **No ``WIP`` commits**
+   - All commits must be **meaningful and final**
+   - Use ``git commit --amend`` to fix commit messages
 
-Create a new feature specific branch from the 'dev' branch for each new feature.
+4. **Force push after rebase**
+   - After rebasing, force push to update the remote branch:
 
-It is recommended to open your Merge Request as soon as possible in order to inform the developers of your ongoing work.
-Please add `WIP:` before your Merge Request title if your work is in progress: This prevents an accidental merge and informs the other developers of the unfinished state of your work.
+.. code-block:: bash
 
-The Merge Request shall have a short description of the proposed changes. If it is relative to an issue, you can signal it by adding `Closes xx` where xx is the reference number of the is
-sue.
+   git push origin feature/your-feature --force-with-lease
 
-Prefix the branch's name by `xx-` in order to link it to the xx issue.
+Workflow Steps
+--------------
 
+1. **Create a Feature Branch**
+
+.. code-block:: bash
+
+   git checkout main
+   git fetch origin
+   git rebase origin/main
+   git checkout -b xx-your-feature  # Prefix with issue number if related to an issue
+
+Open a Merge Request as soon as possible with:
+   - Title: ``WIP: [Feature] xx-your-feature`` (if work in progress)
+   - Description: Short description of changes + ``Closes #xx`` if related to an issue
+
+2. **Develop Your Feature**
+   - Make changes and commit them with clear, descriptive messages
+   - Avoid ``WIP`` or temporary commits
+   - Each commit should represent a complete, testable change
+
+3. **Prepare for Merge**
+
+   a. **Fetch latest changes**:
+
+.. code-block:: bash
+
+   git fetch origin
+
+   b. **Rebase onto main**:
+
+.. code-block:: bash
+
+   git checkout xx-your-feature
+   git rebase origin/main
+
+   c. **Squash commits** (if needed):
+
+.. code-block:: bash
+
+   git rebase -i HEAD~N  # Replace N with number of commits to squash
+
+   - In the interactive editor:
+     - Mark commits with ``squash`` or ``fixup``
+     - Example:
+
+.. code-block:: bash
+
+   pick abc123 First commit
+   squash def456 Second commit
+   fixup ghi789 Third commit
+
+4. **Force Push**
+
+.. code-block:: bash
+
+   git push origin xx-your-feature --force-with-lease
+
+5. **Finalize Merge via GitHub**
+   - After preparing your branch (rebased and squashed):
+   - Go to GitHub and create/access the Pull Request
+   - Ensure all checks pass.
+   - Remove ``WIP:`` prefix from the title if present
+   - Request review from at least one maintainer
+   - Wait for approval from a maintainer
+   - Once approved, click "Merge pull request" button
+   - Delete the feature branch after successful merge
+
+   .. note::
+      - The actual merge operation requires maintainer approval
+      - The commands below are for local cleanup after merge
+      - Maintainers can merge directly after approval
+
+.. code-block:: bash
+
+   git fetch origin
+   git checkout main
+   git rebase origin/main
+   git branch -d xx-your-feature  # Delete local branch
+
+Important Rules
+---------------
+
+1. **Protected Main Branch**
+   - Any code modification requires a Merge Request
+   - It is forbidden to push patches directly into main
+   - This branch is protected against direct pushes
+
+2. **Merge Request Best Practices**
+   - Open Merge Requests as soon as possible to inform developers
+   - Use ``WIP:`` prefix for work in progress to prevent accidental merges
+   - Provide a short description of proposed changes
+   - Link to issues using ``Closes #xx``
+   - Prefix branch names with issue numbers (``xx-``)
+
+3. **Commit Quality**
+   - No temporary or WIP commits in final branch
+   - Each commit must be meaningful and testable
+   - Use ``git commit --amend`` to fix commit messages
+   - Squash unnecessary commits before merging
+   
 
 Documentation
 =============
