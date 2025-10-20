@@ -10,7 +10,7 @@ stages:
     - quality
     - sonarqube
     - package
-    #- release
+    - release
     - doc
 
 
@@ -329,7 +329,6 @@ package-build:
     # Debian 11 : python 3.9
     parallel:
         matrix:
-          #- TAG_IMAGE_PYTHON_VERSION: "3.10.17"
           - TAG_IMAGE_PYTHON_VERSION: "3.11.12"
           - TAG_IMAGE_PYTHON_VERSION: "3.10.17"
             NUMPY_VERSION: "1.25.0"
@@ -375,80 +374,98 @@ package-build:
 
 
 
-## Stage : release
-## Deploy previously generated packages to artifactory
-#.template_release_job:
-#    image: ${ARTIFACTORY_URL}/python:${TAG_UL_IMAGE_PYTHON_DEFAULT_VERSION}
-#    stage: release
-#    rules:
-#"        - if: $CI_COMMIT_TAG
-#          when: never                                  # Do not run this job when a tag is created manually
-#        - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH  # Run this job when commits are pushed or merged to the default branch
+# Stage : release
+# Deploy previously generated packages to artifactory
+.template_release_job:
+    image: ${ARTIFACTORY_URL}/python:${TAG_UL_IMAGE_PYTHON_DEFAULT_VERSION}
+    stage: release
+    rules:
+        #- if: $CI_COMMIT_TAG
+        #  when: never                                  # Do not run this job when a tag is created manually
+        #- if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH  # Run this job when commits are pushed or merged to the default branch
+        - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/ && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 #
-#
-#release-publish-artifactory:
-#    extends: .template_release_job
-#    needs:
-#        - python_init
-#        - package-build
-#        - pytest
-#    script:
-#        # Mise en place du venv
-#        - TAG_VERSION_PYTHON="3_11"
-#        - VENV_VERSION_PYTHON=python_only_env_${TAG_VERSION_PYTHON}
-#        - source ${VENV_VERSION_PYTHON}/bin/activate
-#        - ls dist/*
-#        - python -m twine upload --verbose --cert ${CNES_CERTIFICATE} --repository-url https://${ARTIFACTORY_HOST}/artifactory/api/pypi/${ARTIFACTORY_GRIDR_PIP} --username ${ARTIFACTORY_USER} --password ${ARTIFACTORY_TOKEN} dist/*
-#        #- !reference [.template_release_job, script]
-#    timeout: 15 minutes
-#    artifacts:
-#        untracked: true
-#        expire_in: 1 day
-#
-## Stage : Release
-## Ajout de variables d'environnement a recuperer dans le job gitlab_release_job
-## Ce job recupere la version a partir du pyproject. Cette version servira de tag
-## pour le job qui suit
-## A ne faire que si la branche de commit est le main et si pas de tag manuel
-#gitlab_release_init_job:
-#    extends: .template_release_job
-#    needs:
-#        - release-publish-artifactory
-#    script:
-#        # Recuperation de la version a partir du pyproject
-#        - PYPROJECT_VERSION=$(grep -E -o "version(\s){0,}=(\s){0,}\"[0-9]+?\.[0-9]+?(\.[0-9]+?)?\"" pyproject.toml | grep -E -o "[0-9]+?\.[0-9]+?(\.[0-9]+?)?")
-#        - echo "EXTRA_DESCRIPTION=${PYPROJECT_VERSION}" >> variables.env  # Generate the EXTRA_DESCRIPTION and TAG environment variables
-#        - echo "TAG=${PYPROJECT_VERSION}" >> variables.env             # and append to the variables.env file
-#        #- !reference [.template_release_job, script]
-#    artifacts:
-#        reports:
-#            dotenv: variables.env                                   # Use artifacts:reports:dotenv to expose the variables to other jobs
-#    timeout: 15 minutes
-#
-## Stage : Release
-## Creation automatique du tag en recuperant le numero de version du projet python
-## A ne faire que si la branche de commit est le main et si pas de tag manuel
-#gitlab_release_job:
-#    extends: .template_release_job
-#    image: ${ARTIFACTORY_GITLAB_URL}/gitlab-org/release-cli:latest
-#    variables:
-#        SSL_CERT_FILE: '${CNES_CERTIFICATE}' # assuming the cert exists in your repo or it has been downloaded before
-#        #SSL_CERT_DIR: '${CNES_CERTIFICATE}'  # use this variable if you want to use more than one custom certificates
-#    needs:
-#        - release-publish-artifactory
-#        - gitlab_release_init_job
-#    script:
-#        - echo "Running release for TAG ${TAG}"
-#    release:
-#        name: 'Release ${TAG}'
-#        tag_name: '${TAG}'
-#        description: 'Release using the release-cli ; v${EXTRA_DESCRIPTION}'
-#        ref: '$CI_COMMIT_SHA'
-#
-#    timeout: 15 minutes
-#    artifacts:
-#        untracked: true
-#        expire_in: 1 day
+release-publish-artifactory:
+    extends: .template_release_job
+    needs:
+        - python_init
+        - package-build
+        - pytest
+    script:
+        # Mise en place du venv
+        #- TAG_VERSION_PYTHON="3_11"
+        #- VENV_VERSION_PYTHON=python_only_env_${TAG_VERSION_PYTHON}
+        #- source ${VENV_VERSION_PYTHON}/bin/activate
+        #- ls dist/*
+        #- python -m twine upload --verbose --cert ${CNES_CERTIFICATE} --repository-url https://${ARTIFACTORY_HOST}/artifactory/api/pypi/${ARTIFACTORY_GRIDR_PIP} --username ${ARTIFACTORY_USER} --password ${ARTIFACTORY_TOKEN} dist/*
+        #- !reference [.template_release_job, script]
+        - |
+          TAG_VERSION_PYTHON="3_11"
+          # Extraire la version du tag
+          TAG_VERSION=${CI_COMMIT_TAG#v}
+          # Extraire la version de pyproject.toml
+          PYPROJECT_VERSION=$(grep -E -o "version(\s){0,}=(\s){0,}\"[0-9]+?\.[0-9]+?(\.[0-9]+?)?\"" pyproject.toml | grep -E -o "[0-9]+?\.[0-9]+?(\.[0-9]+?)?")
+          # Vérifier si les versions correspondent
+          if [ "$TAG_VERSION" == "$PYPROJECT_VERSION" ]; then
+            echo "Versions match: $TAG_VERSION"
+            # Publier l'artefact (exemple avec twine)
+            VENV_VERSION_PYTHON=python_only_env_${TAG_VERSION_PYTHON}
+            source ${VENV_VERSION_PYTHON}/bin/activate
+            python -m twine upload --verbose --cert ${CNES_CERTIFICATE} --repository-url https://${ARTIFACTORY_HOST}/artifactory/api/pypi/${ARTIFACTORY_GRIDR_PIP} --username ${ARTIFACTORY_USER} --password ${ARTIFACTORY_TOKEN} dist/*
+          else
+            echo "Version mismatch: Tag=$TAG_VERSION, pyproject.toml=$PYPROJECT_VERSION"
+            exit 1
+          fi
+
+    timeout: 15 minutes
+    artifacts:
+        untracked: true
+        expire_in: 1 day
+
+# Stage : Release
+# Ajout de variables d'environnement a recuperer dans le job gitlab_release_job
+# Ce job recupere la version a partir du pyproject. Cette version servira de tag
+# pour le job qui suit
+# A ne faire que si la branche de commit est le main et si pas de tag manuel
+gitlab_release_init_job:
+   extends: .template_release_job
+   needs:
+       - release-publish-artifactory
+   script:
+       # Recuperation de la version a partir du pyproject
+       - PYPROJECT_VERSION=$(grep -E -o "version(\s){0,}=(\s){0,}\"[0-9]+?\.[0-9]+?(\.[0-9]+?)?\"" pyproject.toml | grep -E -o "[0-9]+?\.[0-9]+?(\.[0-9]+?)?")
+       - echo "EXTRA_DESCRIPTION=${PYPROJECT_VERSION}" >> variables.env  # Generate the EXTRA_DESCRIPTION and TAG environment variables
+       - echo "TAG=${PYPROJECT_VERSION}" >> variables.env             # and append to the variables.env file
+       #- !reference [.template_release_job, script]
+   artifacts:
+       reports:
+           dotenv: variables.env                                   # Use artifacts:reports:dotenv to expose the variables to other jobs
+   timeout: 15 minutes
+
+# Stage : Release
+# Creation automatique du tag en recuperant le numero de version du projet python
+# A ne faire que si la branche de commit est le main et si pas de tag manuel
+gitlab_release_job:
+   extends: .template_release_job
+   image: ${ARTIFACTORY_GITLAB_URL}/gitlab-org/release-cli:latest
+   variables:
+       SSL_CERT_FILE: '${CNES_CERTIFICATE}' # assuming the cert exists in your repo or it has been downloaded before
+       #SSL_CERT_DIR: '${CNES_CERTIFICATE}'  # use this variable if you want to use more than one custom certificates
+   needs:
+       - release-publish-artifactory
+       - gitlab_release_init_job
+   script:
+       - echo "Running release for TAG ${TAG}"
+   release:
+       name: 'Release ${TAG}'
+       tag_name: '${TAG}'
+       description: 'Release using the release-cli ; v${EXTRA_DESCRIPTION}'
+       ref: '$CI_COMMIT_SHA'
+
+   timeout: 15 minutes
+   artifacts:
+       untracked: true
+       expire_in: 1 day
 
         
 build_doc:
