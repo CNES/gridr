@@ -26,7 +26,6 @@ from typing import Any, Literal, NoReturn, Optional, Tuple, Union
 
 import numpy as np
 import rasterio
-
 from gridr.cdylib import (
     PyArrayWindow2,
     py_array1_replace_f32_i8,
@@ -208,42 +207,43 @@ def is_clip_to_dtype_limits_safe(in_dtype: np.dtype, out_dtype: np.dtype) -> boo
     This function checks if converting from a data type to a target data type and clipping it to the
     target type's limits will preserve all values without overflow.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     in_dtype : np.dtype
         The input type to be checked for safe clipping.
     out_dtype : np.dtype
         The target data type to which the array would be converted.
 
-    Returns:
-    --------
+    Returns
+    -------
     bool
         True if clipping to the target type limits is safe (no overflow will occur and the target
-        limit can be expressed in the input data type with precision),
-        False otherwise.
+        limit can be expressed in the input data type with precision), False otherwise.
 
-    Description:
-    ------------
+    Notes
+    -----
     This function is necessary when performing type conversions between different numerical
     data types, especially when converting between floating-point and integer types or
     between different floating-point precisions. The main concern is to prevent overflow
     when clipping values to the target type's limits.
 
     The function performs the following checks:
-    1. Only floating-point input types are considered for this check (integer inputs
-       are assumed to be safe by default).
-    2. Checks if clipping is actually required between the input and output types.
-    3. Attempts to convert the maximum value of the output type to the input type and convert it
-       back to the output type.
-    6. If this conversion results in an OverflowError or if the converted value
-       doesn't match the expected maximum value of the output type, returns False.
+    
+        1. Only floating-point input types are considered for this check (integer inputs
+           are assumed to be safe by default).
+       
+        2. Checks if clipping is actually required between the input and output types.
+    
+        3. Attempts to convert the maximum value of the output type to the input type and convert it
+           back to the output type.
+       
+        4. If this conversion results in an OverflowError or if the converted value
+           doesn't match the expected maximum value of the output type, returns False.
 
     The function is particularly important when processing numerical data where preserving
     the integrity of values is critical, such as in scientific computing, financial
     applications, or any domain where numerical precision matters.
 
-    Notes
-    -----
     The test is only performed on the max as the min of an integer type is a power of 2 and can
     safely expressed when clipping is required.
     """
