@@ -1,5 +1,5 @@
 <div align="center">
-<a target="_blank" href="https://gitlab.cnes.fr/gridr/gridr">
+<a target="_blank" href="https://github.com/CNES/gridr">
 <picture>
   <img
     src="./doc/images/gridr_logo.svg"
@@ -14,8 +14,10 @@
 
 [![Python](https://img.shields.io/badge/python-v3.10+-blue.svg)](https://www.python.org/downloads/release/python-3100/)
 [![minimum rustc 1.80](https://img.shields.io/badge/rustc-1.80+-blue?logo=rust)](https://rust-lang.github.io/rfcs/2495-min-rust-version.html)
-[![minimum pyo3 0.21](https://img.shields.io/badge/pyo3-0.21+-green?logo=rust)](https://github.com/PyO3/pyo3)
-[![Quality Gate Status](https://sonarqube.cnes.fr/api/project_badges/measure?project=cnes%3Agridr%3Agridr&metric=alert_status&token=sqb_9e3c65ce7f9784759937eea8a5aa1747b662948e)](https://sonarqube.cnes.fr/dashboard?id=cnes%3Agridr%3Agridr)
+[![minimum pyo3 0.26](https://img.shields.io/badge/pyo3-0.26+-green?logo=rust)](https://github.com/PyO3/pyo3)
+[![Contributions welcome](https://img.shields.io/badge/contributions-welcome-orange.svg)](CONTRIBUTING.md)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0/)
+[![Documentation](https://readthedocs.org/projects/gridr/badge/?version=latest)](https://gridr.readthedocs.io/)
 </div>
 
 
@@ -58,4 +60,4 @@
 - **Optimized I/O**: Designed to handle large datasets efficiently.
 
 ## Getting Started
-To install and use GRIDR, refer to the [online documentation](https://gridr.readthedocs.io/en/stable/)
+To install and use GRIDR, refer to the [online documentation](https://gridr.readthedocs.io/en/latest/)
