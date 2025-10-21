@@ -1,9 +1,17 @@
 workflow:
   rules:
+    # Run for merge requests
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+    # Run for any pushes
+    - if: $CI_COMMIT_BRANCH
+
+    # Run for tags matching vX.Y.Z pattern
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+
+    # Don't run for branches with open merge requests
     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
       when: never
-    - if: $CI_COMMIT_BRANCH
 
 stages:
     - init
@@ -174,9 +182,13 @@ python_init:
     stage: init
     image: ${ARTIFACTORY_URL}/python:${TAG_UL_IMAGE_PYTHON_DEFAULT_VERSION}
     rules:
-        - if: $CI_COMMIT_TAG
-          when: never                                  # Do not run this job when a tag is created manually
-        - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH  # Run this job when commits are pushed or merged to the default branch
+        # Run for tags matching vX.Y.Z pattern
+        - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+
+        # Do not run this job otherwise
+        - when: never
+        #  when: never                                  # Do not run this job when a tag is created manually
+        #- if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH  # Run this job when commits are pushed or merged to the default branch
     
     script:
         # Mise en place du venv
@@ -383,7 +395,8 @@ package-build:
         #- if: $CI_COMMIT_TAG
         #  when: never                                  # Do not run this job when a tag is created manually
         #- if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH  # Run this job when commits are pushed or merged to the default branch
-        - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/ && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+        - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+        - when: never
 #
 release-publish-artifactory:
     extends: .template_release_job
