@@ -1,5 +1,5 @@
 
-.. _contributing_to_cars:
+.. _contributing_to_gridr:
 
 =====================
 Contributing to GRIDR
@@ -9,7 +9,7 @@ GRIDR is an open source software : don't hesitate to hack it and contribute !
 
 Please go to `the GitHub repository <https://www.github.com/CNES/gridr>`_  for source code.
 
-Read also `GRIDR Contribution guide <https://www.github.com/CNES/gridr/tree/master/CONTRIBUTING.md>`_ with `LICENCE <https://raw.githubusercontent.com/CNES/gridr/master/LICENSE>`_ and `Contributor Licence Agrements <https://github.com/CNES/gridr/tree/master/docs/source/CLA>`_.
+Read also `GRIDR Contribution guide <https://www.github.com/CNES/gridr/tree/main/CONTRIBUTING.md>`_ with `LICENCE <https://raw.githubusercontent.com/CNES/gridr/main/LICENSE>`_ and `Contributor Licence Agrements <https://github.com/CNES/gridr/tree/main/docs/source/CLA>`_.
 
 **Contact:** |contact_email| 
 
@@ -23,9 +23,8 @@ We recommend to use a `virtualenv` environment, so that `GRIDR` do not interfere
 .. code-block:: console
 
     git clone https://github.com/CNES/gridr.git
-    cd gridr 
-
-(TODO) details
+    cd gridr
+    make venv
 
 
 Coding guide
@@ -92,14 +91,17 @@ Main Branch: ``main``
 **Rules**
 
 1. **No direct pushes**
+
    - All changes must come from feature branches
    - Use **fast-forward merges** where possible
 
 2. **Rebase before merging**
+
    - Feature branches must be rebased onto ``main`` before merging
    - Use ``git rebase -i`` to squash unnecessary commits
 
 3. **Fast-forward merges only**
+
    - If a fast-forward merge is not possible, the branch must be rebased further to resolve conflicts
 
 Feature Branches
@@ -112,39 +114,42 @@ Feature Branches
 
 1. **Create from ``main``**
 
-.. code-block:: bash
+   .. code-block:: bash
 
-   git checkout main
-   git fetch origin
-   git rebase origin/main
-   git checkout -b feature/your-feature
+      git checkout main
+      git fetch origin
+      git rebase origin/main
+      git checkout -b feature/your-feature
 
 2. **Rebase before merging**
+
    - Fetch latest changes from remote:
 
-.. code-block:: bash
+   .. code-block:: bash
 
-   git fetch origin
+      git fetch origin
 
    - Rebase onto ``main`` to incorporate the latest changes:
 
-.. code-block:: bash
+   .. code-block:: bash
 
-   git checkout feature/your-feature
-   git rebase origin/main
+      git checkout feature/your-feature
+      git rebase origin/main
 
    - Squash unnecessary commits with ``git rebase -i HEAD~N`` (replace ``N`` with the number of commits to squash)
 
 3. **No ``WIP`` commits**
+
    - All commits must be **meaningful and final**
    - Use ``git commit --amend`` to fix commit messages
 
 4. **Force push after rebase**
+
    - After rebasing, force push to update the remote branch:
 
-.. code-block:: bash
+   .. code-block:: bash
 
-   git push origin feature/your-feature --force-with-lease
+      git push origin feature/your-feature --force-with-lease
 
 Workflow Steps
 --------------
@@ -163,6 +168,7 @@ Open a Merge Request as soon as possible with:
    - Description: Short description of changes + ``Closes #xx`` if related to an issue
 
 2. **Develop Your Feature**
+
    - Make changes and commit them with clear, descriptive messages
    - Avoid ``WIP`` or temporary commits
    - Each commit should represent a complete, testable change
@@ -171,32 +177,31 @@ Open a Merge Request as soon as possible with:
 
    a. **Fetch latest changes**:
 
-.. code-block:: bash
+      .. code-block:: bash
 
-   git fetch origin
+         git fetch origin
 
    b. **Rebase onto main**:
 
-.. code-block:: bash
+      .. code-block:: bash
 
-   git checkout xx-your-feature
-   git rebase origin/main
+         git checkout xx-your-feature
+         git rebase origin/main
 
    c. **Squash commits** (if needed):
 
-.. code-block:: bash
+      .. code-block:: bash
 
-   git rebase -i HEAD~N  # Replace N with number of commits to squash
+         git rebase -i HEAD~N  # Replace N with number of commits to squash
 
-   - In the interactive editor:
-     - Mark commits with ``squash`` or ``fixup``
-     - Example:
+      In the interactive editor:
+        - Mark commits with ``squash``
+        - Example:
 
-.. code-block:: bash
+      .. code-block:: bash
 
-   pick abc123 First commit
-   squash def456 Second commit
-   fixup ghi789 Third commit
+         pick abc123 First commit
+         squash def456 Second commit
 
 4. **Force Push**
 
@@ -205,6 +210,7 @@ Open a Merge Request as soon as possible with:
    git push origin xx-your-feature --force-with-lease
 
 5. **Finalize Merge via GitHub**
+
    - After preparing your branch (rebased and squashed):
    - Go to GitHub and create/access the Pull Request
    - Ensure all checks pass.
@@ -230,11 +236,13 @@ Important Rules
 ---------------
 
 1. **Protected Main Branch**
+
    - Any code modification requires a Merge Request
    - It is forbidden to push patches directly into main
    - This branch is protected against direct pushes
 
 2. **Merge Request Best Practices**
+
    - Open Merge Requests as soon as possible to inform developers
    - Use ``WIP:`` prefix for work in progress to prevent accidental merges
    - Provide a short description of proposed changes
@@ -242,6 +250,7 @@ Important Rules
    - Prefix branch names with issue numbers (``xx-``)
 
 3. **Commit Quality**
+
    - No temporary or WIP commits in final branch
    - Each commit must be meaningful and testable
    - Use ``git commit --amend`` to fix commit messages
