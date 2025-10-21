@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gridr"
-version = "0.4.2"
+version = "0.4.3"
 description = "Geometric and Radiometric Image Data Resampling"
 authors = [ {name="CNES", email="gridr-cnes@cnes.fr"} ]
 readme = "README.md"

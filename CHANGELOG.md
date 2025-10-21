@@ -1,12 +1,18 @@
 # CHANGELOG
 
-## [0.4.2] - 2025-10-20
+## [0.4.3] - 2025-10-21
 
 ### [Unreleased]
 - Documentation for antialiasing filter creation
 
 ### Fixed
-- Updated the pyo3 required version to 0.26.0 in order to fix a security issue
+- **Documentation**: Fix style errors for contributing guidelines.
+
+
+## [0.4.2] - 2025-10-20
+
+### [Unreleased]
+- Documentation for antialiasing filter creation
 
 ### Added
 - **Documentation**: Added `.readthedocs.yaml` for automated docs builds.

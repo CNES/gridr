@@ -132,9 +132,9 @@ This section lists the licenses of the Rust dependencies used in GRIDR.
   License: MIT OR Apache-2.0
 
 - Dependancy: gridr
-  Version: 0.4.2
-  Authors:  UNKNOWN
-  Website:  https://crates.io/crates/gridr
+  Version: 0.4.3
+  Authors:  CNES
+  Website:  N/A
   License: Apache-2.0
 
 - Dependancy: heck
