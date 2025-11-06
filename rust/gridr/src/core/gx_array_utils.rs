@@ -247,6 +247,212 @@ where
     Ok(())
 }
 
+/// Add a scalar to values in a 1D array based on a conditional value or an optional condition array.
+///
+/// This function modifies an input slice in place by adding a scalar value to elements that meet
+/// specific conditions. The conditions can be based either on direct comparison with a value
+/// or on matching elements in an optional condition array.
+///
+/// # Parameters
+/// - `array`: A mutable reference to the array to be modified (`GxArrayViewMut<T>`)
+/// - `val_cond`: The value to compare against when no condition array is provided
+/// - `val_add`: The value to add to elements that meet the condition
+/// - `add_on_true`: Determines whether to add when the condition is true (`true`) or false (`false`)
+/// - `array_cond`: An optional reference to a condition array (`GxArrayView<C>`)
+/// - `array_cond_val`: The value to match in the condition array when provided
+///
+/// # Returns
+/// - `Ok(())` if the operation succeeds
+/// - `Err(String)` if:
+///   - The input array and condition array have different sizes
+///   - Only one of `array_cond` or `array_cond_val` is provided
+///
+/// # Behavior
+/// - When `add_on_true` is `true`:
+///   - With `array_cond`: Adds to elements where `array_cond` matches `array_cond_val`
+///   - Without `array_cond`: Adds to elements equal to `val_cond`
+/// - When `add_on_true` is `false`:
+///   - With `array_cond`: Adds to elements where `array_cond` does not match `array_cond_val`
+///   - Without `array_cond`: Adds to elements not equal to `val_cond`
+#[inline(always)]
+pub fn array1_add<T, C>(
+        array: &mut GxArrayViewMut<'_, T>,
+        val_cond: T,
+        val_add: T,
+        add_on_true: bool,
+        array_cond: Option<&GxArrayView<'_, C>>,
+        array_cond_val: Option<C>,
+        ) -> Result<(), String>
+where
+    T: Copy + PartialEq + Default + std::ops::Add<Output = T>,
+    C: Copy + PartialEq,
+{
+    // Check that both array_cond and array_cond_val are given if one is given
+    if array_cond.is_some() != array_cond_val.is_some() {
+        return Err("Both array_cond and array_cond_val must be provided together or omitted together".to_string());
+    }
+
+    // Case of array_cond is provided
+    if let Some(cond_array) = array_cond {
+        if array.data.len() != cond_array.data.len() {
+            return Err("Both array and array_cond must have same size.".to_string());
+        }
+        // Get array_cond_val value
+        let cond_val = array_cond_val.unwrap();
+        
+        if add_on_true {
+            // Browse both arrays
+            for (elem, &elem_cond) in array.data.iter_mut().zip(cond_array.data.iter()) {
+                if elem_cond == cond_val {
+                    *elem = *elem + val_add;
+                }
+            }
+        } else {
+            // Browse both arrays
+            for (elem, &elem_cond) in array.data.iter_mut().zip(cond_array.data.iter()) {
+                if elem_cond != cond_val {
+                    *elem = *elem + val_add;
+                }
+            }
+        }
+    }
+    // Case of array_cond is omitted
+    else {
+        if add_on_true {
+            for elem in array.data.iter_mut() {
+                if *elem == val_cond {
+                    *elem = *elem + val_add;
+                }
+            }
+        } else {
+            for elem in array.data.iter_mut() {
+                if *elem != val_cond {
+                    *elem = *elem + val_add;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Add a scalar to values in a 1D array within a specified window, based on a conditional value or an optional condition array.
+///
+/// This function modifies elements in a 2D grid stored as a 1D array, operating only within the window
+/// defined by `win`. The modifications are performed based on either direct comparison with a value
+/// or on matching elements in an optional condition array.
+/// 
+/// # Type Parameters
+/// - `T`: The element type of the main array. Must implement `Copy` and `PartialEq`.
+/// - `C`: The element type of the optional condition array. Must implement `Copy` and `PartialEq`.
+///
+/// # Parameters
+/// - `array`: A mutable reference to a `GxArrayViewMut<T>`, which will be modified in place.
+/// - `win`: A `GxArrayWindow` defining the sub-region of `array` where modifications will be applied.
+/// - `val_cond`: The value to compare against when no condition array is provided
+/// - `val_add`: The value to add to elements that meet the condition
+/// - `array_cond`: An optional reference to a condition array (`GxArrayView<C>`).
+/// - `array_cond_val`: The value to match in `array_cond` when provided.
+///
+/// # Returns
+/// - `Ok(())` if the operation is successful.
+/// - `Err(String)` if `array` and `array_cond` have different sizes, 
+///   if only one of `array_cond` or `array_cond_val` is provided, 
+///   or if `win` is invalid for `array`.
+///
+/// # Behavior
+/// - When `add_on_true` is `true`:
+///   - With `array_cond`: Adds to elements where `array_cond` matches `array_cond_val`
+///   - Without `array_cond`: Adds to elements equal to `val_cond`
+/// - When `add_on_true` is `false`:
+///   - With `array_cond`: Adds to elements where `array_cond` does not match `array_cond_val`
+///   - Without `array_cond`: Adds to elements not equal to `val_cond`
+#[inline(always)]
+pub fn array1_add_win2<T, C>(
+        array: &mut GxArrayViewMut<'_, T>,
+        win: &GxArrayWindow,
+        val_cond: T,
+        val_add: T,
+        add_on_true: bool,
+        array_cond: Option<&GxArrayView<'_, C>>,
+        array_cond_val: Option<C>,
+        ) -> Result<(), String>
+where
+    T: Copy + PartialEq + Default + std::ops::Add<Output = T>,
+    C: Copy + PartialEq,
+{
+    // Check that both array_cond and array_cond_val are given if one is given
+    if array_cond.is_some() != array_cond_val.is_some() {
+        return Err("Both array_cond and array_cond_val must be provided together or omitted together".to_string());
+    }
+    
+    if let Err(e) = win.validate_with_array(array) {
+        return Err(e.to_string());
+    }
+
+    let mut row_offset = win.start_row * array.ncol;
+    
+    // Case of array_cond is provided
+    if let Some(cond_array) = array_cond {
+        if array.data.len() != cond_array.data.len() {
+            return Err("Both array and array_cond must have same size.".to_string());
+        }
+        // Get array_cond_val value
+        let cond_val = array_cond_val.unwrap();
+        
+        if add_on_true {
+            // Main loop
+            for _c_row in win.start_row..=win.end_row {
+                for c_col in win.start_col..=win.end_col {
+                    let i = row_offset + c_col;
+                    if cond_array.data[i] == cond_val {
+                        array.data[i] = array.data[i] + val_add;
+                    }
+                }
+                row_offset += array.ncol;
+            }
+        } else {
+            // Main loop
+            for _c_row in win.start_row..=win.end_row {
+                for c_col in win.start_col..=win.end_col {
+                    let i = row_offset + c_col;
+                    if cond_array.data[i] != cond_val {
+                        array.data[i] = array.data[i] + val_add;
+                    }
+                }
+                row_offset += array.ncol;
+            }
+        }
+    }
+    // Case of array_cond is omitted
+    else {
+        if add_on_true {
+            // Main loop
+            for _c_row in win.start_row..=win.end_row {
+                for c_col in win.start_col..=win.end_col {
+                    let i = row_offset + c_col;
+                    if array.data[i] == val_cond {
+                        array.data[i] = array.data[i] + val_add;
+                    }
+                }
+                row_offset += array.ncol;
+            }
+        } else {
+            // Main loop
+            for _c_row in win.start_row..=win.end_row {
+                for c_col in win.start_col..=win.end_col {
+                    let i = row_offset + c_col;
+                    if array.data[i] != val_cond {
+                        array.data[i] = array.data[i] + val_add;
+                    }
+                }
+                row_offset += array.ncol;
+            }
+        }
+    }
+    Ok(())
+}
+
+
 /*
 /// Function window_iter_1 - 1 variable optimized
 /// Get an iterator on an 1 variable array given a window
@@ -289,3 +495,266 @@ fn window_iter_2var<'a, T>(
     })
 }
 */
+
+
+#[cfg(test)]
+mod gx_array_utils_tests {
+    use super::*;
+    use crate::core::gx_array::{GxArrayWindow, GxArrayView, GxArrayViewMut};
+    
+    /// Checks if two slices of f64 values are approximately equal within a given tolerance.
+    ///
+    /// # Arguments
+    /// * `a` - First slice of f64 values.
+    /// * `b` - Second slice of f64 values.
+    /// * `tol` - The allowed tolerance for differences.
+    ///
+    /// # Returns
+    /// * `true` if all corresponding elements of `a` and `b` differ by at most `tol`, otherwise `false`.
+    fn approx_eq(a: &[f64], b: &[f64], tol: f64) -> bool {
+        a.iter()
+            .zip(b.iter())
+            .all(|(x, y)| (*x - *y).abs() <= tol)
+    }
+
+    #[test]
+    fn test_array1_add_with_condition_array() {
+        // Test with condition array
+        // Input array - it will be cloned for each test
+        let data_in = [ 0.0, 1.0, 2.0,
+                        10.0, 20.0, 40.0,
+                        100.0, 1000.0, 10000.0 ];
+                        
+        // Condition array
+        let cond_data_in = [1, 0, 0,
+                             0, 1, 0,
+                             0, 0, 0];
+        let cond_array_in = GxArrayView::new(&cond_data_in, 1, 3, 3);
+        
+        let val_add = 10.0;
+        
+        // expected_array_on_true
+        let expected_data_on_true = [ 10.0, 1.0, 2.0,
+                        10.0, 30.0, 40.0,
+                        100.0, 1000.0, 10000.0 ];
+                        
+        // expected_array_on_false
+        let expected_data_on_false = [ 0.0, 11.0, 12.0,
+                        20.0, 20.0, 50.0,
+                        110.0, 1010.0, 10010.0 ];
+        
+        // Test add_on_true = true
+        { 
+            let mut data_in_clone = data_in.clone();
+            let mut array_in = GxArrayViewMut::new(&mut data_in_clone, 1, 3, 3);
+
+            assert!(array1_add::<f64, u8>(
+                &mut array_in,
+                0., // val_cond (not used in this case)
+                val_add,
+                true,
+                Some(&cond_array_in),
+                Some(1)
+            ).is_ok());
+
+            assert_eq!(data_in_clone, expected_data_on_true);
+        }
+        
+        // Test add_on_true = false
+        {
+            let mut data_in_clone = data_in.clone();
+            let mut array_in = GxArrayViewMut::new(&mut data_in_clone, 1, 3, 3);
+            
+            assert!(array1_add::<f64, u8>(
+                &mut array_in,
+                0., // val_cond (not used in this case)
+                val_add,
+                false,
+                Some(&cond_array_in),
+                Some(1)
+            ).is_ok());
+
+            assert_eq!(data_in_clone, expected_data_on_false);
+        }
+    }
+
+    #[test]
+    fn test_array1_add_without_condition_array() {
+        // Test with condition array
+        // Input array - it will be cloned for each test
+        let data_in = [ 0.0, 1.0, 2.0,
+                        10.0, 20.0, 40.0,
+                        100.0, 1000.0, 10000.0 ];
+        let val_cond = 1.0;        
+        let val_add = 10.0;
+        
+        // expected_array_on_true
+        let expected_data_on_true = [ 0.0, 11.0, 2.0,
+                        10.0, 20.0, 40.0,
+                        100.0, 1000.0, 10000.0 ];
+                        
+        // expected_array_on_false
+        let expected_data_on_false = [ 10.0, 1.0, 12.0,
+                        20.0, 30.0, 50.0,
+                        110.0, 1010.0, 10010.0 ];
+        
+        // Test add_on_true = true
+        { 
+            let mut data_in_clone = data_in.clone();
+            let mut array_in = GxArrayViewMut::new(&mut data_in_clone, 1, 3, 3);
+
+            assert!(array1_add::<f64, u8>(
+                &mut array_in,
+                val_cond,
+                val_add,
+                true,
+                None,
+                None
+            ).is_ok());
+
+            assert_eq!(data_in_clone, expected_data_on_true);
+        }
+        
+        // Test add_on_true = false
+        {
+            let mut data_in_clone = data_in.clone();
+            let mut array_in = GxArrayViewMut::new(&mut data_in_clone, 1, 3, 3);
+            
+            assert!(array1_add::<f64, u8>(
+                &mut array_in,
+                val_cond,
+                val_add,
+                false,
+                None,
+                None
+            ).is_ok());
+
+            assert_eq!(data_in_clone, expected_data_on_false);
+        }
+    }
+    
+    
+    #[test]
+    fn test_array1_add_win2_with_condition_array() {
+        // Test with condition array
+        // Input array - it will be cloned for each test
+        let data_in = [ 0.0, 1.0, 2.0,
+                        10.0, 20.0, 40.0,
+                        100.0, 1000.0, 10000.0 ];
+                        
+        // Condition array
+        let cond_data_in = [0, 1, 0,
+                             0, 0, 0,
+                             0, 0, 0];
+        let cond_array_in = GxArrayView::new(&cond_data_in, 1, 3, 3);
+        
+        let val_add = 10.0;
+        
+        let win = GxArrayWindow{ start_row: 0, end_row: 0, start_col: 1, end_col: 2 };
+        
+        // expected_array_on_true
+        let expected_data_on_true = [ 0.0, 11.0, 2.0,
+                        10.0, 20.0, 40.0,
+                        100.0, 1000.0, 10000.0 ];
+                        
+        // expected_array_on_false
+        let expected_data_on_false = [ 0.0, 1.0, 12.0,
+                        10.0, 20.0, 40.0,
+                        100.0, 1000.0, 10000.0 ];
+        
+        // Test add_on_true = true
+        { 
+            let mut data_in_clone = data_in.clone();
+            let mut array_in = GxArrayViewMut::new(&mut data_in_clone, 1, 3, 3);
+
+            assert!(array1_add_win2::<f64, u8>(
+                &mut array_in,
+                &win,
+                -9.,
+                val_add,
+                true,
+                Some(&cond_array_in),
+                Some(1)
+            ).is_ok());
+
+            assert_eq!(data_in_clone, expected_data_on_true);
+        }
+        
+        // Test add_on_true = false
+        {
+            let mut data_in_clone = data_in.clone();
+            let mut array_in = GxArrayViewMut::new(&mut data_in_clone, 1, 3, 3);
+            
+            assert!(array1_add_win2::<f64, u8>(
+                &mut array_in,
+                &win,
+                -9.,
+                val_add,
+                false,
+                Some(&cond_array_in),
+                Some(1)
+            ).is_ok());
+
+            assert_eq!(data_in_clone, expected_data_on_false);
+        }
+    }
+
+    #[test]
+    fn test_array1_add_win2_without_condition_array() {
+        // Test with condition array
+        // Input array - it will be cloned for each test
+        let data_in = [ 0.0, 1.0, 2.0,
+                        10.0, 20.0, 40.0,
+                        100.0, 1000.0, 10000.0 ];
+        let val_cond = 1.0;        
+        let val_add = 10.0;
+        
+        let win = GxArrayWindow{ start_row: 0, end_row: 0, start_col: 1, end_col: 2 };
+        
+        // expected_array_on_true
+        let expected_data_on_true = [ 0.0, 11.0, 2.0,
+                        10.0, 20.0, 40.0,
+                        100.0, 1000.0, 10000.0 ];
+                        
+        // expected_array_on_false
+        let expected_data_on_false = [ 0.0, 1.0, 12.0,
+                        10.0, 20.0, 40.0,
+                        100.0, 1000.0, 10000.0 ];
+        
+        // Test add_on_true = true
+        { 
+            let mut data_in_clone = data_in.clone();
+            let mut array_in = GxArrayViewMut::new(&mut data_in_clone, 1, 3, 3);
+
+            assert!(array1_add_win2::<f64, u8>(
+                &mut array_in,
+                &win,
+                val_cond,
+                val_add,
+                true,
+                None,
+                None
+            ).is_ok());
+
+            assert_eq!(data_in_clone, expected_data_on_true);
+        }
+        
+        // Test add_on_true = false
+        {
+            let mut data_in_clone = data_in.clone();
+            let mut array_in = GxArrayViewMut::new(&mut data_in_clone, 1, 3, 3);
+            
+            assert!(array1_add_win2::<f64, u8>(
+                &mut array_in,
+                &win,
+                val_cond,
+                val_add,
+                false,
+                None,
+                None
+            ).is_ok());
+
+            assert_eq!(data_in_clone, expected_data_on_false);
+        }
+    }
+}
