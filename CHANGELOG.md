@@ -1,12 +1,19 @@
 # CHANGELOG
 
+
+## [0.4.4] - yyyy-mm-dd
+
+### Fixed
+- **Dependencies**: Fixed missing dependancy to shapely in pyproject.toml. 
+
+
 ## [0.4.3] - 2025-10-21
 
 ### [Unreleased]
 - Documentation for antialiasing filter creation
 
 ### Fixed
-- **Documentation**: Fix style errors for contributing guidelines.
+- **Documentation**: Fixed style errors for contributing guidelines.
 
 
 ## [0.4.2] - 2025-10-20
