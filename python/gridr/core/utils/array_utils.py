@@ -26,8 +26,15 @@ from typing import Any, Literal, NoReturn, Optional, Tuple, Union
 
 import numpy as np
 import rasterio
+
 from gridr.cdylib import (
     PyArrayWindow2,
+    py_array1_add_f32_i8,
+    py_array1_add_f32_u8,
+    py_array1_add_f64_i8,
+    py_array1_add_f64_u8,
+    py_array1_add_i8,
+    py_array1_add_u8,
     py_array1_replace_f32_i8,
     py_array1_replace_f32_u8,
     py_array1_replace_f64_i8,
@@ -162,6 +169,125 @@ def array_replace(
         )
 
 
+def array_add(
+    array: np.ndarray,
+    val_cond: Union[int, float],
+    val_add: Union[int, float],
+    add_on_true: bool,
+    array_cond: Optional[np.ndarray] = None,
+    array_cond_val: Optional[Union[int, float]] = None,
+    win: Optional[np.ndarray] = None,
+) -> NoReturn:
+    """Add a scalar to elements within an array in-place based on specified
+    conditions.
+
+    This method is a Python wrapper around the Rust function
+    `py_array1_add_*`, designed for efficient in-place modification of NumPy
+    arrays. It allows conditional replacement based on either the `array` itself
+    or an optional `array_cond` (condition array).
+
+    Parameters
+    ----------
+    array : numpy.ndarray
+        The array into which elements are replaced in-place.
+        Must be C-contiguous and have a `dtype` of `int8`, `uint8`, `float32`,
+        or `float64`.
+
+    val_cond : int or float
+        The primary condition value. Elements in `array` (or `array_cond` if
+        provided) equal to `val_cond` will be affected.
+
+    val_add : int or float
+        The value to add to elements with respect to the condition and the
+        behaviour defined by `add_on_true`.
+
+    add_on_true : bool
+        The condition's behaviour : determines whether to add on elements that
+        satisfy the condition (`true`) or do not satisfy the condition
+        (`false`).
+
+    array_cond : numpy.ndarray, optional
+        An optional 1D or 2D array on which to apply the condition. If provided,
+        the operation in `array` is based on the values in `array_cond`. Must
+        have a `dtype` of `int8` or `uint8`. Defaults to `None`, in which case
+        the `array` itself is used for the condition.
+
+    array_cond_val : int or float, optional
+        The condition value to use if `array_cond` is defined. This value is
+        compared against elements in `array_cond`. This parameter is required
+        if `array_cond` is provided. Defaults to `None`.
+
+    win : numpy.ndarray, optional
+        A window `win` to restrict the operation to a specific region of the
+        `array`.
+        This is a 2D NumPy array where each row represents a dimension and
+        contains `(min_idx, max_idx)`. **Both `min_idx` and `max_idx` are
+        inclusive**, adhering to the GridR's "window" convention. The window's
+        dimensions must match those of the `array`. Defaults to `None`, meaning
+        the operation applies to the entire array.
+
+    Returns
+    -------
+    NoReturn
+        This function modifies the `array` in-place and does not return any
+        value.
+
+    Raises
+    ------
+    AssertionError
+        If `array`'s `dtype` is not one of `int8`, `uint8`, `float32`, or
+        `float64`.
+
+    AssertionError
+        If `array` is not C-contiguous (`array.flags.c_contiguous` is `False`).
+
+    AssertionError
+        If `array_cond` is provided and its `dtype` is not `int8` or `uint8`.
+
+    AssertionError
+        If `array_cond` is provided but `array_cond_val` is `None`.
+
+    AssertionError
+        If `array_cond_val` is provided but `array_cond` is `None`.
+
+    """
+    assert array.dtype in (np.int8, np.uint8, np.float32, np.float64)
+    assert array.flags.c_contiguous is True
+    if array_cond is not None:
+        assert array_cond.dtype in (np.int8, np.uint8)
+        assert array_cond_val is not None
+    if array_cond_val is not None:
+        assert array_cond is not None
+
+    py_window = None
+    if win is not None:
+        py_window = PyArrayWindow2(
+            start_row=win[0][0], end_row=win[0][1], start_col=win[1][0], end_col=win[1][1]
+        )
+
+    nrow, ncol = array.shape
+    array = array.reshape(-1)
+    if array_cond is not None:
+        array_cond = array_cond.reshape(-1)
+
+    py_array_add_func = {
+        (np.dtype("int8"), np.dtype("int8")): py_array1_add_i8,
+        (np.dtype("float32"), np.dtype("int8")): py_array1_add_f32_i8,
+        (np.dtype("float64"), np.dtype("int8")): py_array1_add_f64_i8,
+        (np.dtype("uint8"), np.dtype("uint8")): py_array1_add_u8,
+        (np.dtype("float32"), np.dtype("uint8")): py_array1_add_f32_u8,
+        (np.dtype("float64"), np.dtype("uint8")): py_array1_add_f64_u8,
+    }
+    if array_cond is not None:
+        py_array_add_func[(array.dtype, array_cond.dtype)](
+            array, nrow, ncol, val_cond, val_add, add_on_true, array_cond, array_cond_val, py_window
+        )
+    else:
+        py_array_add_func[(array.dtype, array.dtype)](
+            array, nrow, ncol, val_cond, val_add, add_on_true, None, None, py_window
+        )
+
+
 def is_clip_required(in_dtype: np.dtype, out_dtype: np.dtype) -> bool:
     """
     Determines if clipping is required when converting between data types.
@@ -228,15 +354,15 @@ def is_clip_to_dtype_limits_safe(in_dtype: np.dtype, out_dtype: np.dtype) -> boo
     when clipping values to the target type's limits.
 
     The function performs the following checks:
-    
+
         1. Only floating-point input types are considered for this check (integer inputs
            are assumed to be safe by default).
-       
+
         2. Checks if clipping is actually required between the input and output types.
-    
+
         3. Attempts to convert the maximum value of the output type to the input type and convert it
            back to the output type.
-       
+
         4. If this conversion results in an OverflowError or if the converted value
            doesn't match the expected maximum value of the output type, returns False.
 

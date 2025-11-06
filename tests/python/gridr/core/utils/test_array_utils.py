@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 
 from gridr.core.utils.array_utils import (
+    array_add,
     array_convert,
     array_replace,
     is_clip_required,
@@ -47,10 +48,19 @@ ARRAY_F32_00_val_cond = 98
 ARRAY_F32_00_val_true = 999
 ARRAY_F32_00_expected_cond[ARRAY_COND_U8 == ARRAY_F32_00_val_cond] = ARRAY_F32_00_val_true
 
+ARRAY_F32_00_expected_cond_add_on_true_true = np.copy(ARRAY_F32_00)
+ARRAY_F32_00_expected_cond_add_on_true_true[ARRAY_COND_U8 == ARRAY_F32_00_val_cond] += 10
+
+ARRAY_F32_00_expected_cond_add_on_true_false = np.copy(ARRAY_F32_00)
+ARRAY_F32_00_expected_cond_add_on_true_false[ARRAY_COND_U8 != ARRAY_F32_00_val_cond] += 10
+
 ARRAY_F64_00_expected_cond = np.copy(ARRAY_F64_00)
 ARRAY_F64_00_val_cond = 98
 ARRAY_F64_00_val_true = 9999
 ARRAY_F64_00_expected_cond[ARRAY_COND_U8 == ARRAY_F64_00_val_cond] = ARRAY_F64_00_val_true
+
+ARRAY_F64_00_expected_cond_add_on_true_true = np.copy(ARRAY_F64_00)
+ARRAY_F64_00_expected_cond_add_on_true_true[ARRAY_COND_U8 == ARRAY_F64_00_val_cond] += 10
 
 ARRAY_CONVERT_DATA = {
     "int8": np.array([-128, -1, 0, 1, 127], dtype=np.int8),
@@ -175,6 +185,87 @@ class TestArrayUtils:
                 assert np.all(array_copy == expected_array)
             else:
                 assert np.all(array_copy[slices] == expected_array[slices])
+
+    @pytest.mark.parametrize(
+        "data, expected",
+        [
+            ((ARRAY_I8_00, 0, 0, True, None, None), ARRAY_I8_00),
+            ((ARRAY_I8_00, 0, 0, False, None, None), ARRAY_I8_00),
+            ((ARRAY_I8_00, 0, 10, True, None, None), np.where(ARRAY_I8_00 == 0, 10, 1)),
+            ((ARRAY_I8_00, 0, 10, False, None, None), np.where(ARRAY_I8_00 != 0, 11, 0)),
+            ((ARRAY_U8_00, 0, 0, True, None, None), ARRAY_I8_00),
+            (
+                (ARRAY_F64_00, 0, 0, True, None, None),
+                KeyError,
+            ),  # Test on value for f64 (and f32) is not implemented
+            ((ARRAY_I32_00, 0, 0, True, None, None), AssertionError),
+            (
+                (
+                    ARRAY_F32_00,
+                    0,
+                    10,
+                    True,
+                    ARRAY_COND_U8,
+                    ARRAY_F32_00_val_cond,
+                ),
+                ARRAY_F32_00_expected_cond_add_on_true_true,
+            ),
+            (
+                (
+                    ARRAY_F32_00,
+                    0,
+                    10,
+                    False,
+                    ARRAY_COND_U8,
+                    ARRAY_F32_00_val_cond,
+                ),
+                ARRAY_F32_00_expected_cond_add_on_true_false,
+            ),
+            (
+                (
+                    ARRAY_F64_00,
+                    0,
+                    10,
+                    True,
+                    ARRAY_COND_U8,
+                    ARRAY_F64_00_val_cond,
+                ),
+                ARRAY_F64_00_expected_cond_add_on_true_true,
+            ),
+        ],
+    )
+    @pytest.mark.parametrize("win", [None, WIN_00])
+    def test_array_add(self, data, expected, win):
+        """Test array_replace method"""
+        array, val_cond, val_add, add_on_true, array_cond, array_val_cond = data
+        expected_array = expected
+        window = win
+        # Copy input array in order to not affect the global variable
+        array_copy = np.copy(array)
+
+        if window is not None:
+            expected_array_win = np.copy(array)
+            win_slice = (
+                slice(WIN_00[0][0], WIN_00[0][1] + 1),
+                slice(WIN_00[1][0], WIN_00[1][1] + 1),
+            )
+            try:
+                expected_array_win[win_slice] = expected_array[win_slice]
+                expected_array = expected_array_win
+            except TypeError:
+                pass
+
+        try:
+            array_add(
+                array_copy, val_cond, val_add, add_on_true, array_cond, array_val_cond, window
+            )
+        except Exception as e:
+            if isinstance(e, expected):
+                pass
+            else:
+                raise
+        else:
+            assert np.all(array_copy == expected_array)
 
     @pytest.mark.parametrize(
         "in_type, out_type, expected",
