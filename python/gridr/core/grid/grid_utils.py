@@ -20,7 +20,7 @@
 """
 Grid utils module
 """
-from typing import Optional, Tuple, Union
+from typing import NoReturn, Optional, Tuple, Union
 
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
@@ -30,7 +30,7 @@ from gridr.cdylib import (
     PyGridGeometriesMetricsF64,
     py_array1_compute_resampling_grid_geometries_f64_f64,
 )
-from gridr.core.utils.array_utils import ArrayProfile
+from gridr.core.utils.array_utils import ArrayProfile, array_add
 from gridr.core.utils.array_window import (
     window_apply,
     window_check,
@@ -118,10 +118,14 @@ def array_compute_resampling_grid_geometries(
 
     Raises
     ------
+
     Exception
         If the underlying Rust function
         `py_array1_compute_resampling_grid_geometries_f64_*` is not available
         for the provided input types.
+
+    Exception
+        If the `win` is outside of the array domain.
 
     Notes
     -----
@@ -202,6 +206,166 @@ def array_compute_resampling_grid_geometries(
             grid_win=py_grid_win,
         )
     return ret
+
+
+def array_shift_grid_coordinates(
+    grid_row: np.ndarray,
+    grid_col: np.ndarray,
+    grid_shift: Union[Tuple[int, int], Tuple[float, float]],
+    win: Optional[np.ndarray] = None,
+    grid_mask: Optional[np.ndarray] = None,
+    grid_mask_valid_value: Optional[int] = 1,
+    grid_nodata: Optional[float] = None,
+) -> NoReturn:
+    """Shift a resampling grid by adding a scalar values in both row and column
+    dimentions.
+
+    This method uses the core.utils.array_utils.array_add that wraps Rust
+    functions (`py_array1_add_*`) in order to stricly oper inplace with no
+    temporary memory allocation.
+
+    Parameters
+    ----------
+    grid_row : np.ndarray
+        A 2D array representing the row coordinates of the target grid,
+        with the same shape as `grid_col`. The coordinates target row
+        positions in the `array_in` input array.
+
+    grid_col : np.ndarray
+        A 2D array representing the column coordinates of the target grid,
+        with the same shape as `grid_row`. The coordinates target column
+        positions in the `array_in` input array.
+
+    grid_shift : Union[Tuple[int, int], Tuple[float, float]]
+        A tuple specifying the scalar values to add to the grid coordinates
+        along rows and columns.
+
+    win : Optional[np.ndarray], default None
+        An optional window (or sub-region) of the grid to limit the
+        computation to a specific target region. The window is defined as a
+        list of tuples containing the first and last indices for each dimension.
+        If `None`, the entire grid is processed.
+
+    grid_mask : Optional[np.ndarray], default None
+        An optional integer mask array for the grid. Grid cells
+        corresponding to `grid_mask_valid_value` are considered **valid**;
+        all other values indicate **invalid** cells and will result in
+        `nodata_out` in the output array. If not provided, the entire grid
+        is considered valid. The grid mask must have the same shape as
+        `grid_row` and `grid_col`.
+
+    grid_mask_valid_value : Optional[int], default 1
+        The value in `grid_mask` that designates a **valid** grid cell.
+        All values in `grid_mask` that differ from this will be treated as
+        **invalid**. This parameter is required if `grid_mask` is provided.
+
+    grid_nodata : Optional[float], default None
+        The value in `grid_row` and `grid_col` to consider as **invalid**
+        cells. Note that this option is exclusive with `grid_mask`. This
+        exclusivity is managed within the core bound method.
+
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+
+    - The method is designed to support tiled processing workflows by accepting
+      an optional window parameter, enabling integration within tile-based
+      operations.
+
+    Limitations
+    -----------
+
+    - The method assumes that all input arrays (`grid_row`, `grid_col`, etc.)
+      are C-contiguous. If any of them are not, the method may raise an
+      assertion error.
+    - The method assumes that the grid-related arrays (`grid_row`, `grid_col`,
+      `grid_mask`) have the same shapes. Mismatched shapes will raise an
+      assertion error.
+    - The `win` parameter, if provided, must be compatible with the grid shape.
+      If `win` exceeds the bounds of the grid, an error may occur.
+    """
+    assert grid_row.flags.c_contiguous is True
+    assert grid_col.flags.c_contiguous is True
+
+    assert np.all(grid_row.shape == grid_col.shape)
+    assert len(grid_row.shape) == 2
+    grid_shape = grid_row.shape
+
+    if win is not None:
+        if not window_check(grid_row, win):
+            raise Exception("window outside of output grid domain")
+
+    # Manage grid_mask
+    if grid_mask is not None:
+
+        # grid mask must be c-contiguous
+        assert grid_mask.flags.c_contiguous is True
+        # grid mask must be encoded as unsigned 8 bits integer
+        assert grid_mask.dtype == np.dtype("uint8")
+        # grid mask shape must be the same has the grids
+        assert np.all(grid_mask.shape == grid_shape)
+        # Lets flat the grid mask view
+        grid_mask = grid_mask.reshape(-1)
+
+        # prepare call to array_add - here we use array_cond related options
+        # note: val_cond is not used
+        kwargs = {
+            "val_cond": 0,
+            "array_cond": grid_mask,
+            "add_on_true": True,
+            "array_cond_val": grid_mask_valid_value,
+            "win": win,
+        }
+
+        # add shift on row coordinates
+        array_add(array=grid_row, val_add=grid_shift[0], **kwargs)
+
+        # add shift on column coordinates
+        array_add(array=grid_col, val_add=grid_shift[1], **kwargs)
+
+    elif grid_nodata is not None:
+
+        # prepare call to array_add - here we use val_cond
+        # we have to add the scalars on valid data, ie. different from val_cond,
+        # hence add_on_true set to False
+        kwargs = {
+            "val_cond": grid_nodata,
+            "array_cond": None,
+            "add_on_true": False,
+            "array_cond_val": None,
+            "win": win,
+        }
+
+        # add shift on row coordinates
+        array_add(array=grid_row, val_add=grid_shift[0], **kwargs)
+
+        # add shift on column coordinates
+        array_add(array=grid_col, val_add=grid_shift[1], **kwargs)
+
+    else:
+        # no mask is given, we directly use native numpy operations
+        if win is not None:
+            # Define the window slice - we have ensured previously that the window is valid
+            win_slice = (
+                slice(win[0][0], win[0][1] + 1),
+                slice(win[1][0], win[1][1] + 1),
+            )
+
+            # The slice is 2D - reshape grid as 2D
+            grid_row = grid_row.reshape(grid_shape)
+            grid_col = grid_col.reshape(grid_shape)
+
+            # Apply the shift on window
+            grid_row[win_slice] += grid_shift[0]
+            grid_col[win_slice] += grid_shift[1]
+        else:
+            grid_row += grid_shift[0]
+            grid_col += grid_shift[1]
+
+    return None
 
 
 def interpolate_grid(

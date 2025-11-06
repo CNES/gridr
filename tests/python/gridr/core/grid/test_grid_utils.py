@@ -18,10 +18,18 @@ from scipy.interpolate import RegularGridInterpolator
 
 from gridr.core.grid.grid_utils import (
     array_compute_resampling_grid_geometries,
+    array_shift_grid_coordinates,
     build_grid,
     interpolate_grid,
     oversample_regular_grid,
 )
+
+
+def get_array3_with_nodata(arr, nodata, i, j):
+    ret = np.copy(arr)
+    ret[:, i, j] = nodata
+    return ret
+
 
 # Define test data
 GRIDx00_r4_c3 = np.array(
@@ -30,6 +38,7 @@ GRIDx00_r4_c3 = np.array(
         [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 1.0], [0.0, 1.0, 1.0]],
     ]
 )
+
 GRIDx00_r4_c3_or5_oc2 = np.array(
     [
         [
@@ -351,6 +360,141 @@ class TestGridUtils:
             )
         else:
             assert grid_metrics.transition_matrix.w2 is None
+
+    @pytest.mark.parametrize(
+        "data, expected, testing_decimal",
+        [
+            # Test idendity without mask
+            (
+                (GRIDx00_r4_c3, (0, 0), None, None, None),
+                GRIDx00_r4_c3,
+                6,
+            ),
+            # Test shift in both row and col without mask
+            (
+                (GRIDx00_r4_c3, (1, 2), None, None, None),
+                np.array([GRIDx00_r4_c3[0] + 1, GRIDx00_r4_c3[1] + 2]),
+                6,
+            ),
+            # Test shift in both row and col with grid_nodata - here we use integer type as
+            # grid_nodata with float value is not yet supported in v0.4.3
+            (
+                (
+                    get_array3_with_nodata(GRIDx00_r4_c3, -9, 0, 1).astype(np.int8),
+                    (1, 2),
+                    None,
+                    None,
+                    -9,
+                ),
+                get_array3_with_nodata(
+                    np.array([GRIDx00_r4_c3[0] + 1, GRIDx00_r4_c3[1] + 2]).astype(np.int8), -9, 0, 1
+                ),
+                6,
+            ),
+            # Test shift in both row and col with grid_nodata - here we do not cast as integer :
+            # it must raise an Exception
+            (
+                (get_array3_with_nodata(GRIDx00_r4_c3, -9, 0, 1), (1, 2), None, None, -9),
+                Exception,
+                6,
+            ),
+            # Test shift with a grid mask (full valid)
+            (
+                (GRIDx00_r4_c3, (1, 2), np.ones(GRIDx00_r4_c3[0].shape, dtype=np.uint8), 1, None),
+                np.array([GRIDx00_r4_c3[0] + 1, GRIDx00_r4_c3[1] + 2]),
+                6,
+            ),
+            # Test shift with a grid mask (full invalid)
+            (
+                (GRIDx00_r4_c3, (1, 2), np.ones(GRIDx00_r4_c3[0].shape, dtype=np.uint8), 0, None),
+                GRIDx00_r4_c3,
+                6,
+            ),
+            # Test shift with a grid mask - bad shape : expect an Assertion error
+            (
+                (GRIDx00_r4_c3, (1, 2), np.ones(GRIDx00_r4_c3.shape, dtype=np.uint8), 1, None),
+                AssertionError,
+                6,
+            ),
+            # Test shift with a grid mask - bad shape : expect an Assertion error
+            (
+                (GRIDx00_r4_c3, (1, 2), np.ones(GRIDx00_r4_c3.shape, dtype=np.int8), 1, None),
+                AssertionError,
+                6,
+            ),
+            # Test shift with a grid mask - bad type : expect an Assertion error
+            (
+                (GRIDx00_r4_c3, (1, 2), np.ones(GRIDx00_r4_c3[0].shape, dtype=np.float32), 1, None),
+                AssertionError,
+                6,
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "win",
+        (
+            (None, True),
+            (np.array([[0, 1], [0, 2]]), True),
+            (np.array([[0, 3], [0, 2]]), True),
+            (np.array([[2, 2], [2, 2]]), True),
+            (np.array([[0, 4], [0, 2]]), False),  # Outside of domain exception
+        ),
+    )
+    def test_array_shift_grid_coordinates(self, data, expected, win, testing_decimal):
+        """Test the array_shift_grid_coordinates function"""
+        grid, grid_shift, grid_mask, grid_mask_valid_value, grid_nodata = data
+        window, window_ok = win
+        expected_grid = expected
+
+        # perform a copy in order to not alter the input data for other tests
+        grid_row = np.copy(grid[0])
+        grid_col = np.copy(grid[1])
+
+        if window is not None and window_ok:
+            expected_grid_win = np.copy(grid)
+            win_slice = (
+                slice(window[0][0], window[0][1] + 1),
+                slice(window[1][0], window[1][1] + 1),
+            )
+            try:
+                expected_grid_win[0][win_slice] = expected_grid[0][win_slice]
+                expected_grid_win[1][win_slice] = expected_grid[1][win_slice]
+                expected_grid = expected_grid_win
+            except TypeError:
+                pass
+
+        try:
+            _ = array_shift_grid_coordinates(
+                grid_row=grid_row,
+                grid_col=grid_col,
+                grid_shift=grid_shift,
+                win=window,
+                grid_mask=grid_mask,
+                grid_mask_valid_value=grid_mask_valid_value,
+                grid_nodata=grid_nodata,
+            )
+        except Exception as e:
+            try:
+                if not window_ok:
+                    return
+                elif issubclass(expected_grid, Exception):
+                    # its ok but do not go further
+                    return
+                else:
+                    raise e
+            except TypeError:
+                raise e
+        else:
+            if not window_ok:
+                raise Exception("Should have raised an outside of domain exception")
+            try:
+                if issubclass(expected_grid, Exception):
+                    raise Exception("Should have raised an exception")
+            except TypeError:
+                pass
+
+        np.testing.assert_array_almost_equal(grid_row, expected_grid[0], decimal=testing_decimal)
+        np.testing.assert_array_almost_equal(grid_col, expected_grid[1], decimal=testing_decimal)
 
     @pytest.mark.parametrize(
         "data, expected, testing_decimal",

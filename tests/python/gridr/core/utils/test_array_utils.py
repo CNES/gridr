@@ -129,8 +129,8 @@ class TestArrayUtils:
         if window is not None:
             expected_array_win = np.copy(array)
             win_slice = (
-                slice(WIN_00[0][0], WIN_00[0][1] + 1),
-                slice(WIN_00[1][0], WIN_00[1][1] + 1),
+                slice(window[0][0], window[0][1] + 1),
+                slice(window[1][0], window[1][1] + 1),
             )
             try:
                 expected_array_win[win_slice] = expected_array[win_slice]
@@ -246,8 +246,8 @@ class TestArrayUtils:
         if window is not None:
             expected_array_win = np.copy(array)
             win_slice = (
-                slice(WIN_00[0][0], WIN_00[0][1] + 1),
-                slice(WIN_00[1][0], WIN_00[1][1] + 1),
+                slice(window[0][0], window[0][1] + 1),
+                slice(window[1][0], window[1][1] + 1),
             )
             try:
                 expected_array_win[win_slice] = expected_array[win_slice]
