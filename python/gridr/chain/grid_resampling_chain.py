@@ -33,7 +33,10 @@ from gridr.core.grid.grid_commons import grid_full_resolution_shape, grid_resolu
 from gridr.core.grid.grid_mask import Validity, build_mask
 from gridr.core.grid.grid_rasterize import GeometryType, GridRasterizeAlg
 from gridr.core.grid.grid_resampling import array_grid_resampling
-from gridr.core.grid.grid_utils import array_compute_resampling_grid_geometries
+from gridr.core.grid.grid_utils import (
+    array_compute_resampling_grid_geometries,
+    array_shift_grid_coordinates,
+)
 from gridr.core.utils import chunks
 from gridr.core.utils.array_utils import ArrayProfile, array_convert, array_replace
 from gridr.core.utils.array_window import (
@@ -685,7 +688,7 @@ def basic_grid_resampling_array(
                 # `array_src_geometry_origin`
 
                 cgeometry_origin = -np.asarray(array_src_origin).astype(np.float64)
-                
+
                 if array_src_geometry_origin is not None:
                     cgeometry_origin += array_src_geometry_origin
 
@@ -790,6 +793,7 @@ def basic_grid_resampling_chain(
     nodata_out: Union[int, float],
     grid_col_ds: Union[rasterio.io.DatasetReader, None] = None,
     win: Optional[np.ndarray] = None,
+    grid_shift: Optional[Union[Tuple[int, int], Tuple[float, float]]] = None,
     array_src_mask_ds: Optional[rasterio.io.DatasetReader] = None,
     array_src_mask_band: Optional[int] = None,
     array_src_mask_validity_pair: Optional[Tuple[int, int]] = None,
@@ -858,6 +862,15 @@ def basic_grid_resampling_chain(
         region of interest for the resampling. If None, the full grid extent
         is considered.
         Defaults to None.
+
+    grid_shift: tuple of int or tuple of float, optional
+        Optional shift vector applied to all grid coordinates, expressed in the
+        source image coordinate system. The first component is applied to row
+        coordinates and the second to column coordinates.
+        The parameter allows adjustement of the pixel-center convention relative
+        to that used by GridR during resampling - for example, to switch between
+        half-pixel and whole-pixel coordinate conventions, the latter being the
+        one used by GridR.
 
     array_src_mask_ds : rasterio.io.DatasetReader or None, optional
         Optional dataset representing the mask associated with `array_src_ds`.
@@ -1199,6 +1212,7 @@ def basic_grid_resampling_chain(
 
             # Read the grid mask data if given
             cread_grid_mask_arr = None
+
             if sma_in_buffer_grid_mask is not None:
                 _ = grid_mask_in_ds.read(
                     grid_mask_in_band,
@@ -1215,6 +1229,19 @@ def basic_grid_resampling_chain(
             logger.debug(f"Chunk {chunk_idx} - buffer slices as win : {cslices_as_win}")
             logger.debug(f"Chunk {chunk_idx} - target write window : {cstrip_target_win}")
             logger.debug(f"Chunk {chunk_idx} - resampling starts...")
+
+            # Apply shift on grid coordinates
+            # This is performed in place using core.grid_utils.array_shift_grid_coordinates
+            if grid_shift is not None:
+                array_shift_grid_coordinates(
+                    grid_row=cread_grid_arr[0],
+                    grid_col=cread_grid_arr[1],
+                    grid_shift=grid_shift,
+                    win=None,
+                    grid_mask=cread_grid_mask_arr,
+                    grid_mask_valid_value=grid_mask_in_unmasked_value,
+                    grid_nodata=None,
+                )
 
             # TO_CHECK
             # cin_grid_mask = sma_in_buffer_grid_mask.array[0:cread_shape[0], 0:cread_shape[1]]

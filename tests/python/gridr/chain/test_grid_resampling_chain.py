@@ -26,12 +26,14 @@ from gridr.chain.grid_resampling_chain import GEOMETRY_RASTERIZE_KWARGS, basic_g
 from gridr.core.grid.grid_commons import grid_full_resolution_shape
 from gridr.core.grid.grid_mask import Validity, build_mask
 from gridr.core.grid.grid_resampling import array_grid_resampling
+from gridr.core.grid.grid_utils import array_shift_grid_coordinates
 from gridr.core.utils.array_utils import array_convert, array_replace
 from gridr.io.common import GridRIOMode, safe_raster_open
 from gridr.misc.mandrill import mandrill
 
 UNMASKED_VALUE = Validity.VALID
 MASKED_VALUE = Validity.INVALID
+
 
 def assert_allclose_with_details(actual, desired, rtol=1e-7, atol=1e-8, err_msg=""):
     """
@@ -82,6 +84,7 @@ def assert_allclose_with_details(actual, desired, rtol=1e-7, atol=1e-8, err_msg=
             )
 
     raise AssertionError(error_message)
+
 
 def create_grid(
     nrow, ncol, origin_pos, origin_node, v_row_y, v_row_x, v_col_y, v_col_x, grid_dtype
@@ -156,6 +159,7 @@ class TestGridResamplingChain:
         grid_dtype,
         grid_mask,
         grid_shape,
+        grid_shift,
         grid_resolution,
         window,
         array_in_geometry_origin,
@@ -275,6 +279,7 @@ class TestGridResamplingChain:
                     interp=interp,
                     nodata_out=0,
                     win=window,
+                    grid_shift=grid_shift,
                     mask_out_ds=array_mask_out_ds,
                     grid_mask_in_ds=grid_mask_in_ds,
                     grid_mask_in_unmasked_value=UNMASKED_VALUE,
@@ -293,7 +298,7 @@ class TestGridResamplingChain:
                 # If array_src_geometry_pair is not None we have to compute
                 # a raster mask
                 validate_array_in_mask = array_mask_in_ds.read(1) if array_mask_in_ds else None
-                
+
                 if validate_array_in_mask is not None:
                     array_replace(
                         validate_array_in_mask,
@@ -327,13 +332,30 @@ class TestGridResamplingChain:
                     else:
                         validate_array_in_mask = geometry_mask
 
+                grid_in_row_validate = grid_in_ds.read(1)
+                grid_in_col_validate = grid_in_ds.read(2)
+
+                if grid_shift is not None:
+                    # Note : The window parameter here is defined in the grid native sampling which
+                    # is different from the `window` parameter passed to the array_grid_resampling
+                    # method.
+                    array_shift_grid_coordinates(
+                        grid_row=grid_in_row_validate,
+                        grid_col=grid_in_col_validate,
+                        grid_shift=grid_shift,
+                        win=None,
+                        grid_mask=grid_mask_in_ds.read(1) if grid_mask_in_ds else None,
+                        grid_mask_valid_value=UNMASKED_VALUE,
+                        grid_nodata=None,
+                    )
+
                 array_out_validate, mask_out_validate = array_grid_resampling(
                     interp=interp,
                     array_in=np.asarray(
                         [array_in_ds.read(b).astype(np.float64) for b in array_in_bands]
                     ),
-                    grid_row=grid_in_ds.read(1),
-                    grid_col=grid_in_ds.read(2),
+                    grid_row=grid_in_row_validate,
+                    grid_col=grid_in_col_validate,
                     grid_resolution=grid_resolution,
                     array_out=None,
                     array_out_win=None,
@@ -366,7 +388,7 @@ class TestGridResamplingChain:
                     )
                     array_out_validate = array_out_validate_tmp
 
-                #np.testing.assert_allclose(
+                # np.testing.assert_allclose(
                 assert_allclose_with_details(
                     np.squeeze(array_out_ds.read()),
                     array_out_validate,
@@ -397,7 +419,9 @@ class TestGridResamplingChain:
                 os.unlink(array_mask_out_path)
             os.rmdir(output_dir)
 
-    @pytest.mark.parametrize("interp", ["cubic", "linear"]) #, "nearest"]) => nearest not stable yet 
+    @pytest.mark.parametrize(
+        "interp", ["cubic", "linear"]
+    )  # , "nearest"]) => nearest not stable yet
     @pytest.mark.parametrize(
         "array_in, array_in_mask_positions, array_in_bands",
         [
@@ -432,6 +456,12 @@ class TestGridResamplingChain:
         "grid_shape, grid_resolution, window",
         [
             ((50, 40), (10, 10), None),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "grid_shift",
+        [
+            None,
         ],
     )
     @pytest.mark.parametrize(
@@ -483,6 +513,7 @@ class TestGridResamplingChain:
         grid_dtype,
         grid_mask,
         grid_shape,
+        grid_shift,
         grid_resolution,
         window,
         array_in_geometry_origin,
@@ -510,6 +541,7 @@ class TestGridResamplingChain:
             grid_dtype=grid_dtype,
             grid_mask=grid_mask,
             grid_shape=grid_shape,
+            grid_shift=grid_shift,
             grid_resolution=grid_resolution,
             window=window,
             array_in_geometry_origin=array_in_geometry_origin,
@@ -545,6 +577,12 @@ class TestGridResamplingChain:
         "grid_shape, grid_resolution, window",
         [
             ((50, 40), (10, 10), None),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "grid_shift",
+        [
+            None,
         ],
     )
     @pytest.mark.parametrize(
@@ -602,6 +640,7 @@ class TestGridResamplingChain:
         grid_dtype,
         grid_mask,
         grid_shape,
+        grid_shift,
         grid_resolution,
         window,
         array_in_geometry_origin,
@@ -629,6 +668,7 @@ class TestGridResamplingChain:
             grid_dtype=grid_dtype,
             grid_mask=grid_mask,
             grid_shape=grid_shape,
+            grid_shift=grid_shift,
             grid_resolution=grid_resolution,
             window=window,
             array_in_geometry_origin=array_in_geometry_origin,
@@ -664,6 +704,12 @@ class TestGridResamplingChain:
         "grid_shape, grid_resolution, window",
         [
             ((50, 40), (10, 10), None),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "grid_shift",
+        [
+            None,
         ],
     )
     @pytest.mark.parametrize(
@@ -726,6 +772,7 @@ class TestGridResamplingChain:
         grid_dtype,
         grid_mask,
         grid_shape,
+        grid_shift,
         grid_resolution,
         window,
         array_in_geometry_origin,
@@ -753,6 +800,137 @@ class TestGridResamplingChain:
             grid_dtype=grid_dtype,
             grid_mask=grid_mask,
             grid_shape=grid_shape,
+            grid_shift=grid_shift,
+            grid_resolution=grid_resolution,
+            window=window,
+            array_in_geometry_origin=array_in_geometry_origin,
+            array_in_geometry_pair=array_in_geometry_pair,
+            array_out_dtype=array_out_dtype,
+            mask_out=mask_out,
+            io_strip_size=io_strip_size,
+            io_strip_size_target=io_strip_size_target,
+            tile_shape=tile_shape,
+        )
+
+    @pytest.mark.parametrize("interp", ["cubic"])
+    @pytest.mark.parametrize(
+        "array_in, array_in_mask_positions, array_in_bands",
+        [
+            (
+                mandrill[0],
+                [
+                    (60, 160),
+                ],
+                [
+                    1,
+                ],
+            ),
+        ],
+    )
+    @pytest.mark.parametrize("array_in_dtype", [np.float64])
+    @pytest.mark.parametrize(
+        "grid_vec_row, grid_vec_col, grid_origin_pos, grid_origin_node, grid_dtype, grid_mask",
+        [((5.2, 1.2), (-2.7, 7.1), (0.3, 0.2), (0.0, 0.0), np.float64, False)],
+    )
+    @pytest.mark.parametrize(
+        "grid_shape, grid_resolution, window",
+        [
+            ((50, 40), (10, 10), None),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "grid_shift",
+        [
+            (0.0, 0.0),
+            (1.0, 2.0),
+            (0.5, 2.5),
+            # (1.8, -3.2),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "array_in_geometry_origin, array_in_geometry_pair",
+        [
+            (None, None),
+            (
+                (0.5, 0.5),
+                (
+                    None,
+                    shapely.geometry.Polygon(
+                        [(10.5, 12.5), (30.5, 12.5), (30.5, 40.5), (10.5, 40.5)]
+                    ),
+                ),
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "array_out_dtype",
+        [
+            np.dtype("float64"),
+        ],
+    )
+    @pytest.mark.parametrize("mask_out", [True])
+    # @pytest.mark.parametrize("grid_resolution", [(3, 4),])
+    @pytest.mark.parametrize(
+        "io_strip_size, io_strip_size_target, tile_shape",
+        [
+            (100, GridRIOMode.OUTPUT, (80, 200)),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "array_in_mask_validity_pair, array_in_mask_type",
+        [
+            ((Validity.VALID, Validity.INVALID), np.uint8),
+        ],
+    )
+    # @pytest.mark.parametrize("ncpu", [1, 2])
+    # @pytest.mark.parametrize("cpu_tile_shape", [(1000,1000),])
+    # @pytest.mark.parametrize("computation_dtype", [DTYPE_00,])
+    def test_grid_resampling_chain_grid_shift(
+        self,
+        request,
+        interp,
+        array_in,
+        array_in_mask_positions,
+        array_in_mask_validity_pair,
+        array_in_mask_type,
+        array_in_bands,
+        array_in_dtype,
+        grid_vec_row,
+        grid_vec_col,
+        grid_origin_pos,
+        grid_origin_node,
+        grid_dtype,
+        grid_mask,
+        grid_shape,
+        grid_shift,
+        grid_resolution,
+        window,
+        array_in_geometry_origin,
+        array_in_geometry_pair,
+        array_out_dtype,
+        mask_out,
+        io_strip_size,
+        io_strip_size_target,
+        tile_shape,
+    ):
+        """Test the grid_resampling_chain - compare results with results in the core method"""
+        self._generic_test_grid_resampling_chain(
+            request=request,
+            interp=interp,
+            array_in=array_in,
+            array_in_mask_positions=array_in_mask_positions,
+            array_in_mask_validity_pair=array_in_mask_validity_pair,
+            array_in_mask_type=array_in_mask_type,
+            array_in_bands=array_in_bands,
+            array_in_dtype=array_in_dtype,
+            grid_vec_row=grid_vec_row,
+            grid_vec_col=grid_vec_col,
+            grid_origin_pos=grid_origin_pos,
+            grid_origin_node=grid_origin_node,
+            grid_dtype=grid_dtype,
+            grid_mask=grid_mask,
+            grid_shape=grid_shape,
+            grid_shift=grid_shift,
             grid_resolution=grid_resolution,
             window=window,
             array_in_geometry_origin=array_in_geometry_origin,
