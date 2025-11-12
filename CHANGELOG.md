@@ -3,8 +3,30 @@
 
 ## [0.4.4] - yyyy-mm-dd
 
+### Added
+- **Grid Resampling Enhancement**:
+  - Added `array1_add` and `array1_add_win2` Rust functions to `gx_array_utils.rs` module
+  - Created Python bindings for `array1_add` and `array1_add_win2` Rust functions
+  - Implemented `array_add` method in `gridr.core.array_utils` with comprehensive tests
+  - Added `array_shift_grid_coordinates` method to `core.grid.grid_utils` for in-place grid coordinate shifting
+  - Introduced `grid_shift` parameter to `basic_grid_resampling_chain` to apply a global bias to grid coordinates
+  - Expanded user documentation with details about the grid shift feature
+
+### Changed
+- **Precision Handling**:
+  - Implemented controlled rounding (12 decimal digits) for internal full-resolution grid calculations in `gx_grid_resampling.rs`.
+
 ### Fixed
-- **Dependencies**: Fixed missing dependancy to shapely in pyproject.toml. 
+- **Numerical Stability**:
+  - Resolved floating-point precision issues in grid coordinate calculations in `gx_grid_resampling.rs`.
+  - Fixed nearest neighbor interpolation bug caused by precision limitations
+  - Addressed discrepancies between chain method and monolithic core method
+  
+- **Dependencies**:
+  - Added missing Shapely dependency in `pyproject.toml`
+  
+- **Documentation**:
+  - Improved CSS styling of log extracts in `grid_resampling_chain` notebook for proper line breaking
 
 
 ## [0.4.3] - 2025-10-21
