@@ -67,6 +67,17 @@
 //!
 //! - This design supports both safe and unsafe (optimized) execution paths, with clear contracts
 //!   for when each may be used.
+//!
+//! ## Grid Computation Precision Control
+//!
+//! To ensure numerical stability during grid coordinate computations, this module implements
+//! precision-controlled rounding of interpolated grid values. The bilinear interpolation process,
+//! which combines weighted grid node values with origin biases, is susceptible to floating-point
+//! accumulation errors. By rounding results to a defined precision (F64_GRID_PRECISION = 1.0e12),
+//! we maintain consistent decimal accuracy and prevent instability in subsequent calculations.
+//! This approach provides deterministic results while preserving the necessary precision for
+//! accurate grid-based computations.
+use crate::core::gx_const::F64_GRID_PRECISION;
 use crate::core::gx_array::{GxArrayWindow, GxArrayView, GxArrayViewMut};
 use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewInterpolationContextTrait, GxArrayViewInterpolationContext, GxArrayViewInterpolatorOutputMaskStrategy, NoInputMask, BinaryInputMask, NoOutputMask, BinaryOutputMask, BoundsCheck, NoBoundsCheck};
 use crate::core::gx_errors::GxError;
@@ -652,7 +663,13 @@ impl<'a> GridMesh<'a> {
 /// - (1,1) ('gmi_node_3' in code)
 /// - (1,0) ('gmi_node_4' in code)
 ///
-
+/// To ensure numerical stability during grid coordinate computations, this module implements
+/// precision-controlled rounding of interpolated grid values. The bilinear interpolation process,
+/// which combines weighted grid node values with origin biases, is susceptible to floating-point
+/// accumulation errors. By rounding results to a defined precision (F64_GRID_PRECISION = 1.0e12),
+/// we maintain consistent decimal accuracy and prevent instability in subsequent calculations.
+/// This approach provides deterministic results while preserving the necessary precision for
+/// accurate grid-based computations.
 pub fn array1_grid_resampling<'a, T, V, W, I, C>(
         interp: &I,
         grid_validity_checker: &C,
@@ -1034,7 +1051,7 @@ where
             let gmi_w4: f64 = gmi_mesh.gmi_w4 as f64;
             
             // Perform the interpolation on column + apply origin bias
-            let grid_col_val: f64 = (
+            let mut grid_col_val: f64 = (
                     grid_col_array.data[gmi_mesh.node1] * gmi_w1 +
                     grid_col_array.data[gmi_mesh.node2] * gmi_w2 +
                     grid_col_array.data[gmi_mesh.node3] * gmi_w3 +
@@ -1042,13 +1059,23 @@ where
                     ) / gmi_norm_factor + ima_in_origin_col;
             
             // Perform the interpolation on rows + apply origin bias
-            let grid_row_val: f64 = (
+            let mut grid_row_val: f64 = (
                     grid_row_array.data[gmi_mesh.node1] * gmi_w1 +
                     grid_row_array.data[gmi_mesh.node2] * gmi_w2 +
                     grid_row_array.data[gmi_mesh.node3] * gmi_w3 +
                     grid_row_array.data[gmi_mesh.node4] * gmi_w4
                     ) / gmi_norm_factor + ima_in_origin_row;
-                        
+            
+            // Rounding interpolated values to avoid numerical instability.
+            // Precision is defined by F64_GRID_PRECISION (1.0e12).
+            // This allows rounding to the desired precision while avoiding floating-point errors.
+            grid_col_val = ( F64_GRID_PRECISION * grid_col_val + 0.5 ).floor() / F64_GRID_PRECISION;
+            grid_row_val = ( F64_GRID_PRECISION * grid_row_val + 0.5 ).floor() / F64_GRID_PRECISION;
+            
+            //let grid_col_idx = out_idx % ima_out.ncol;
+            //let grid_row_idx = (out_idx - grid_col_idx) / ima_out.ncol;
+            //println!( "(out_idx {} - row {} col {} : grid_row_val = {} ; grid_col_val = {}", out_idx, grid_row_idx, grid_col_idx, grid_row_val , grid_col_val);
+            
             // Do grid interpolation here
             let _ = interp.array1_interp2(
                     &mut weights_buffer,

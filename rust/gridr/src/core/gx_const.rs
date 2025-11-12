@@ -29,3 +29,11 @@
 /// # Value `1e-5` (i.e., 0.00001) is a reasonable default for many geometric and scientific
 /// computations where a tolerance within five decimal places is acceptable.
 pub const F64_TOLERANCE: f64 = 1e-5;
+
+/// Precision factor for grid coordinate computations
+///
+/// This constant defines the decimal precision used during grid coordinate calculations.
+/// It ensures numerical stability by rounding interpolated values to a consistent precision level.
+/// The value of 1e12 provides approximately 12 decimal places of precision, which is within
+/// the 15-17 significant digits that can be accurately represented by f64.
+pub const F64_GRID_PRECISION: f64 = 1e12;
