@@ -419,9 +419,7 @@ class TestGridResamplingChain:
                 os.unlink(array_mask_out_path)
             os.rmdir(output_dir)
 
-    @pytest.mark.parametrize(
-        "interp", ["cubic", "linear"]
-    )  # , "nearest"]) => nearest not stable yet
+    @pytest.mark.parametrize("interp", ["cubic", "linear", "nearest"])
     @pytest.mark.parametrize(
         "array_in, array_in_mask_positions, array_in_bands",
         [
@@ -844,7 +842,7 @@ class TestGridResamplingChain:
             (0.0, 0.0),
             (1.0, 2.0),
             (0.5, 2.5),
-            # (1.8, -3.2),
+            (1.8, -3.2),
         ],
     )
     @pytest.mark.parametrize(
@@ -874,6 +872,7 @@ class TestGridResamplingChain:
         "io_strip_size, io_strip_size_target, tile_shape",
         [
             (100, GridRIOMode.OUTPUT, (80, 200)),
+            (0, GridRIOMode.OUTPUT, None),
         ],
     )
     @pytest.mark.parametrize(
