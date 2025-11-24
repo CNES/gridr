@@ -15,13 +15,40 @@ GridR is an Image Resampling and Filtering library.
 This is the main page of GridR's documentation.
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Contents:
-
+   :caption: Getting started
+   :maxdepth: 1
+   
    installation
+
+.. toctree::
+   :caption: Theoretical Foundations
+   :maxdepth: 2
+   
+   theoretical_foundations/image_geometry.rst
+   theoretical_foundations/resampling.rst
+
+.. toctree::
+   :caption: Tutorials
+   :maxdepth: 2
+   
    _notebooks/index.rst
+
+.. toctree::
+   :caption: API Reference
+   :maxdepth: 2
+   
    api_python/modules.rst
+
+.. toctree::
+   :caption: Developer's Guide
+   :maxdepth: 2
+   
    developer_guide/index.rst
+   
+.. toctree::
+   :caption: About
+   :maxdepth: 1
+   
    license
    
    

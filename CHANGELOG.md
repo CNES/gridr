@@ -1,7 +1,7 @@
 # CHANGELOG
 
 
-## [0.4.4] - yyyy-mm-dd
+## [0.x.y] - yyyy-mm-dd
 
 ### Added
 - **Grid Resampling Enhancement**:
@@ -12,9 +12,15 @@
   - Introduced `grid_shift` parameter to `basic_grid_resampling_chain` to apply a global bias to grid coordinates
   - Expanded user documentation with details about the grid shift feature
 
+- **Documentation**
+  - Initialized the "Theoretical Foundations" section with image geometry's definition and details about grid resampling convention.
+
 ### Changed
 - **Precision Handling**:
   - Implemented controlled rounding (12 decimal digits) for internal full-resolution grid calculations in `gx_grid_resampling.rs`.
+
+- **Documentation**!
+  - Changed sphinx documentation main menu organization.
 
 ### Fixed
 - **Numerical Stability**:
