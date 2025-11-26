@@ -11,6 +11,12 @@
   - Added `array_shift_grid_coordinates` method to `core.grid.grid_utils` for in-place grid coordinate shifting
   - Introduced `grid_shift` parameter to `basic_grid_resampling_chain` to apply a global bias to grid coordinates
   - Expanded user documentation with details about the grid shift feature
+  
+- **Safe Grid Source Boundaries Computation**:
+  - Added `array1_compute_resampling_grid_src_boundaries` Rust function to `gx_grid_geometry.rs` module
+  - Created Python bindings for `array1_compute_resampling_grid_src_boundaries` Rust functions
+  - Implemented `array_compute_resampling_grid_src_boundaries` method in `gridr.core.grid.grid_utils` with comprehensive tests
+  - Introduced the constant `SAFECHECK_SOURCE_BOUNDARIES` (True) to `basic_grid_resampling_chain` to determine the read window using all valid coordinates within the working grid subset.
 
 - **Documentation**
   - Initialized the "Theoretical Foundations" section with image geometry's definition and details about grid resampling convention.
@@ -23,6 +29,9 @@
   - Changed sphinx documentation main menu organization.
 
 ### Fixed
+- **Grid resampling chain**:
+  - Resolved 'panic' when adressing index out-of-bounds of the source array. This was occuring for "bad" grid that do not preserve the source topology. See *Safe Grid Source Boundaries Computation*.
+
 - **Numerical Stability**:
   - Resolved floating-point precision issues in grid coordinate calculations in `gx_grid_resampling.rs`.
   - Fixed nearest neighbor interpolation bug caused by precision limitations
