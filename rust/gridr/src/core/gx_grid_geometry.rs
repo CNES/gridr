@@ -786,6 +786,123 @@ where
     }))
 }
 
+/// Computes the resampling grid source bounding box for a given 2D grid representation.
+///
+/// This function analyzes the validity of grid points (nodes) along rows and columns and determine
+/// the source bounding box for resampling operations on grids.
+/// Unlike the `array1_compute_resampling_grid_geometries` this method compute the extrema coordinates
+/// values from all data and not only from its valid hull.
+///
+/// If provided, the computation is limited to the region defined by `win`.
+/// Otherwise, the entire arrays are processed.
+///
+/// # Type Parameters
+/// - `W`: Type of the underlying grid data elements (must implement `Copy`, `PartialEq`, `PartialOrd` and
+///   `GxToF64`)
+/// - `C`: Type implementing the `GridNodeValidator` trait, used to validate grid nodes.
+///
+/// # Arguments
+/// - `grid_row_array`: A view of the grid data structured by rows (type `GxArrayView<W>`).
+/// - `grid_col_array`: A view of the grid data structured by columns (type `GxArrayView<W>`).
+/// - `grid_validity_checker`: Reference to a validator implementing `GridNodeValidator<W>`
+///    that checks whether a given grid node is valid.
+/// - `win`: A `GxArrayWindow` defining the sub-region of grid's arrays where computation will be performed.
+///
+/// # Returns
+/// Returns a `Result` wrapping an optional `GeometryBounds<T>`:
+/// - `Ok(Some(...))` with detailed grid geometry source boundaries if valid nodes are found.
+/// - `Ok(None)` if the grid contains no valid nodes (fully invalid grid).
+/// - `Err(GxError)` on unexpected internal errors (e.g., missing expected data).
+///
+/// # Edge Cases and Limits
+/// - **Fully invalid grid:**  
+///   If no valid nodes are found anywhere in the grid (e.g., all masked or invalid), the function
+///   returns `Ok(None)`.
+///
+/// # Errors
+/// The function may return an error if expected bounding box components are missing due to logic inconsistencies.
+///
+/// # Example
+/// ```
+/// let result = array1_compute_resampling_grid_src_boundaries(
+///     &grid_row_view,
+///     &grid_col_view,
+///     &validator
+/// )?;
+/// if let Some(metrics) = result {
+///     // Use bounds.xmin, bounds.ymin, bounds.xmax or bounds.ymax
+/// } else {
+///     // Handle fully invalid grid case
+/// }
+/// ```
+pub fn array1_compute_resampling_grid_src_boundaries<W, C>(
+        grid_row_array: &GxArrayView<'_, W>,
+        grid_col_array: &GxArrayView<'_, W>,
+        grid_validity_checker: &C,
+        win: Option<GxArrayWindow>,
+        ) -> Result<Option<GeometryBounds<W>>, GxError>
+where
+    W: Copy + PartialOrd + PartialEq + Default,
+    //T: Copy + PartialOrd + PartialEq + GxToF64 + Default,
+    C: GridNodeValidator<W>,
+{
+    // Retrieve the optional window or full if win is None.
+    // This call checks the window against the array dimension and may return
+    // an error if the window is out of bounds of the array.
+    let array_win = GxArrayWindow::resolve_or_full(win, grid_row_array, true)?;
+    
+    // Variables definition
+    // Init `cidx_line` ; it stores the current absolute row index used in the 
+    // first loop on row.
+    let mut cidx_line = array_win.start_row * grid_row_array.ncol;
+    
+    let mut grid_row_value; //= grid_row_array.data[0];
+    let mut grid_col_value; // = grid_col_array.data[0];
+    
+    // Init the src bounding box - please note we lose here the orientation
+    let mut glb_col_min_src: Option<W> = None;
+    let mut glb_col_max_src: Option<W> = None;
+    let mut glb_row_min_src: Option<W> = None;
+    let mut glb_row_max_src: Option<W> = None;
+    
+    // This variable is used in order to detect a full invalid Grid
+    // In such a case, only the loop on row is performed
+    let mut full_invalid = true;
+    
+    // Loop to determine left and right valid limits
+    for _idx_row in 0..array_win.height() {
+        for idx_col in array_win.start_col..=array_win.end_col {
+            let cidx = cidx_line + idx_col;
+            
+            // Check data is valid
+            if grid_validity_checker.validate(cidx, &grid_row_array) {
+                full_invalid = false;
+                
+                grid_row_value = grid_row_array.data[cidx];
+                grid_col_value = grid_col_array.data[cidx];
+                
+                glb_col_min_src = Some(glb_col_min_src.map_or(grid_col_value, |c| min_partial(c, grid_col_value)));
+                glb_col_max_src = Some(glb_col_max_src.map_or(grid_col_value, |c| max_partial(c, grid_col_value)));
+                glb_row_min_src = Some(glb_row_min_src.map_or(grid_row_value, |c| min_partial(c, grid_row_value)));
+                glb_row_max_src = Some(glb_row_max_src.map_or(grid_row_value, |c| max_partial(c, grid_row_value)));
+            }
+        }
+        // Increment row index
+        cidx_line += grid_row_array.ncol;
+    }
+    
+    if full_invalid {
+        return Ok(None);
+    }
+    
+    Ok(Some(GeometryBounds {
+        xmin: glb_col_min_src.ok_or(GxError::UnexpectedNone{ field1: "src xmin" })?,
+        xmax: glb_col_max_src.ok_or(GxError::UnexpectedNone{ field1: "src xmax" })?,
+        ymin: glb_row_min_src.ok_or(GxError::UnexpectedNone{ field1: "src ymin" })?,
+        ymax: glb_row_max_src.ok_or(GxError::UnexpectedNone{ field1: "src ymax" })?,
+    }))
+}
+
 
 /// Unit tests module for grid geometry.
 ///
@@ -857,6 +974,68 @@ mod gx_grid_geometry_test {
             (Some(grid_metrics), Some(expected_metrics)) => {
                 // Both are Some => lets compare
                 assert!(GridGeometriesMetrics::<f64>::approx_eq(&grid_metrics, expected_metrics, 1e-7));
+                Ok(())
+            }
+            _ => {
+                // One is Some the other is None => failure !
+                Err("Mismatch between expected and actual GridGeometriesMetrics presence".into())
+            }
+        }
+    }
+    
+    /// Runs a test case for computing grid geometry source boundaries.
+    ///
+    /// This function computes the geometry source boundaries for a given grid,
+    /// then compares the result against an optional expected value.
+    ///
+    /// The test passes if:
+    /// - Both actual and expected metrics are `None`,
+    /// - Or both are `Some` and approximately equal.
+    ///
+    /// # Type parameter
+    /// - `V`: The grid node validator type implementing `GridNodeValidator<f64>`.
+    ///
+    /// # Arguments
+    /// - `array_grid_row_in`: View of grid row data (`GxArrayView<f64>`).
+    /// - `array_grid_col_in`: View of grid column data (`GxArrayView<f64>`).
+    /// - `validator`: Instance of the grid node validator.
+    /// - `expected`: Optional expected grid geometry metrics, or `None` if no expected result.
+    ///
+    /// # Returns
+    /// - `Ok(())` if the test passes,
+    /// - `Err` if the presence of actual and expected results differ,
+    ///   or if the comparison fails.
+    ///
+    /// # Possible errors
+    /// Propagates errors from the grid metrics computation function (`array1_compute_resampling_grid_src_boundaries`).
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// let result = run_grid_src_boundaries_test_case(&grid_row_view, &grid_col_view, &validator, Some(&expected_boundaries));
+    /// assert!(result.is_ok());
+    /// ```
+    fn run_grid_src_boundaries_test_case<V: GridNodeValidator<f64>>(
+        array_grid_row_in: &GxArrayView<f64>,
+        array_grid_col_in: &GxArrayView<f64>,
+        validator: &V,
+        win: Option<GxArrayWindow>,
+        expected: Option<&GeometryBounds<f64>>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        
+        let grid_src_boundaries_opt = array1_compute_resampling_grid_src_boundaries::<f64, V>(
+            array_grid_row_in,
+            array_grid_col_in,
+            validator,
+            win,
+        )?;
+        match (grid_src_boundaries_opt, expected) {
+            (None, None) => {
+                // Both are None => test OK
+                Ok(())
+            }
+            (Some(grid_src_bounds), Some(expected_src_bounds)) => {
+                // Both are Some => lets compare
+                assert!(GeometryBounds::<f64>::approx_eq(&grid_src_bounds, expected_src_bounds, 1e-7));
                 Ok(())
             }
             _ => {
@@ -1523,6 +1702,54 @@ mod gx_grid_geometry_test {
     }
     
     
+    
+    /// Tests resampling grid geometry metrics with window
+    fn run_test_array1_compute_resampling_grid_src_boundaries_5x7_win_2_4_1_2(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let nrow_in = 5;
+        let ncol_in = 7;
+        let mut grid_row = vec![0.0; nrow_in * ncol_in];
+        let mut grid_col = vec![0.0; nrow_in * ncol_in];
+
+        let win = GxArrayWindow{ start_col: 2, end_col: 4, start_row:1, end_row:2 };
+
+        // Init grid (identity from 2 - margin)
+        for irow in 0..nrow_in {
+            for icol in 0..ncol_in {                
+                if icol < win.start_col || icol > win.end_col || irow < win.start_row || irow > win.end_row {
+                    grid_row[irow * ncol_in + icol] = 100. * irow as f64;
+                    grid_col[irow * ncol_in + icol] = 100. * icol as f64;
+                }
+                else {
+                    grid_row[irow * ncol_in + icol] = irow as f64;
+                    grid_col[irow * ncol_in + icol] = icol as f64;
+                }
+            }
+        }
+
+        // Init input structures
+        let array_grid_row_in = GxArrayView::new(&grid_row, 1, nrow_in, ncol_in);
+        let array_grid_col_in = GxArrayView::new(&grid_col, 1, nrow_in, ncol_in);
+        
+        let expected = GeometryBounds {
+            xmin: win.start_col as f64,
+            xmax: win.end_col as f64,
+            ymin: win.start_row as f64,
+            ymax: win.end_row as f64,
+        };
+               
+        run_grid_src_boundaries_test_case(
+            &array_grid_row_in,
+            &array_grid_col_in,
+            &NoCheckGridNodeValidator {},
+            Some(win),
+            Some(&expected),
+        )?;
+        
+        Ok(())
+    }
+    
+    
     #[test]
     fn test_array1_compute_resampling_grid_geometries_identity_2x2_no_oversampling() -> Result<(), Box<dyn std::error::Error>> {
         run_test_array1_compute_resampling_grid_geometries_identity_2x2(1, 1)
@@ -1568,8 +1795,8 @@ mod gx_grid_geometry_test {
         run_test_array1_compute_resampling_grid_geometries_5x7_win_2_4_1_2(1, 1)
     }
     
-    /*#[test]
-    fn run_test_array1_compute_resampling_grid_geometries_5x7_win_2_4_1_2_res_3_2() -> Result<(), Box<dyn std::error::Error>> {
-        run_test_array1_compute_resampling_grid_geometries_5x7_win_2_4_1_2(3, 2)
-    }*/
+    #[test]
+    fn run_test_array1_compute_resampling_grid_src_boundaries_5x7_win_2_4_1_2_noargs() -> Result<(), Box<dyn std::error::Error>> {
+        run_test_array1_compute_resampling_grid_src_boundaries_5x7_win_2_4_1_2()
+    }
 }
