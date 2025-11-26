@@ -25,7 +25,13 @@ use numpy::{PyArray1, PyArrayMethods, Element};
 use crate::{assert_options_exclusive};
 use crate::core::gx_array::{GxArrayWindow, GxArrayView};
 use crate::core::gx_grid::{NoCheckGridNodeValidator, InvalidValueGridNodeValidator, MaskGridNodeValidator};
-use crate::core::gx_grid_geometry::{GridTransitionMatrix, GeometryBounds, GridGeometriesMetrics, array1_compute_resampling_grid_geometries};
+use crate::core::gx_grid_geometry::{
+    GridTransitionMatrix,
+    GeometryBounds,
+    GridGeometriesMetrics,
+    array1_compute_resampling_grid_geometries,
+    array1_compute_resampling_grid_src_boundaries
+};
 use crate::core::gx_const::{F64_TOLERANCE};
 use crate::core::gx_utils::{GxToF64};
 
@@ -294,6 +300,22 @@ impl PyGeometryBoundsF64 {
     }
 }
 
+impl<W> From<GeometryBounds<W>> for PyGeometryBoundsF64
+where
+    W: Into<f64>,
+{
+    fn from(native: GeometryBounds<W>) -> Self {
+        Self {
+            inner: GeometryBounds {
+                xmin: native.xmin.into(),
+                xmax: native.xmax.into(),
+                ymin: native.ymin.into(),
+                ymax: native.ymax.into(),
+            },
+        }
+    }
+}
+
 /// Python wrapper for geometrical metrics between two grids (source and destination).
 ///
 /// Includes bounding boxes, edge mappings, and the transition matrix that
@@ -333,6 +355,7 @@ pub struct PyGridGeometriesMetricsF64 {
 
     /// Bounding box of the source grid (in coordinate units).
     #[pyo3(get)]
+    #[pyo3(set)]
     pub src_bounds: PyGeometryBoundsF64,
 
     /// Interval of valid **column indices** for each **row** in the destination grid.
@@ -389,6 +412,16 @@ impl PyGridGeometriesMetricsF64 {
         }
     }
 
+/*     /// Sets the source bounds of the grid geometries metrics.
+    ///
+    /// Parameters:
+    /// - src_bounds: Bounding box of the source geometry (f64).
+    #[pyo3(name = "set_src_bounds")]
+    fn set_src_bounds(&mut self, value: PyGeometryBoundsF64) -> PyResult<()> {
+        self.src_bounds = value;
+        Ok(())
+    } */
+    
     /// String representation.
     fn __repr__(&self) -> String {
         format!(
@@ -616,6 +649,199 @@ pub fn py_array1_compute_resampling_grid_geometries_f64_f64(
             grid_col, //: &Bound<'_, PyArray1<f64>>,
             grid_shape, //: (usize, usize),
             grid_resolution, //: (usize, usize),
+            grid_mask, //: Option<&Bound<'_, PyArray1<u8>>>,
+            grid_mask_valid_value, //: Option<u8>,
+            grid_nodata, //: Option<W>,
+            grid_win, //: Option<PyArrayWindow2>,
+            )
+}
+
+
+/// Computes the resampling grid source bounding box for a given 2D grid representation.
+///
+/// This function analyzes the validity of grid points (nodes) along rows and columns and determine
+/// the source bounding box for resampling operations on grids.
+/// Unlike the `array1_compute_resampling_grid_geometries` this method compute the extrema coordinates
+/// values from all data and not only from its valid hull.
+///
+/// It takes 1D arrays representing the row and column coordinates of a grid,
+/// along with the grid's shape parameters, and optionally a mask or nodata value
+/// to validate grid nodes. It returns computed grid source boundaries as `PyGeometryBoundsF64`
+/// or `None` if the computation yields no result.
+///
+/// It wraps the `gx_grid_geometry::array1_compute_resampling_grid_src_boundaries(...)` function.
+///
+/// # Parameters
+/// - `grid_row`: A bound immutable reference to a 1D NumPy array representing the row coordinates of the grid.
+/// - `grid_col`: A bound immutable reference to a 1D NumPy array representing the column coordinates of the grid.
+/// - `grid_shape`: A tuple `(rows, cols)` defining the shape of the grid.
+/// - `grid_mask`: An optional bound immutable reference to a 1D NumPy array mask, where nodes with a specific valid value are considered valid.
+/// - `grid_mask_valid_value`: The valid value in the mask indicating valid grid nodes. Required if `grid_mask` is provided.
+/// - `grid_nodata`: An optional nodata value indicating invalid grid nodes. Mutually exclusive with `grid_mask`.
+///
+/// # Returns
+/// - `Ok(Some(PyGeometryBoundsF64))` if boundaries are successfully computed.
+/// - `Ok(None)` if no boundary could be computed.
+/// - `Err(PyErr)` if an error occurs (e.g., invalid parameters or internal computation failure).
+///
+/// # Constraints
+/// The generic type `W` must implement:
+/// - `Element` (NumPy element trait),
+/// - `Ord`, `Copy`, `PartialEq`, `Default`,
+/// - `GxToF64` (a trait converting to `f64`),
+///
+/// # Behavior
+/// - If neither `grid_mask` nor `grid_nodata` are provided, the function uses a `NoCheckGridNodeValidator` (no validation).
+/// - If `grid_mask` is provided, a `MaskGridNodeValidator` is used, and `grid_mask_valid_value` must be specified.
+/// - If `grid_nodata` is provided, an `InvalidValueGridNodeValidator` is used to exclude invalid nodes based on nodata value.
+///
+/// # Panics
+/// - If both `grid_mask` and `grid_nodata` are provided simultaneously (mutually exclusive).
+/// - If `grid_mask_valid_value` is not provided when `grid_mask` is given.
+///
+/// # Errors
+/// Returns a Python `ValueError` (`PyValueError`) if parameter validation fails or if internal computations return errors.
+///
+/// # Example
+/// ```ignore
+/// let boundaries = py_array1_compute_resampling_grid_src_boundaries_f64(
+///     &grid_row_pyarray,
+///     &grid_col_pyarray,
+///     (100, 200),
+///     Some(&grid_mask_pyarray),
+///     Some(1u8),
+///     None,
+/// )?;
+/// ```
+fn py_array1_compute_resampling_grid_src_boundaries_f64<W>(
+    grid_row: &Bound<'_, PyArray1<W>>,
+    grid_col: &Bound<'_, PyArray1<W>>,
+    grid_shape: (usize, usize),
+    grid_mask: Option<&Bound<'_, PyArray1<u8>>>,
+    grid_mask_valid_value: Option<u8>,
+    grid_nodata: Option<W>,
+    grid_win: Option<PyArrayWindow2>,
+    ) -> Result<Option<PyGeometryBoundsF64>, PyErr>
+where
+    W: Element + PartialOrd + Copy + PartialEq + Default + GxToF64 + Into<f64>,
+{
+    // Create a safe immuable array_view in order to read from the grid - row - array
+    let grid_row_view = grid_row.readonly();
+    let grid_row_slice = grid_row_view.as_slice()?;
+    let grid_row_arrayview = GxArrayView::new(grid_row_slice, 1, grid_shape.0, grid_shape.1);
+    
+    // Create a safe immuable array_view in order to read from the grid - col - array
+    let grid_col_view = grid_col.readonly();
+    let grid_col_slice = grid_col_view.as_slice()?;
+    let grid_col_arrayview = GxArrayView::new(grid_col_slice, 1, grid_shape.0, grid_shape.1);
+    
+    // Manage the optional production window (in full resolution grid coordinates system)
+    let rs_grid_win = grid_win.map(GxArrayWindow::from);
+    
+    // Manage the grid validator mode through a the `grid_validator_flag` variable.
+    // - 0 : that value corresponds to the use of a NoCheckGridMeshValidator, ie
+    //       no mask has been provided by the caller
+    // - 1 : that value corresponds to the use of a MaskGridMeshValidator, ie
+    //       a raster mask has been provided.
+    // - 2 : that value corresponds to the use of a InvalidValueGridMeshValidator, ie
+    //       a grid nodata value has been provided.
+    let mut grid_validator_flag : u8 = 0;
+    
+    // Check exclusive parameters
+    assert_options_exclusive!(grid_mask, grid_nodata, PyErr::new::<PyValueError, _>(
+        "Only one of `grid_mask` or `grid_nodata` may be provided, not both."));
+    let grid_mask_view;
+    let grid_mask_array_view = match grid_mask {
+        Some(a_mask_grid) => {
+            grid_validator_flag += 1;
+            grid_mask_view = a_mask_grid.readonly();
+            let grid_mask_slice = grid_mask_view.as_slice()?;
+            Some(GxArrayView::new(grid_mask_slice, 1, grid_shape.0, grid_shape.1))
+        }
+        None => None, 
+    };
+    // Get grid_nodata_value ; warning : if None a default value will be given
+    let grid_nodata_value = grid_nodata.map(|val| {
+        grid_validator_flag += 2;
+        val.into()
+    });
+    
+    match grid_validator_flag {
+        0 => {
+            // No validator parameter has been passed ; we set the grid_checker to the always
+            // positiv NoCheckGridMeshValidator
+            let grid_checker = NoCheckGridNodeValidator{};
+            
+            match array1_compute_resampling_grid_src_boundaries::<W, NoCheckGridNodeValidator>(
+                    &grid_row_arrayview, //grid_row_array
+                    &grid_col_arrayview, //grid_col_array
+                    &grid_checker, // grid_validity_checker
+                    rs_grid_win, // win
+               ) {
+                Ok(Some(grid_boundaries)) => Ok(Some(grid_boundaries.into())),
+                Ok(None) => Ok(None),
+                Err(e) => Err(PyValueError::new_err(e.to_string())),
+            }
+        },
+        1 => {
+            // A grid mask parameter has been passed ; we intialize a MaskGridNodeValidator
+            let mask_view = grid_mask_array_view.unwrap();
+            let mask_valid_value = grid_mask_valid_value.ok_or_else(|| PyValueError::new_err(
+                    "The argument `grid_mask_valid_value` is mandatory when using `grid_mask`"
+                ))?;
+            let grid_checker = MaskGridNodeValidator{ mask_view: &mask_view, valid_value: mask_valid_value };
+            
+            match array1_compute_resampling_grid_src_boundaries::<W, MaskGridNodeValidator>(
+                    &grid_row_arrayview, //grid_row_array
+                    &grid_col_arrayview, //grid_col_array
+                    &grid_checker, // grid_validity_checker
+                    rs_grid_win, // win
+               ) {
+                Ok(Some(grid_boundaries)) => Ok(Some(grid_boundaries.into())),
+                Ok(None) => Ok(None),
+                Err(e) => Err(PyValueError::new_err(e.to_string())),
+            }
+        },
+        2 => {
+            // A grid nodata value parameter has been passed ; we intialize an InvalidValueGridNodeValidator
+            let grid_checker = InvalidValueGridNodeValidator{
+                invalid_value: grid_nodata_value.expect("grid_nodata was None, but a value was expected"),
+                epsilon: F64_TOLERANCE
+            };
+            
+            match array1_compute_resampling_grid_src_boundaries::<W, InvalidValueGridNodeValidator>(
+                    &grid_row_arrayview, //grid_row_array
+                    &grid_col_arrayview, //grid_col_array
+                    &grid_checker, // grid_validity_checker
+                    rs_grid_win, // win
+               ) {
+                Ok(Some(grid_boundaries)) => Ok(Some(grid_boundaries.into())),
+                Ok(None) => Ok(None),
+                Err(e) => Err(PyValueError::new_err(e.to_string())),
+            }
+        },
+        _ => Err(PyValueError::new_err("Grid validator mode not implemented")),
+    }
+}
+
+/// This function calls the generic [`py_array1_compute_resampling_grid_src_boundaries_f64`] with `W = f64`.
+#[pyfunction]
+#[pyo3(signature = (grid_row, grid_col, grid_shape, grid_mask=None, grid_mask_valid_value=None, grid_nodata=None, grid_win=None))]
+#[allow(clippy::too_many_arguments)]
+pub fn py_array1_compute_resampling_grid_src_boundaries_f64_f64(
+    grid_row: &Bound<'_, PyArray1<f64>>,
+    grid_col: &Bound<'_, PyArray1<f64>>,
+    grid_shape: (usize, usize),
+    grid_mask: Option<&Bound<'_, PyArray1<u8>>>,
+    grid_mask_valid_value: Option<u8>,
+    grid_nodata: Option<f64>,
+    grid_win: Option<PyArrayWindow2>,
+    ) -> Result<Option<PyGeometryBoundsF64>, PyErr>
+{
+    py_array1_compute_resampling_grid_src_boundaries_f64::<f64>(
+            grid_row, //: &Bound<'_, PyArray1<f64>>,
+            grid_col, //: &Bound<'_, PyArray1<f64>>,
+            grid_shape, //: (usize, usize),
             grid_mask, //: Option<&Bound<'_, PyArray1<u8>>>,
             grid_mask_valid_value, //: Option<u8>,
             grid_nodata, //: Option<W>,

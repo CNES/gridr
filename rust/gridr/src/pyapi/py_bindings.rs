@@ -59,6 +59,7 @@ fn _libgridr(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<py_grid_geometry::PyGeometryBoundsF64>()?;
     m.add_class::<py_grid_geometry::PyGridGeometriesMetricsF64>()?;
     m.add_function(wrap_pyfunction!(py_grid_geometry::py_array1_compute_resampling_grid_geometries_f64_f64,m)?)?;
+    m.add_function(wrap_pyfunction!(py_grid_geometry::py_array1_compute_resampling_grid_src_boundaries_f64_f64,m)?)?;
     
     Ok(())
 
