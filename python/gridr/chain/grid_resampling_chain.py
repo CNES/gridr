@@ -35,6 +35,7 @@ from gridr.core.grid.grid_rasterize import GeometryType, GridRasterizeAlg
 from gridr.core.grid.grid_resampling import array_grid_resampling
 from gridr.core.grid.grid_utils import (
     array_compute_resampling_grid_geometries,
+    array_compute_resampling_grid_src_boundaries,
     array_shift_grid_coordinates,
 )
 from gridr.core.utils import chunks
@@ -60,6 +61,21 @@ DEFAULT_NCPU = 1
 READ_TILE_MIN_SIZE = (1000, 1000)
 
 GEOMETRY_RASTERIZE_KWARGS = {"alg": GridRasterizeAlg.RASTERIO_RASTERIZE}
+
+"""
+Performs an additional validation of the grid source boundaries to ensure topological consistency.
+
+This check computes the source boundaries from all valid grid data within the current computed
+region, verifying that the source boundaries extracted from grid metrics align with the hull border.
+When using grid metrics only, we assumes that points inside the source hull correspond to points
+within the target hull, maintaining topological integrity. If this assumption is violated, the read
+window may be insufficient, potentially causing a Rust panic when attempting to access out-of-bounds
+indices.
+
+This safety check helps prevent such runtime errors by proactively extending boundary conditions if
+required.
+"""
+SAFECHECK_SOURCE_BOUNDARIES = True
 
 
 def read_win_from_grid_metrics(
@@ -403,6 +419,9 @@ def basic_grid_resampling_array(
     def DEBUG(msg):
         logger.debug(f"{logger_msg_prefix} - {msg}")
 
+    def WARNING(msg):
+        logger.warning(f"{logger_msg_prefix} - {msg}")
+
     # Determine the minimal coarse-grid window containing the oversampled window
     # `oversamped_grid_win`.
     grid_arr_win, _ = grid_resolution_window_safe(
@@ -442,6 +461,36 @@ def basic_grid_resampling_array(
     full_nodata = True
 
     if grid_metrics:
+
+        if SAFECHECK_SOURCE_BOUNDARIES:
+            DEBUG("SAFECHECK_SOURCE_BOUNDARIES : Computing source boundaries... ")
+
+            # Compute source boundaries from all valid coordinates
+            safe_src_boundaries = array_compute_resampling_grid_src_boundaries(
+                grid_row=grid_arr[0],
+                grid_col=grid_arr[1],
+                win=grid_arr_win,
+                grid_mask=grid_mask_arr,
+                grid_mask_valid_value=grid_mask_in_unmasked_value,
+                grid_nodata=None,  # TODO : manage grid_nodata input
+            )
+            DEBUG(f"SAFECHECK_SOURCE_BOUNDARIES : {safe_src_boundaries}")
+
+            # Check that the grid preserve the source topology
+            if (
+                safe_src_boundaries.xmin < grid_metrics.src_bounds.xmin
+                or safe_src_boundaries.xmax > grid_metrics.src_bounds.xmax
+                or safe_src_boundaries.ymin < grid_metrics.src_bounds.ymin
+                or safe_src_boundaries.ymax > grid_metrics.src_bounds.ymax
+            ):
+                # Boundaries extend is required !
+                WARNING(
+                    "SAFECHECK_SOURCE_BOUNDARIES : The grid does not respect the source topology"
+                    " - the source boundaries have to be expanded"
+                )
+                # Replace the source boundaries
+                DEBUG("SAFECHECK_SOURCE_BOUNDARIES : Expanding grid metrics source boundaries... ")
+                grid_metrics.src_bounds = safe_src_boundaries
 
         array_src_profile_2d = ArrayProfile(
             shape=(array_src_ds.height, array_src_ds.width),
