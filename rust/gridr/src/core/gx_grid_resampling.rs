@@ -1072,8 +1072,15 @@ where
             grid_col_val = ( F64_GRID_PRECISION * grid_col_val + 0.5 ).floor() / F64_GRID_PRECISION;
             grid_row_val = ( F64_GRID_PRECISION * grid_row_val + 0.5 ).floor() / F64_GRID_PRECISION;
             
+            
             //let grid_col_idx = out_idx % ima_out.ncol;
             //let grid_row_idx = (out_idx - grid_col_idx) / ima_out.ncol;
+            // let kernel_center_row: i64 = (grid_row_val + 0.5).floor() as i64;
+            // let kernel_center_col: i64 = (grid_col_val + 0.5).floor() as i64;
+            // if (kernel_center_col > (ima_in.ncol - 2 - 1) as i64) || (kernel_center_row > (ima_in.nrow - 2 - 1) as i64) {
+                // println!( "warning panic will occur : input image size (nrow x ncol) : {} x {}", ima_in.nrow, ima_in.ncol);
+                // println!( "(out_idx {} - row {} col {} : grid_row_val = {} ; grid_col_val = {} ; kernel center row = {} ; kernel center col = {}", out_idx, grid_row_idx, grid_col_idx, grid_row_val , grid_col_val, kernel_center_row, kernel_center_col);
+            // }
             //println!( "(out_idx {} - row {} col {} : grid_row_val = {} ; grid_col_val = {}", out_idx, grid_row_idx, grid_col_idx, grid_row_val , grid_col_val);
             
             // Do grid interpolation here
@@ -1087,6 +1094,10 @@ where
                     nodata_val_out,
                     context,
                     );
+                    
+            // if (kernel_center_col > (ima_in.ncol - 2 - 1) as i64) || (kernel_center_row > (ima_in.nrow - 2 - 1) as i64) {
+                // println!( "panic did not occur");
+            // }
         } else {
             // do something
             for ivar in 0..ima_in.nvar {
