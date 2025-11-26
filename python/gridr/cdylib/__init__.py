@@ -31,6 +31,7 @@ from ._libgridr import (  # from py_grid_geometry
     py_array1_add_i8,
     py_array1_add_u8,
     py_array1_compute_resampling_grid_geometries_f64_f64,
+    py_array1_compute_resampling_grid_src_boundaries_f64_f64,
     py_array1_grid_resampling_f64,
     py_array1_replace_f32_i8,
     py_array1_replace_f32_u8,
@@ -61,4 +62,5 @@ __all__ = [
     "PyGeometryBoundsF64",
     "PyGridGeometriesMetricsF64",
     "py_array1_compute_resampling_grid_geometries_f64_f64",
+    "py_array1_compute_resampling_grid_src_boundaries_f64_f64",
 ]

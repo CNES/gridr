@@ -18,6 +18,7 @@ from scipy.interpolate import RegularGridInterpolator
 
 from gridr.core.grid.grid_utils import (
     array_compute_resampling_grid_geometries,
+    array_compute_resampling_grid_src_boundaries,
     array_shift_grid_coordinates,
     build_grid,
     interpolate_grid,
@@ -360,6 +361,146 @@ class TestGridUtils:
             )
         else:
             assert grid_metrics.transition_matrix.w2 is None
+
+    @pytest.mark.parametrize(
+        "data, expected, testing_decimal",
+        [
+            (
+                (GRIDx03_r4_c3, None, None, None, None),
+                (object,),
+                6,
+            ),
+            (
+                (GRIDx03_r4_c3, GRIDMASKx03_r4_c3_FULL_ZEROS, 1, None, None),
+                (None,),
+                6,
+            ),
+            (
+                (GRIDx03_r4_c3, GRIDMASKx03_r4_c3_FULL_ONES, 1, None, None),
+                (object,),
+                6,
+            ),
+            (
+                (GRIDx03_r4_c3, GRIDMASKx03_r4_c3_ONE_ONE, 1, None, None),
+                (object,),
+                6,
+            ),
+            (
+                (GRIDx03_r4_c3, GRIDMASKx03_r4_c3_FULL_ONES, 1, -999.0, None),
+                (Exception,),
+                6,
+            ),  # use sentinel value
+            (
+                (GRIDx03_r4_c3, None, None, 0, None),
+                (object,),
+                6,
+            ),  # exclude mask parameters
+            (
+                (
+                    GRIDx03_r4_c3,
+                    GRIDMASKx03_r4_c3_FULL_ONES.astype(np.float32),
+                    1,
+                    None,
+                    None,
+                ),
+                (Exception,),
+                6,
+            ),  # mask type
+            (
+                (GRIDx03_r4_c3.astype(np.float32), None, 1, None, None),
+                (Exception,),
+                6,
+            ),  # grid type
+            (
+                (GRIDx03_r4_c3, None, 1, None, np.array(((0, 3), (0, 2)))),
+                (object,),
+                6,
+            ),  # check the full window
+            (
+                (GRIDx03_r4_c3, None, 1, None, np.array(((0, 4), (0, 2)))),
+                (ValueError,),
+                6,
+            ),  # check out of bounds window
+            (
+                (GRIDx03_r4_c3, None, 1, None, np.array(((0, 0), (0, 0)))),
+                (object,),
+                6,
+            ),  # check empty window => w1 and w2 cannot be computed
+        ],
+    )
+    def test_array_compute_resampling_grid_src_boundaries(self, data, expected, testing_decimal):
+        """Test grid source boundaries computation
+
+        Args:
+            data : input data as a tuple (grid, mask, mask_value, mask_nodata, window)
+            expected: expected data as a tuple containing :
+                    - expected_grid_metrics indicator : None or True or Exception
+                    - the expected w1 vector
+                    - the expected w2 vector
+            testing_decimal: decimal precision used for np.testing.assert_array_almost_equal
+        """
+        # data : (grid, resolution, mask, mask_value, mask_nodata, window)
+        # expected : (grid_metrics (object or None), transition_matrix_w1, transition_matrix_w2)
+        grid, grid_mask, grid_mask_valid_value, grid_nodata, window = data
+        (expected_boundaries,) = expected
+
+        try:
+            grid_boundaries = array_compute_resampling_grid_src_boundaries(
+                grid_row=grid[0],
+                grid_col=grid[1],
+                win=window,
+                grid_mask=grid_mask,
+                grid_mask_valid_value=grid_mask_valid_value,
+                grid_nodata=grid_nodata,
+            )
+        except Exception as e:
+            try:
+                if issubclass(expected_boundaries, Exception):
+                    # its ok but do not go further
+                    return
+                else:
+                    raise e
+            except TypeError:
+                raise e
+        else:
+            try:
+                if issubclass(expected_boundaries, Exception):
+                    raise Exception("Should have raised an exception")
+            except TypeError:
+                pass
+
+        # Check
+        if grid_boundaries is not None and expected_boundaries is None:
+            raise Exception("Grid boundaries must have be None")
+        if grid_boundaries is None and expected_boundaries is not None:
+            raise Exception("Grid boundaries must not be None")
+        else:
+            return
+
+        grid_row = grid[0]
+        grid_col = grid[1]
+        if window is not None:
+            win_slice = (
+                slice(window[0][0], window[0][1] + 1),
+                slice(window[1][0], window[1][1] + 1),
+            )
+            grid_row = grid_row[win_slice]
+            grid_col = grid_col[win_slice]
+            if grid_mask is not None:
+                grid_mask = grid_mask[win_slice]
+
+        mask = np.ones(np.shape(grid_row), dtype=np.uint8)
+        if grid_mask is not None:
+            mask &= grid_mask == grid_mask_valid_value
+        if grid_nodata is not None:
+            mask &= grid_row != grid_nodata
+
+        indices = np.where(mask)
+
+        assert grid_boundaries.xmin == grid_col[indices].min()
+        assert grid_boundaries.xmax == grid_col[indices].max()
+        assert grid_boundaries.ymin == grid_row[indices].min()
+        assert grid_boundaries.ymax == grid_row[indices].max()
 
     @pytest.mark.parametrize(
         "data, expected, testing_decimal",
