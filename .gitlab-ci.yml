@@ -107,6 +107,9 @@ variables:
     # url générique du serveur contenant les images docker gitlab
     ARTIFACTORY_GITLAB_URL: "${ARTIFACTORY_HOST}/gitlab-docker-remote"
 
+    
+    #DEFAULT_PYTHON_IMAGE: "${ARTIFACTORY_URL}/python:${TAG_UL_IMAGE_PYTHON_DEFAULT_VERSION}"
+    DEFAULT_PYTHON_IMAGE: python:3.11.14-slim-bookworm
 
     # URL pour récupérer l'image Docker pour exécuter l'analyse décrite dans le template SAST
     CI_TEMPLATE_REGISTRY_HOST: "${ARTIFACTORY_HOST}/gitlab-docker-remote"
@@ -180,7 +183,7 @@ rust_python_init:
 
 python_init:
     stage: init
-    image: ${ARTIFACTORY_URL}/python:${TAG_UL_IMAGE_PYTHON_DEFAULT_VERSION}
+    image: ${DEFAULT_PYTHON_IMAGE}
     rules:
         # Run for tags matching vX.Y.Z pattern
         - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
@@ -389,7 +392,7 @@ package-build:
 # Stage : release
 # Deploy previously generated packages to artifactory
 .template_release_job:
-    image: ${ARTIFACTORY_URL}/python:${TAG_UL_IMAGE_PYTHON_DEFAULT_VERSION}
+    image: ${DEFAULT_PYTHON_IMAGE}
     stage: release
     rules:
         #- if: $CI_COMMIT_TAG
@@ -516,7 +519,7 @@ build_doc:
         expire_in: 1 day
 
 pages:
-    image: ${ARTIFACTORY_URL}/python:${TAG_UL_IMAGE_PYTHON_DEFAULT_VERSION}
+    image: ${DEFAULT_PYTHON_IMAGE}
     stage: doc
     rules:
         - if: $CI_COMMIT_TAG
