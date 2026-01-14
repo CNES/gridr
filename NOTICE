@@ -13,22 +13,16 @@ LICENSE file or http://www.apache.org/licenses/LICENSE-2.0 for details.
 This section lists the licenses of the Python dependencies used in GRIDR.
 
 - Dependancy: pyparsing
-  Version: 3.2.5
+  Version: 3.3.1
   Authors: Paul McGuire <ptmcg.gm+pyparsing@gmail.com>
   Website: https://github.com/pyparsing/pyparsing/
   License: MIT
 
-- Dependancy: numpy
-  Version: 2.3.4
-  Authors: Travis E. Oliphant et al.
-  Website: https://numpy.org
+- Dependancy: rasterio
+  Version: 1.4.4
+  Authors: Sean Gillies
+  Website: https://github.com/rasterio/rasterio
   License: BSD License
-
-- Dependancy: certifi
-  Version: 2025.10.5
-  Authors: Kenneth Reitz
-  Website: https://github.com/certifi/python-certifi
-  License: Mozilla Public License 2.0 (MPL 2.0)
 
 - Dependancy: typing-extensions
   Version: 4.15.0
@@ -54,17 +48,17 @@ This section lists the licenses of the Python dependencies used in GRIDR.
   Website: https://github.com/rasterio/affine
   License: BSD License
 
-- Dependancy: click
-  Version: 8.3.0
-  Authors: UNKNOWN
-  Website: https://github.com/pallets/click/
-  License: BSD-3-Clause
-
 - Dependancy: click-plugins
   Version: 1.1.1.2
   Authors: Kevin Wurster, Sean Gillies
   Website: https://github.com/click-contrib/click-plugins
   License: BSD License
+
+- Dependancy: numpy
+  Version: 2.4.1
+  Authors: Travis E. Oliphant et al.
+  Website: https://numpy.org
+  License: BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0
 
 - Dependancy: cligj
   Version: 0.7.2
@@ -73,21 +67,39 @@ This section lists the licenses of the Python dependencies used in GRIDR.
   License: BSD
 
 - Dependancy: scipy
-  Version: 1.16.2
+  Version: 1.17.0
   Authors: UNKNOWN
   Website: https://scipy.org/
   License: BSD License
 
-- Dependancy: rasterio
-  Version: 1.4.3
+- Dependancy: click
+  Version: 8.3.1
+  Authors: UNKNOWN
+  Website: https://github.com/pallets/click/
+  License: BSD-3-Clause
+
+- Dependancy: shapely
+  Version: 2.1.2
   Authors: Sean Gillies
-  Website: https://github.com/rasterio/rasterio
+  Website: https://github.com/shapely/shapely
   License: BSD License
+
+- Dependancy: certifi
+  Version: 2026.1.4
+  Authors: Kenneth Reitz
+  Website: https://github.com/certifi/python-certifi
+  License: Mozilla Public License 2.0 (MPL 2.0)
 
 
 ### Rust
 This section lists the licenses of the Rust dependencies used in GRIDR.
 
+
+- Dependancy: aho-corasick
+  Version: 1.1.4
+  Authors:  [Andrew Gallant <jamslam@gmail.com>]
+  Website:  https://github.com/BurntSushi/aho-corasick
+  License: Unlicense OR MIT
 
 - Dependancy: approx
   Version: 0.4.0
@@ -106,6 +118,12 @@ This section lists the licenses of the Rust dependencies used in GRIDR.
   Authors:  [Josh Stone <cuviper@gmail.com>]
   Website:  https://github.com/cuviper/autocfg
   License: Apache-2.0 OR MIT
+
+- Dependancy: cfg-if
+  Version: 1.0.4
+  Authors:  [Alex Crichton <alex@alexcrichton.com>]
+  Website:  https://github.com/rust-lang/cfg-if
+  License: MIT OR Apache-2.0
 
 - Dependancy: crossbeam-deque
   Version: 0.8.6
@@ -131,17 +149,65 @@ This section lists the licenses of the Rust dependencies used in GRIDR.
   Website:  https://github.com/rayon-rs/either
   License: MIT OR Apache-2.0
 
-- Dependancy: gridr
-  Version: 0.4.3
-  Authors:  CNES
-  Website:  N/A
-  License: Apache-2.0
+- Dependancy: equivalent
+  Version: 1.0.2
+  Authors:  UNKNOWN
+  Website:  https://github.com/indexmap-rs/equivalent
+  License: Apache-2.0 OR MIT
+
+- Dependancy: futures-core
+  Version: 0.3.31
+  Authors:  UNKNOWN
+  Website:  https://github.com/rust-lang/futures-rs
+  License: MIT OR Apache-2.0
+
+- Dependancy: futures-macro
+  Version: 0.3.31
+  Authors:  UNKNOWN
+  Website:  https://github.com/rust-lang/futures-rs
+  License: MIT OR Apache-2.0
+
+- Dependancy: futures-task
+  Version: 0.3.31
+  Authors:  UNKNOWN
+  Website:  https://github.com/rust-lang/futures-rs
+  License: MIT OR Apache-2.0
+
+- Dependancy: futures-timer
+  Version: 3.0.3
+  Authors:  [Alex Crichton <alex@alexcrichton.com>]
+  Website:  https://github.com/async-rs/futures-timer
+  License: MIT OR Apache-2.0
+
+- Dependancy: futures-util
+  Version: 0.3.31
+  Authors:  UNKNOWN
+  Website:  https://github.com/rust-lang/futures-rs
+  License: MIT OR Apache-2.0
+
+- Dependancy: glob
+  Version: 0.3.3
+  Authors:  [The Rust Project Developers]
+  Website:  https://github.com/rust-lang/glob
+  License: MIT OR Apache-2.0
+
+- Dependancy: hashbrown
+  Version: 0.16.1
+  Authors:  [Amanieu d&#x27;Antras <amanieu@gmail.com>]
+  Website:  https://github.com/rust-lang/hashbrown
+  License: MIT OR Apache-2.0
 
 - Dependancy: heck
   Version: 0.5.0
   Authors:  UNKNOWN
   Website:  https://github.com/withoutboats/heck
   License: MIT OR Apache-2.0
+
+- Dependancy: indexmap
+  Version: 2.12.1
+  Authors:  UNKNOWN
+  Website:  https://github.com/indexmap-rs/indexmap
+  License: Apache-2.0 OR MIT
 
 - Dependancy: indoc
   Version: 2.0.6
@@ -160,6 +226,12 @@ This section lists the licenses of the Rust dependencies used in GRIDR.
   Authors:  [bluss, R. Janis Goldschmidt]
   Website:  https://github.com/bluss/matrixmultiply/
   License: MIT OR Apache-2.0
+
+- Dependancy: memchr
+  Version: 2.7.6
+  Authors:  [Andrew Gallant <jamslam@gmail.com>, bluss]
+  Website:  https://github.com/BurntSushi/memchr
+  License: Unlicense OR MIT
 
 - Dependancy: memoffset
   Version: 0.9.1
@@ -198,7 +270,7 @@ This section lists the licenses of the Rust dependencies used in GRIDR.
   License: MIT OR Apache-2.0
 
 - Dependancy: numpy
-  Version: 0.26.0
+  Version: 0.27.1
   Authors:  [The rust-numpy Project Developers, PyO3 Project and Contributors <https://github.com/PyO3>]
   Website:  https://github.com/PyO3/rust-numpy
   License: BSD-2-Clause
@@ -207,6 +279,18 @@ This section lists the licenses of the Rust dependencies used in GRIDR.
   Version: 1.21.3
   Authors:  [Aleksey Kladov <aleksey.kladov@gmail.com>]
   Website:  https://github.com/matklad/once_cell
+  License: MIT OR Apache-2.0
+
+- Dependancy: pin-project-lite
+  Version: 0.2.16
+  Authors:  UNKNOWN
+  Website:  https://github.com/taiki-e/pin-project-lite
+  License: Apache-2.0 OR MIT
+
+- Dependancy: pin-utils
+  Version: 0.1.0
+  Authors:  [Josef Brandl <mail@josefbrandl.de>]
+  Website:  https://github.com/rust-lang-nursery/pin-utils
   License: MIT OR Apache-2.0
 
 - Dependancy: portable-atomic
@@ -221,6 +305,12 @@ This section lists the licenses of the Rust dependencies used in GRIDR.
   Website:  https://github.com/taiki-e/portable-atomic
   License: Apache-2.0 OR MIT
 
+- Dependancy: proc-macro-crate
+  Version: 3.4.0
+  Authors:  [Bastian Köcher <git@kchr.de>]
+  Website:  https://github.com/bkchr/proc-macro-crate
+  License: MIT OR Apache-2.0
+
 - Dependancy: proc-macro2
   Version: 1.0.101
   Authors:  [David Tolnay <dtolnay@gmail.com>, Alex Crichton <alex@alexcrichton.com>]
@@ -228,31 +318,31 @@ This section lists the licenses of the Rust dependencies used in GRIDR.
   License: MIT OR Apache-2.0
 
 - Dependancy: pyo3
-  Version: 0.26.0
+  Version: 0.27.2
   Authors:  [PyO3 Project and Contributors <https://github.com/PyO3>]
   Website:  https://github.com/pyo3/pyo3
   License: MIT OR Apache-2.0
 
 - Dependancy: pyo3-build-config
-  Version: 0.26.0
+  Version: 0.27.2
   Authors:  [PyO3 Project and Contributors <https://github.com/PyO3>]
   Website:  https://github.com/pyo3/pyo3
   License: MIT OR Apache-2.0
 
 - Dependancy: pyo3-ffi
-  Version: 0.26.0
+  Version: 0.27.2
   Authors:  [PyO3 Project and Contributors <https://github.com/PyO3>]
   Website:  https://github.com/pyo3/pyo3
   License: MIT OR Apache-2.0
 
 - Dependancy: pyo3-macros
-  Version: 0.26.0
+  Version: 0.27.2
   Authors:  [PyO3 Project and Contributors <https://github.com/PyO3>]
   Website:  https://github.com/pyo3/pyo3
   License: MIT OR Apache-2.0
 
 - Dependancy: pyo3-macros-backend
-  Version: 0.26.0
+  Version: 0.27.2
   Authors:  [PyO3 Project and Contributors <https://github.com/PyO3>]
   Website:  https://github.com/pyo3/pyo3
   License: MIT OR Apache-2.0
@@ -281,11 +371,71 @@ This section lists the licenses of the Rust dependencies used in GRIDR.
   Website:  https://github.com/rayon-rs/rayon
   License: MIT OR Apache-2.0
 
+- Dependancy: regex
+  Version: 1.12.2
+  Authors:  [The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>]
+  Website:  https://github.com/rust-lang/regex
+  License: MIT OR Apache-2.0
+
+- Dependancy: regex-automata
+  Version: 0.4.13
+  Authors:  [The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>]
+  Website:  https://github.com/rust-lang/regex
+  License: MIT OR Apache-2.0
+
+- Dependancy: regex-syntax
+  Version: 0.8.8
+  Authors:  [The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>]
+  Website:  https://github.com/rust-lang/regex
+  License: MIT OR Apache-2.0
+
+- Dependancy: relative-path
+  Version: 1.9.3
+  Authors:  [John-John Tedro <udoprog@tedro.se>]
+  Website:  https://github.com/udoprog/relative-path
+  License: MIT OR Apache-2.0
+
+- Dependancy: rstest
+  Version: 0.26.1
+  Authors:  [Michele d&#x27;Amico <michele.damico@gmail.com>]
+  Website:  https://github.com/la10736/rstest
+  License: MIT OR Apache-2.0
+
+- Dependancy: rstest_macros
+  Version: 0.26.1
+  Authors:  [Michele d&#x27;Amico <michele.damico@gmail.com>]
+  Website:  https://github.com/la10736/rstest
+  License: MIT OR Apache-2.0
+
 - Dependancy: rustc-hash
   Version: 2.1.1
   Authors:  [The Rust Project Developers]
   Website:  https://github.com/rust-lang/rustc-hash
   License: Apache-2.0 OR MIT
+
+- Dependancy: rustc_version
+  Version: 0.4.1
+  Authors:  UNKNOWN
+  Website:  https://github.com/djc/rustc-version-rs
+  License: MIT OR Apache-2.0
+
+- Dependancy: semver
+  Version: 1.0.27
+  Authors:  [David Tolnay <dtolnay@gmail.com>]
+  Website:  https://github.com/dtolnay/semver
+  License: MIT OR Apache-2.0
+
+- Dependancy: slab
+  Version: 0.4.11
+  Authors:  [Carl Lerche <me@carllerche.com>]
+  Website:  https://github.com/tokio-rs/slab
+  License: MIT
+
+- Dependancy: strength_reduce
+  Version: 0.2.4
+  Authors:  [Elliott Mahler <join.together@gmail.com>]
+  Website:  http://github.com/ejmahler/strength_reduce
+  License: MIT OR Apache-2.0
 
 - Dependancy: syn
   Version: 2.0.107
@@ -311,6 +461,30 @@ This section lists the licenses of the Rust dependencies used in GRIDR.
   Website:  https://github.com/dtolnay/thiserror
   License: MIT OR Apache-2.0
 
+- Dependancy: toml_datetime
+  Version: 0.7.3
+  Authors:  UNKNOWN
+  Website:  https://github.com/toml-rs/toml
+  License: MIT OR Apache-2.0
+
+- Dependancy: toml_edit
+  Version: 0.23.7
+  Authors:  UNKNOWN
+  Website:  https://github.com/toml-rs/toml
+  License: MIT OR Apache-2.0
+
+- Dependancy: toml_parser
+  Version: 1.0.4
+  Authors:  UNKNOWN
+  Website:  https://github.com/toml-rs/toml
+  License: MIT OR Apache-2.0
+
+- Dependancy: transpose
+  Version: 0.2.3
+  Authors:  [Elliott Mahler <join.together@gmail.com>]
+  Website:  https://github.com/ejmahler/transpose
+  License: MIT OR Apache-2.0
+
 - Dependancy: unicode-ident
   Version: 1.0.19
   Authors:  [David Tolnay <dtolnay@gmail.com>]
@@ -322,3 +496,9 @@ This section lists the licenses of the Rust dependencies used in GRIDR.
   Authors:  [David Tolnay <dtolnay@gmail.com>]
   Website:  https://github.com/dtolnay/indoc
   License: MIT OR Apache-2.0
+
+- Dependancy: winnow
+  Version: 0.7.14
+  Authors:  UNKNOWN
+  Website:  https://github.com/winnow-rs/winnow
+  License: MIT

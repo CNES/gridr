@@ -26,4 +26,5 @@ flake8==7.3.0                  # General linter
 flake8-pyproject==1.2.3        # Support configuration in pyproject.toml
 flake8-comprehensions==3.17.0   # Check list/dict/set
 flake8-bugbear>=21.4.3,<24.0.0 # Add some rules to flake8
+pip-licenses-lib==1.0.0        # For NOTICE generation
 

@@ -16,9 +16,10 @@ This is the main page of GridR's documentation.
 
 .. toctree::
    :caption: Getting started
-   :maxdepth: 1
+   :maxdepth: 2
    
    installation
+   release_notes/index
 
 .. toctree::
    :caption: Theoretical Foundations

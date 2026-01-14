@@ -2,7 +2,7 @@
 <a target="_blank" href="https://github.com/CNES/gridr">
 <picture>
   <img
-    src="https://github.com/CNES/gridr/tree/main/doc/images/gridr_logo.svg"
+    src="https://raw.githubusercontent.com/CNES/gridr/main/doc/images/gridr_logo.svg"
     alt="GRIDR"
     width="40%"
   />
@@ -29,11 +29,13 @@
 - **Grid-based Resampling**
     - Adapt raster data to a target geometry defined by a grid containing the coordinates of each target pixel in the source image geometry.
     - Supports both **full-resolution** and **under-sampled** resolution grids.
-    - **Interpolation Methods** : Nearest neighbor, linear, cubic
+    - **Interpolation Methods** : Nearest neighbor, Linear, Cubic, Cardinal B-Spline
     - **Mask Support**:
         - **Grid Masks**: Raster or sentinel values.
         - **Source Image Masks**: Raster, sentinel values, or vectorized geometry.
         - **Target Mask Production**: Generate masks for the target raster geometry.
+    - **Boundary Condition**: extrapolation of edge missing data for interpolation within the source image domain.
+    - **Standalone mode**: user-friendly automatic input checks and preprocessings
 - **Filtering**: Apply spatial filters in the frequency domain (e.g., low-pass filtering).
 - **Mask Rasterization**: Convert vectorized geometry masks into a regular target raster geometry.
 - **Optimized Workflows**: Reduce I/O overhead for large-scale processing.

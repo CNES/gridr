@@ -17,9 +17,9 @@ from sphinx.util import logging
 logger = logging.getLogger(__name__)
 
 project = 'GridR'
-copyright = '2025, Cnes'
+copyright = '2026, Cnes'
 author = 'CNES'
-release = '0.4.3'
+release = '0.5.0'
 contact_email = 'gridr-cnes@cnes.fr'
 
 rst_prolog = """
