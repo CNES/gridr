@@ -398,9 +398,26 @@ impl<'a> GridMesh<'a> {
             grid_col_oversampling: usize,
             window_src: &'a GxArrayWindow,
             window_rel: &'a GxArrayWindow,
-        ) -> Self
+        ) -> Result<Self, GxError>
     {
+        let grid_size = grid_ncol * grid_nrow;
         let node1 = window_src.start_row * grid_ncol + window_src.start_col;
+        if node1 >= grid_size {
+            // This can panic so we test it
+            return Err(GxError::WindowOutOfBounds { context:"GridMesh:new",
+                start_row: window_src.start_row, end_row: window_src.end_row,
+                start_col: window_src.start_col, end_col: window_src.end_col,
+                nrows: grid_nrow, ncols: grid_ncol
+            })
+        }
+        let node_row_step: usize = match window_src.start_row == window_src.end_row {
+            true => 0,
+            false => grid_ncol,
+        };
+        let node_col_step: usize = match window_src.start_col == window_src.end_col {
+            true => 0,
+            false => 1,
+        };
         
         // The init idx is given by the relative position in the source window.
         let gmi_row_idx: usize = window_rel.start_row;
@@ -410,17 +427,16 @@ impl<'a> GridMesh<'a> {
         let gmi_col_idx_t: usize = grid_col_oversampling - gmi_col_idx;
         let gmi_row_idx_t: usize = grid_row_oversampling - gmi_row_idx;
         
-        
         let gmi_w1: usize = gmi_col_idx_t * gmi_row_idx_t;
         let gmi_w2: usize = gmi_col_idx * gmi_row_idx_t;
         let gmi_w3: usize = gmi_col_idx * gmi_row_idx;
         let gmi_w4: usize = gmi_col_idx_t * gmi_row_idx;
         
-        Self {
+        Ok(Self {
             node1: node1,
-            node2: node1 + 1,
-            node3: node1 + grid_ncol + 1,
-            node4: node1 + grid_ncol,
+            node2: node1 + node_col_step,
+            node3: node1 + node_row_step + node_col_step,
+            node4: node1 + node_row_step,
             grid_nrow: grid_nrow,
             grid_ncol: grid_ncol,
             grid_row_oversampling: grid_row_oversampling,
@@ -435,9 +451,54 @@ impl<'a> GridMesh<'a> {
             gmi_w2: gmi_w2,
             gmi_w3: gmi_w3,
             gmi_w4: gmi_w4,
-            }
+            })
     }
     
+    /// Traces the current mesh state to standard output for debugging purposes.
+    /// 
+    /// Displays flat (1D) and 2D node indices with grid bounds.
+    #[inline]
+    pub fn trace_current_mesh(&self) {
+        const MAX_LINE_WIDTH: usize = 100;
+        
+        println!("{}", "=".repeat(MAX_LINE_WIDTH));
+        println!("GridMesh Debug Trace");
+        println!("{}", "-".repeat(MAX_LINE_WIDTH));
+        
+        // Full debug output
+        println!("{:#?}", self);
+        println!();
+        
+        // Flat indices
+        let max_flat_idx = self.grid_nrow * self.grid_ncol - 1;
+        println!("Flat indices (max: {}):", max_flat_idx);
+        println!(
+            "  n1={:<6} n2={:<6} n3={:<6} n4={:<6}",
+            self.node1, self.node2, self.node3, self.node4
+        );
+        println!();
+        
+        // 2D coordinates helper
+        let to_2d = |idx: usize| (idx / self.grid_ncol, idx % self.grid_ncol);
+        
+        let (n1_row, n1_col) = to_2d(self.node1);
+        let (n2_row, n2_col) = to_2d(self.node2);
+        let (n3_row, n3_col) = to_2d(self.node3);
+        let (n4_row, n4_col) = to_2d(self.node4);
+        
+        println!(
+            "2D coordinates (max: ({}, {})):",
+            self.grid_nrow - 1,
+            self.grid_ncol - 1
+        );
+        println!("  n1=({:>4}, {:>4})", n1_row, n1_col);
+        println!("  n2=({:>4}, {:>4})", n2_row, n2_col);
+        println!("  n3=({:>4}, {:>4})", n3_row, n3_col);
+        println!("  n4=({:>4}, {:>4})", n4_row, n4_col);
+        
+        println!("{}", "=".repeat(MAX_LINE_WIDTH));
+    }
+
     /// Update current weights - aimed to be called at the start of each output position iteration.
     #[inline]
     pub fn update_weights(&mut self) {
@@ -493,6 +554,7 @@ impl<'a> GridMesh<'a> {
             self.node4 = self.node1;
             self.node3 = self.node2;
         }
+        
     }
     
     /// Advances the current position within the interpolation grid.
@@ -1019,7 +1081,7 @@ where
     
     // Init the mesh used for grid values bilinear interpolation.
     let mut gmi_mesh = GridMesh::new(grid_row_array.nrow, grid_row_array.ncol, grid_row_oversampling,
-            grid_col_oversampling, &grid_window_src, &grid_window_rel);
+            grid_col_oversampling, &grid_window_src, &grid_window_rel)?;
     
     // Mesh interpolation norm factor
     let gmi_norm_factor: f64 = (grid_col_oversampling * grid_row_oversampling) as f64;
@@ -1035,7 +1097,7 @@ where
     // Please note we substract 1 here just because the jump is applied in the loop after a +1 addition
     let window_out_idx_jump: usize = ima_out.ncol - out_window.end_col + out_window.start_col - 1;
     let ima_out_var_size: usize = ima_out.nrow * ima_out.ncol;
-        
+    
     for mut out_idx in 0..size_out {
         
         gmi_mesh.update_weights();
@@ -1043,7 +1105,7 @@ where
         // Here we call the validity checker for each oversampled index.
         // We may improve this loop by jumping to the next mesh directly
         if grid_validity_checker.validate(&mut gmi_mesh, &mut out_idx, &grid_row_array) {
-        
+            
             // Bilinear grid interpolation with oversampling
             let gmi_w1: f64 = gmi_mesh.gmi_w1 as f64;
             let gmi_w2: f64 = gmi_mesh.gmi_w2 as f64;
@@ -1073,8 +1135,6 @@ where
             grid_row_val = ( F64_GRID_PRECISION * grid_row_val + 0.5 ).floor() / F64_GRID_PRECISION;
             
             
-            //let grid_col_idx = out_idx % ima_out.ncol;
-            //let grid_row_idx = (out_idx - grid_col_idx) / ima_out.ncol;
             // let kernel_center_row: i64 = (grid_row_val + 0.5).floor() as i64;
             // let kernel_center_col: i64 = (grid_col_val + 0.5).floor() as i64;
             // if (kernel_center_col > (ima_in.ncol - 2 - 1) as i64) || (kernel_center_row > (ima_in.nrow - 2 - 1) as i64) {
@@ -1670,6 +1730,83 @@ mod gx_grid_resampling_test {
                 start_col: 0, end_col: window.width()-1,};
         assert!(gx_array_data_approx_eq_window( &array_out_win, &win_array_out_win, &array_out_full,
                 &window, tol));
+    }
+    
+    /// This test aims to check the limit case of one line/one row windowing
+    /// at the end of the grid
+    #[test]
+    fn test_array1_grid_resampling_optimized_bicubic_identity_window_edge_case() {
+        let interp = GxOptimizedBicubicInterpolator::new(&GxArrayViewInterpolatorNoArgs{});
+        let tol = 1e-6;
+        
+        let oversampling_row = 1;
+        let oversampling_col = 1;
+        let nrow_in = 20;
+        let ncol_in = 30;
+        let nrow_grid = nrow_in;
+        let ncol_grid = ncol_in;
+        
+        // Define full output
+        let nrow_out_full = (nrow_in - 1) * oversampling_row + 1;
+        let ncol_out_full = (ncol_in - 1) * oversampling_col + 1;
+        
+        // Define window related 
+        let window = GxArrayWindow{start_row: nrow_in-1, end_row: nrow_in-1, start_col: ncol_in-1, end_col: ncol_in-1};
+        
+        // Create the data in and out buffers
+        let mut data_in = vec![0.0; nrow_in * ncol_in ];
+        let mut data_out_win = vec![0.0; window.size()];
+        let mut grid_row = vec![0.0; nrow_grid * ncol_grid];
+        let mut grid_col = vec![0.0; nrow_grid * ncol_grid];
+        
+        // Init data_in values with a bicubic function -> we should be able
+        // to find similar values by interpolation of a decimated array
+        for irow in 0..nrow_in {
+            for icol in 0..ncol_in {
+                let xf = icol as f64;
+                let yf = irow as f64;
+                data_in[irow * ncol_in + icol] = 1.0 + 2.0 * xf + 3.0 * yf + 4.0 * xf * yf
+                        + 5.0 * xf.powi(2) + 6.0 * yf.powi(2)
+                        + 7.0 * xf.powi(3) + 8.0 * yf.powi(3);
+            }
+        }
+                
+        // Init grid to apply a simple transformation
+        for irow in 0..nrow_grid {
+            for icol in 0..ncol_grid {
+                grid_row[irow * ncol_grid + icol] = irow as f64;
+                grid_col[irow * ncol_grid + icol] = icol as f64;
+            }
+        }
+        
+        // Init input structures
+        let array_in = GxArrayView::new(&data_in, 1, nrow_in, ncol_in);
+        let array_grid_row_in = GxArrayView::new(&grid_row, 1, nrow_grid, ncol_grid);
+        let array_grid_col_in = GxArrayView::new(&grid_col, 1, nrow_grid, ncol_grid);
+        let mut array_out_win = GxArrayViewMut::new(&mut data_out_win, 1, window.height(), window.width());
+        let grid_checker = NoCheckGridMeshValidator{};
+        
+        // Run resampling on window => must not panic
+        let _ = array1_grid_resampling::<f64, f64, f64, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(&interp,
+                &grid_checker, //grid_validity_checker
+                &array_in,
+                &array_grid_row_in, //grid_row_array: &GxArrayView<'_, U>,
+                &array_grid_col_in, //grid_col_array: &GxArrayView<'_, U>,
+                oversampling_row, //grid_row_oversampling: usize,
+                oversampling_col, //grid_col_oversampling: usize,
+                &mut array_out_win, //ima_out: &mut GxArrayViewMut<'_, V>,
+                0., //nodata_val_out: V,
+                None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
+                None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
+                Some(&window), //grid_win: Option<&GxArrayWindow>,
+                None, //out_win: Option<&GxArrayWindow>,
+                None, //ima_in_origin_row: Option<f64>,
+                None, //ima_in_origin_col: Option<f64>,
+                true, // check_boundaries
+                );
+        
+        assert!(window.size() == 1);
+        assert!(data_out_win[0] == data_in[(nrow_in-1)*ncol_in + ncol_in - 1]);
     }
     
     /// This test aims to check the respect of the output windowing 

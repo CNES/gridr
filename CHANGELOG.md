@@ -1,6 +1,15 @@
 # CHANGELOG
 
-## [0.x.y] - yyyy-mm-dd
+## [0.5.1] - yyyy-mm-dd
+
+### Fixed
+
+#### Grid Resampling
+
+- Fixed panic when resampling with degenerate windows (1-pixel in any dimension) at grid edges
+
+
+## [0.5.0] - 2026-01-13
 
 ### Added
 
