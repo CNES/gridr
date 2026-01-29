@@ -2,10 +2,14 @@
 
 ## [0.5.1] - yyyy-mm-dd
 
+### Changed
+
+#### Project
+- Updated README banner logo and switched to PNG format for better mobile compatibility
+
 ### Fixed
 
 #### Grid Resampling
-
 - Fixed panic when resampling with degenerate windows (1-pixel in any dimension) at grid edges
 
 
