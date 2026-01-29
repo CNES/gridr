@@ -1,14 +1,19 @@
 Release Notes
 =============
 
-Latest Release
---------------
+Current Release - v0.5.1
+------------------------
 
-- :doc:`v0.5.0 - Current <v0.5.0>` - 2026-01-13
+.. include:: v0.5.1.md
+   :parser: myst_parser.sphinx_
+
+----
+
+All Releases
+------------
 
 .. toctree::
-   :hidden:
    :maxdepth: 1
-   :caption: All Releases
-
+   
+   v0.5.1
    v0.5.0

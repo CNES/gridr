@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## [0.5.1] - yyyy-mm-dd
+## [0.5.1] - 2026-01-29
 
 ### Changed
 
