@@ -95,9 +95,10 @@ def calculate_source_extent(
 ):
     """Calculate the source array read window with margins for interpolation.
 
-    This function computes the minimal read window from the source array required to
-    resample data onto the target grid. It accounts for interpolation margins and handles
-    boundary cases where the required window extends beyond the source array bounds.
+    This function computes the minimal read window from the source array
+    required to resample data onto the target grid. It accounts for
+    interpolation margins and handles boundary cases where the required window
+    extends beyond the source array bounds.
 
     The calculation proceeds in three steps:
 
@@ -108,7 +109,8 @@ def calculate_source_extent(
     Parameters
     ----------
     interp : Interpolator
-        Interpolator instance that defines the required margins for interpolation.
+        Interpolator instance that defines the required margins for
+        interpolation.
         See `gridr.core.interp.interpolator` for details.
 
     array_in : np.ndarray
@@ -124,16 +126,17 @@ def calculate_source_extent(
         Must have the same shape as `grid_row`.
 
     grid_resolution : tuple of int
-        Oversampling factor as (row_resolution, col_resolution). Value of 1 indicates
-        full resolution; higher values indicate coarser grids.
+        Oversampling factor as (row_resolution, col_resolution). Value of 1
+        indicates full resolution; higher values indicate coarser grids.
 
     grid_nodata : int or float, optional
         Value in `grid_row` and `grid_col` indicating invalid cells. Mutually
         exclusive with `grid_mask` (exclusivity enforced in core method).
 
     grid_mask : np.ndarray, optional
-        Integer mask array for the grid. Cells matching `grid_mask_valid_value` are
-        considered valid. Must have the same shape as `grid_row` and `grid_col`.
+        Integer mask array for the grid. Cells matching `grid_mask_valid_value`
+        are considered valid. Must have the same shape as `grid_row` and
+        `grid_col`.
 
     grid_mask_valid_value : int, default=1
         Value in `grid_mask` that designates valid grid cells. Required if
@@ -157,8 +160,8 @@ def calculate_source_extent(
     -------
     array_src_win_read : np.ndarray, shape (2, 2)
         Final source read window adjusted for margins and boundary constraints.
-        Format: ``[[row_start, row_end], [col_start, col_end]]``. Use this window
-        for raster IO operations.
+        Format: ``[[row_start, row_end], [col_start, col_end]]``. Use this
+        window for raster IO operations.
 
     array_src_win_marged : np.ndarray, shape (2, 2)
         Desired read window with margins applied, before boundary correction.
@@ -178,9 +181,9 @@ def calculate_source_extent(
 
     See Also
     --------
-    array_compute_resampling_grid_geometries : Computes grid metrics from coordinates
-    read_win_from_grid_metrics : Derives read window from grid metrics
-    source_extent_pad : Applies padding to source arrays
+    array_compute_resampling_grid_geometries : Computes grid metrics from
+    coordinates read_win_from_grid_metrics : Derives read window from grid
+    metrics source_extent_pad : Applies padding to source arrays
 
     """
 
@@ -223,6 +226,9 @@ def calculate_source_extent(
     )
 
     # Grid metrics may be None if no valid points
+    # First init returned values to None then proceed with defined grid_metrics
+    array_src_win_read, array_src_win_marged, pad = None, None, None
+
     if grid_metrics:
 
         if safecheck_src_boundaries:
@@ -871,41 +877,41 @@ def array_grid_resampling(
 
             # # Manage input mask if any is given
             # if array_in_mask is not None:
-                # mask_padded = source_extent_pad(
-                    # array_src=array_in_mask,
-                    # pad=pad,
-                    # boundary_condition=boundary_condition,
-                    # fill=mask_padded_fill,
-                # )
+            # mask_padded = source_extent_pad(
+            # array_src=array_in_mask,
+            # pad=pad,
+            # boundary_condition=boundary_condition,
+            # fill=mask_padded_fill,
+            # )
             # elif boundary_condition is None:
-                # # Mask handling:
-                # # - A default mask must be created if:
-                # #   * No mask is provided AND
-                # #   * No boundary condition is specified
-                # # - No mask creation is needed if:
-                # #   * A boundary condition is provided and applied to the input array
-                # #   * In this case, all points are considered valid by default
-                # mask_profile = ArrayProfile(
-                    # shape=(array_in_shape[1], array_in_shape[2]),
-                    # ndim=2,
-                    # dtype=np.uint8,
-                # )
-                # (mask_padded_shape, mask_source_window) = get_array_padded_shape(mask_profile, pad)
+            # # Mask handling:
+            # # - A default mask must be created if:
+            # #   * No mask is provided AND
+            # #   * No boundary condition is specified
+            # # - No mask creation is needed if:
+            # #   * A boundary condition is provided and applied to the input array
+            # #   * In this case, all points are considered valid by default
+            # mask_profile = ArrayProfile(
+            # shape=(array_in_shape[1], array_in_shape[2]),
+            # ndim=2,
+            # dtype=np.uint8,
+            # )
+            # (mask_padded_shape, mask_source_window) = get_array_padded_shape(mask_profile, pad)
 
-                # # Allocate buffer for padded mask and fill it with INVALID value
-                # mask_padded = np.full(
-                    # mask_padded_shape, Validity.INVALID, dtype=np.uint8, order="C"
-                # )
+            # # Allocate buffer for padded mask and fill it with INVALID value
+            # mask_padded = np.full(
+            # mask_padded_shape, Validity.INVALID, dtype=np.uint8, order="C"
+            # )
 
-                # # Mark original region as VALID
-                # mask_padded[mask_source_window] = Validity.VALID
+            # # Mark original region as VALID
+            # mask_padded[mask_source_window] = Validity.VALID
 
             # Mask handling:
             # 1. If a mask is provided if must be padded considering boundary condition
             # 2. Otherwise :
             #   2.1 A default mask must be created if:
             #    - No boundary condition is specified in order to mark domain extension as invalid.
-            #    - A boundary condition is specified and the interpolator is a BSpline (validity 
+            #    - A boundary condition is specified and the interpolator is a BSpline (validity
             #      for domain extension has to be set)
             #   2.2 No mask creation is needed if:
             #     - A boundary condition is provided and interpolator is not BSpline : in this case,
@@ -937,7 +943,7 @@ def array_grid_resampling(
                     # Interpolator is BSpline
                     # Here we allocate a full valid mask.
                     # TODO - Computing Improvement : we can still have mask as
-                    # None and create the appropriate mask ater bspline 
+                    # None and create the appropriate mask ater bspline
                     # prefiltering
                     mask_padded = np.full(
                         mask_padded_shape, Validity.VALID, dtype=np.uint8, order="C"

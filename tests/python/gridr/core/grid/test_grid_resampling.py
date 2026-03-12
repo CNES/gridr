@@ -585,3 +585,65 @@ class TestGridResampling:
             np.testing.assert_array_almost_equal(array_out, array_out_bis, 1e-6)
             if mask is not None:
                 np.testing.assert_array_almost_equal(mask_out, mask_out_bis, 1e-6)
+
+    @pytest.mark.parametrize(
+        "array, grid, interp, mask, check_boundaries, testing_decimal",
+        [
+            (
+                ARRAY_IN_001_ARRAY,
+                GRID_IN_001_01_GRID,
+                "nearest",
+                MASK_IN_001_ARRAY_01,
+                True,
+                6,
+            ),
+        ],
+    )
+    def test_grid_resampling_standalone_no_idendity_1_1_full_invalid_grid(
+        self,
+        array,
+        grid,
+        interp,
+        mask,
+        check_boundaries,
+        testing_decimal,
+    ):
+        """Test idendity resampling with a full resolute grid"""
+        nodata_out = -10
+        standalone = False
+        boundary_condition = None
+
+        grid_mask = np.zeros(grid[0].shape, dtype=np.uint8)
+        grid_mask_valid_value = 1
+        grid_nodata = None
+        
+        array_out, mask_out = array_grid_resampling(
+            interp=interp,
+            array_in=array,
+            grid_row=grid[0],
+            grid_col=grid[1],
+            grid_resolution=(1, 1),
+            array_out=None,
+            array_out_win=None,
+            nodata_out=nodata_out,
+            array_in_origin=(0.0, 0.0),
+            win=None,
+            array_in_mask=mask,
+            grid_mask=grid_mask,
+            grid_mask_valid_value=grid_mask_valid_value,
+            grid_nodata=None,
+            array_out_mask=mask is not None,
+            check_boundaries=check_boundaries,
+            standalone=standalone,
+            boundary_condition=boundary_condition,
+        )
+        np.testing.assert_array_almost_equal(
+            np.full(grid[0].shape, nodata_out, dtype=np.float64),
+            array_out,
+            decimal=testing_decimal,
+        )
+        np.testing.assert_array_almost_equal(
+            np.full(grid[0].shape, MASKED_VALUE, dtype=np.uint8),
+            mask_out,
+            decimal=testing_decimal,
+        )

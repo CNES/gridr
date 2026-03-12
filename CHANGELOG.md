@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## [x.y.z] - YYYY-MM-DD
+
+### Fixed
+
+#### Grid Resampling
+
+- **Core Grid Resampling (`grid_resampling.py`)** 
+  - Fixed an UnboundLocalError in `calculate_source_extent()` when grid metrics could not be computed - the variable was referenced before assignment in that code path.
+  - Added the `test_grid_resampling_standalone_no_idendity_1_1_full_invalid_grid()` in `test_grid_resampling.py` to cover the previous mentioned path.
+
 ## [0.5.1] - 2026-01-29
 
 ### Changed
