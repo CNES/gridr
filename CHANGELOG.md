@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## [x.y.z] - YYYY-MM-DD
+## [0.5.2] - 2026-03-13
 
 ### Fixed
 
