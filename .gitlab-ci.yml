@@ -26,8 +26,8 @@ stages:
 # Set Usine_Logicielle_Docker a cause d'un pb proxy
 default:
         tags:
-            - Usine_Logicielle_Docker 
-            #- Usine_Logicielle
+            #- Usine_Logicielle_Docker 
+            - Usine_Logicielle
         timeout: 30 minutes 
 
 variables: 
