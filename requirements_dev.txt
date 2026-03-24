@@ -1,8 +1,8 @@
-pytest==7.2.1
-pytest-cov==4.0.0
-pylint==3.0.0
+pytest>=7.2.1
+pytest-cov>=4.0.0
+pylint>=3.0.0
 cnes-pylint-extension==7.0.0
-pylint-sonarjson==2.0.0
+pylint-sonarjson>=2.0.0
 build==1.0.3
 #numpy>=1.24.4,<2.0
 numpy>=1.25
@@ -28,3 +28,9 @@ flake8-comprehensions==3.17.0   # Check list/dict/set
 flake8-bugbear>=21.4.3,<24.0.0 # Add some rules to flake8
 pip-licenses-lib==1.0.0        # For NOTICE generation
 
+# benchmarks tests
+pytest-benchmark>=5.0
+memray>=1.5
+pytest-memray>=1.5
+psutil>=5.9
+py-cpuinfo>=9.0

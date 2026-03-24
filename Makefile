@@ -1,10 +1,19 @@
-# Used environment variables
+# GridR Makefile
+# ============================================================================
+# EXTERNAL VARIABLES
+# ============================================================================ 
 # NUMPY_VERSION : set to force numpy version
 # GRIDR_SPHINX_BUILD_PATH : set sphinx output path
 # BUILD_DIST_OUTDIR
 # COVERAGE_REPORT_TAG
 # GRIDR_VENV
 # PIP_ARG_MAIN
+# RUSTFLAGS : indirectly used by cargo build process
+# =============================================================================
+# KEY RULES :
+#   lib_libgridr.so and _libgridr.so are FILE targets (non-PHONY).
+#   Make does not build Rust ONLY IF a source file is newer than .so.
+# =============================================================================
 ROOT_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 
 .DEFAULT_GOAL := help
@@ -138,6 +147,7 @@ $(GRIDR_VENV_SENTINEL): $(ROOT_DIR)requirements_dev.txt
 $(GRIDR_LIBGRIDR_SO_BUILD_TARGET): $(GRIDR_VENV_SENTINEL) $(RUST_SOURCES) | check
 	@echo "Building libgridr.so rust library..."
 	@echo "Rust crate location : $(GRIDR_RUST_CRATE_PATH)"
+	@echo "INFO: Rust build flags : $(RUSTFLAGS)"
 	@source $(GRIDR_VENV)/bin/activate && cd $(GRIDR_RUST_CRATE_PATH) && cargo build --release
 
 # The pytest symlink depends only on the compiled .so.
