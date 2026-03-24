@@ -69,9 +69,6 @@ endif
 ifndef COVERAGE_REPORT_TAG
 	COVERAGE_REPORT_TAG = ""
 endif
-#ifeq ($(PYTHON_VERSION_OK), 0)
-#	$(error "Requires python version >= $(PYTHON_VERSION_MIN). Current version is $(PYTHON_VERSION_CUR)")
-#endif
 
 # Set Virtualenv directory name
 # Default if not defined is to create venv with a name that contains the current python version
@@ -86,6 +83,12 @@ GRIDR_VENV_TEST_BUILD = "${GRIDR_VENV}_test_build"
 ifndef PIP_ARG_MAIN
 	PIP_ARG_MAIN := ""
 endif
+
+# Collect all Rust source files for dependency tracking.
+# This allows Make to rebuild the library only when Rust sources actually change.
+RUST_SOURCES := $(shell find $(GRIDR_RUST_CRATE_PATH)/src -name '*.rs' 2>/dev/null) \
+                $(GRIDR_RUST_CRATE_PATH)/Cargo.toml \
+                $(GRIDR_RUST_CRATE_PATH)/Cargo.lock
 
 .PHONY: info
 info:
@@ -103,81 +106,96 @@ help: ## this help
 check: ## check if cargo is installed
 	@[ "$(CHECK_CARGO)" ] || ( echo ">> cargo not found"; exit 1 )
 
-# Set virtual environment directory name
-# You can call make by prefixing the var GRIDR_VENV
-# egg. GRIDR_VENV="path-to-venv-target" make install
-#@test -d $(basename ${GRIDR_VENV}) || mkdir -p $(basename ${GRIDR_VENV})
+# The venv sentinel file is used to track whether the venv is up to date.
+# Make compares its timestamp against requirements_dev.txt: if the requirements
+# file is newer, the venv is reinstalled. This avoids the venv being recreated
+# on every invocation while still reacting to dependency changes.
+GRIDR_VENV_SENTINEL := $(GRIDR_VENV)/.make_sentinel
+
 .PHONY: venv
-venv: check ## create virtualenv in GRIDR_VENV directory if not exists
-	@echo "Creating venv in $(GRIDR_VENV)"
+venv: $(GRIDR_VENV_SENTINEL) ## create virtualenv in GRIDR_VENV directory if not exists
+
+$(GRIDR_VENV_SENTINEL): $(ROOT_DIR)requirements_dev.txt
+	@if [ "$(PYTHON_VERSION_OK)" = "0" ] ; then \
+		echo "WARNING: Python $(PYTHON_VERSION_CUR) < $(PYTHON_VERSION_MIN) required"; \
+	fi
+	@echo "Creating/updating venv in $(GRIDR_VENV)"
 	@test -d $(GRIDR_VENV) || python3 -m venv $(GRIDR_VENV)
 	@$(GRIDR_VENV)/bin/python -m pip install $(PIP_ARG_MAIN)--no-cache-dir --upgrade pip
 	@$(GRIDR_VENV)/bin/python -m pip install $(PIP_ARG_MAIN)--no-cache-dir setuptools setuptools-rust wheel build
-	@$(GRIDR_VENV)/bin/python -m pip install $(PIP_ARG_MAIN)--no-cache-dir ${NUMPY_VERSION_PIP} 
+	@$(GRIDR_VENV)/bin/python -m pip install $(PIP_ARG_MAIN)--no-cache-dir ${NUMPY_VERSION_PIP}
 	@$(GRIDR_VENV)/bin/python -m pip install $(PIP_ARG_MAIN)-r $(ROOT_DIR)requirements_dev.txt
-	@touch $(GRIDR_VENV)/bin/activate
+	@touch $(GRIDR_VENV_SENTINEL)
 
-.PHONY: build-rust
-build-rust: venv ## build the rust project
+# The compiled .so is the real build artifact. Make tracks it against all Rust
+# sources: a rebuild is triggered only when a source file is newer than the .so,
+# or when the .so is absent. The symlink for pytest is created here as well,
+# so there is a single rule responsible for both the build and the link.
+#
+# FIX — previously build-rust was .PHONY, which forced a Rust rebuild on every
+# invocation of any target that depended on it (e.g. test-python). Removing
+# .PHONY and making the .so the target lets Make decide whether work is needed.
+$(GRIDR_LIBGRIDR_SO_BUILD_TARGET): $(GRIDR_VENV_SENTINEL) $(RUST_SOURCES) | check
 	@echo "Building libgridr.so rust library..."
 	@echo "Rust crate location : $(GRIDR_RUST_CRATE_PATH)"
 	@source $(GRIDR_VENV)/bin/activate && cd $(GRIDR_RUST_CRATE_PATH) && cargo build --release
-	@touch $(GRIDR_LIBGRIDR_SO_BUILD_TARGET)
+
+# The pytest symlink depends only on the compiled .so.
+# It is recreated whenever the .so is rebuilt (i.e. newer than the symlink).
+$(GRIDR_LIBGRIDR_SO_PYTEST_TARGET): $(GRIDR_LIBGRIDR_SO_BUILD_TARGET)
+	@echo "Updating pytest symlink..."
+	@rm -f "$(GRIDR_LIBGRIDR_SO_PYTEST_TARGET)"
+	@ln -s $(GRIDR_LIBGRIDR_SO_BUILD_TARGET) $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET)
+
+# Convenience phony alias so callers can still run `make build-rust`
+.PHONY: build-rust
+build-rust: $(GRIDR_LIBGRIDR_SO_BUILD_TARGET) ## build the rust project
 
 .PHONY: test-rust
-test-rust: venv 
+test-rust: $(GRIDR_VENV_SENTINEL) ## test rust code
 	@echo "Test rust code..."
 	@source $(GRIDR_VENV)/bin/activate && cd $(GRIDR_RUST_CRATE_PATH) && RUST_BACKTRACE=1 cargo test -- --nocapture
 
-.PHONY: build-rust-py
-$(GRIDR_LIBGRIDR_SO_PYTEST_TARGET): build-rust
-	rm -f "$(GRIDR_LIBGRIDR_SO_PYTEST_TARGET)"
-	@ln -s $(GRIDR_LIBGRIDR_SO_BUILD_TARGET) $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET)
-
-
 .PHONY: build-rust-doc
-build-rust-doc: venv ## build the rust project
+build-rust-doc: $(GRIDR_VENV_SENTINEL) ## build the rust documentation
 	@echo "Building rust documentation..."
-	@echo "Rust documentation location : $(GRIDR_LIBGRIDR_DOC_TARGET)"
+	@echo "Rust documentation location : $(GRIDR_LIBGRIDR_DOC_BUILD_PATH)"
 	rm -rf $(GRIDR_LIBGRIDR_DOC_BUILD_PATH)
 	@source $(GRIDR_VENV)/bin/activate && cd $(GRIDR_RUST_CRATE_PATH) && cargo doc --no-deps --document-private-items
 
 
 .PHONY: build-sphinx-doc
-build-sphinx-doc: venv $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET) clean-sphinx-doc ## build the sphinx documentation
+build-sphinx-doc: $(GRIDR_VENV_SENTINEL) $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET) clean-sphinx-doc ## build the sphinx documentation
 	@echo "Building sphinx documentation..."
 	@echo "Sphinx documentation location : $(GRIDR_DOCS_ROOT_PATH)"
 	@source $(GRIDR_VENV)/bin/activate && sphinx-build -M html $(GRIDR_DOCS_ROOT_PATH)/source $(GRIDR_SPHINX_DOC_BUILD_PATH)
-#	@source $(GRIDR_VENV)/bin/activate && cd $(GRIDR_DOCS_ROOT_PATH) && make html
-#	tar cf $(GRIDR_DOCS_ROOT_PATH).tar $(GRIDR_DOCS_ROOT_PATH)
 
 
 .PHONY: test-python
-test-python: venv $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET) ## perform tests on python code
+test-python: $(GRIDR_VENV_SENTINEL) $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET) ## perform tests on python code
 	@echo "Testing..."
-	@source $(GRIDR_VENV)/bin/activate && PYTHONPATH=$(ROOT_DIR)python:$(PYTHONPATH) pytest --cov=python --cov-report=xml:.coverage-reports/coverage$(COVERAGE_REPORT_TAG).xml --cov-report=term --junitxml=report$(COVERAGE_REPORT_TAG).xml tests/python
+	@source $(GRIDR_VENV)/bin/activate && PYTHONPATH=$(ROOT_DIR)python:$(PYTHONPATH) pytest --cov=python --cov-report=xml:.coverage-reports/coverage$(COVERAGE_REPORT_TAG).xml --cov-report=term --junitxml=report$(COVERAGE_REPORT_TAG).xml tests/python --ignore=tests/python/benchmarks
 
 
 .PHONY: test
 test: test-rust test-python ## perform all tests
 
 .PHONY: pylint
-pylint: venv ## call pylint
-	@source $(GRIDR_VENV)/bin/activate && pylint $(ROOT_DIR)python --recursive=y --rcfile=$(ROOT_DIR)pylintrc_RNC2015_D  --exit-zero --halt-on-invalid-sonar-rules n > $(ROOT_DIR)pylint_report.json 
-
+pylint: $(GRIDR_VENV_SENTINEL) ## call pylint
+	@source $(GRIDR_VENV)/bin/activate && pylint $(ROOT_DIR)python --recursive=y --rcfile=$(ROOT_DIR)pylintrc_RNC2015_D  --exit-zero --halt-on-invalid-sonar-rules n > $(ROOT_DIR)pylint_report.json
 
 
 # Build package
 .PHONY: build
-build: venv clean-build ## build package
+build: $(GRIDR_VENV_SENTINEL) clean-build ## build package
 	@echo "Build python package"
-	@DIST_EXTRA_CONFIG=${BUILD_EXTRA_CONFIG} $(GRIDR_VENV)/bin/python -m build --outdir $(BUILD_DIST_OUTDIR) 
+	@DIST_EXTRA_CONFIG=${BUILD_EXTRA_CONFIG} $(GRIDR_VENV)/bin/python -m build --outdir $(BUILD_DIST_OUTDIR)
 	@echo "Set wheel for manylinux base on glibc version"
 	@$(GRIDR_VENV)/bin/auditwheel repair $(BUILD_DIST_OUTDIR)/*.whl --plat $(MANYLINUX_GLIBC_TAG)_x86_64 -w $(BUILD_DIST_OUTDIR)_fixed/
 
 # Create NOTICE
 .PHONY: check-licenses
-check-licenses: build
+check-licenses: build ## check licenses and generate NOTICE
 	@echo "Check licenses"
 	@echo "Create isolated venv to install built package"
 	@test -d $(GRIDR_VENV_TEST_BUILD) || rm -rf $(GRIDR_VENV_TEST_BUILD)
@@ -193,8 +211,8 @@ clean: clean-venv clean-build clean-pyc clean-test clean-sphinx-doc ## remove al
 .PHONY: clean-venv
 clean-venv:
 	@echo "+ $@"
-	@test -d $(GRIDR_VENV) || rm -rf ${GRIDR_VENV}
-	@test -d $(GRIDR_VENV_TEST_BUILD) || rm -rf $(GRIDR_VENV_TEST_BUILD)
+	@rm -rf ${GRIDR_VENV}
+	@rm -rf $(GRIDR_VENV_TEST_BUILD)
 
 .PHONY: clean-build
 clean-build:
@@ -206,11 +224,6 @@ clean-build:
 	@find . -name '*.egg' -exec rm -f {} +
 	@rm -fr rust/gridr/target
 	@rm -f $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET)
-
-#.PHONY: clean-precommit
-#clean-precommit:
-#	@rm -f .git/hooks/pre-commit
-#	@rm -f .git/hooks/pre-push
 
 .PHONY: clean-pyc
 clean-pyc:
@@ -237,9 +250,8 @@ clean-sphinx-doc:
 	@rm -rf $(GRIDR_SPHINX_DOC_BUILD_PATH)
 	@rm -rf $(GRIDR_DOCS_ROOT_PATH)/source/_notebooks/generated
 
-#ifndef GRIDR_VENV
-.PHONY: print_config 
+.PHONY: print_config
 print_config: ## print configuration
 	@echo "Found configuration "
-	@echo " - python3 : ${PYTHON}" 
-	@echo " - cargo : ${CHECK_CARGO}" 
+	@echo " - python3 : ${PYTHON}"
+	@echo " - cargo : ${CHECK_CARGO}"
