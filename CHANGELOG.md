@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## [0.x.y] - YYYY-mm-dd
+
+### Added
+
+#### Benchmarking
+- **Benchmark framework**:
+  - Added pytest-benchmark based framework for CPU time benchmarking
+  - Automatic machine configuration information collection and storage in benchmark reports
+
+- **New benchmarks**:
+  - Added `tests/python/benchmarks/time/test_time_core_array_grid_resampling.py`:
+    - Benchmarks `gridr.core.grid.grid_resampling.array_grid_resampling` method
+    - Tests various parameter combinations (grid size, interpolation methods)
+    - Compares with `scipy.map_coordinates` using equivalent configuration
+
+  - Added `tests/python/benchmarks/time/test_time_chain_array_grid_resampling.py`:
+    - Benchmarks `gridr.chain.grid_resampling_chain.basic_grid_resampling_chain` method
+    - Tests limited parameter set (resolution, interpolation methods, multi-channel mode)
+    - Compares with CNES proprietary ORION Software (requires ORION_BIN_PATH environment variable)
+
+### Fixed
+
+#### Makefile
+- **Optimized Makefile**:
+  - Limited Rust build steps to necessary cases (source changes or missing compiled library)
+
+- **Test execution**
+  - Modified `test-python` rule to exclude benchmark tests
+
 ## [0.5.2] - 2026-03-13
 
 ### Fixed

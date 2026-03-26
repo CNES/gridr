@@ -23,7 +23,11 @@ benchmarks/scripts/bench.py
 CLI to run benchmarks with version control and save.
 
 Example :
-   PYTHONPATH=$PWD/python:$PYTHONPATH python3 benchmarks/scripts/bench.py --version v0.5.1
+ORION_BIN_PATH=\
+/work/ARTEMIS/cots_delivery/icc_co3d/qtispack_minipack_from_sif/bin/orion.sh \
+ORION_INIT_ONLY_PATH=\
+/work/ARTEMIS/cots_delivery/icc_co3d/qtispack_minipack_from_sif/bin/orion_init_only.sh \
+PYTHONPATH=$PWD/python:$PYTHONPATH python3 benchmarks/scripts/bench.py --version v0.5.1
 """
 from __future__ import annotations
 
