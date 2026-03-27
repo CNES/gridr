@@ -28,6 +28,10 @@
 //! - [`GridMesh`]: Defines a quadrilateral cell in a 2D source grid and is used as the interpolation
 //!   primitive. It supports efficient iteration over rows and columns.
 //!
+//! - [`GridPointMesh`]: A variant of `GridMesh` optimized for complete degenerated `GridMesh` reduced
+//!   to one node only. It optimizes the iteration over the 2D source grid in the case where both
+//!   oversampling factors are set to 1.
+//!
 //! - [`GridMeshValidator`]: A trait that abstracts the logic for determining whether a mesh is valid
 //!   based on value content or an external mask. Includes multiple implementations:
 //!   - `NoCheckGridMeshValidator`: Always returns valid.
@@ -94,7 +98,7 @@ use crate::core::gx_errors::GxError;
 /// * `W` - The type of data stored in the grid array (e.g., `f64`, `u8`, etc.).
 pub trait GridMeshValidator<W>
 {
-    /// Validates whether the current grid position is suitable for computation.
+    /// Validates whether the current grid mesh is suitable for computation.
     ///
     /// # Arguments
     ///
@@ -105,7 +109,21 @@ pub trait GridMeshValidator<W>
     /// # Returns
     ///
     /// Returns `true` if the grid cell is valid and can be processed, `false` otherwise.
-    fn validate<'a>(&self, mesh: &'a mut GridMesh, out_idx: &'a mut usize, grid_view: &GxArrayView<'a, W>) -> bool;
+    fn validate_mesh<'a>(&self, mesh: &'a mut GridMesh, out_idx: &'a mut usize, grid_view: &GxArrayView<'a, W>) -> bool;
+    
+    /// Validates whether the current grid point is suitable for computation.
+    ///
+    /// # Arguments
+    ///
+    /// * `mesh` - The grid point mesh to be validated.
+    /// * `out_idx` - A mutable reference to an output index (can be used or modified during validation).
+    /// * `grid_view` - A view into the grid data being validated.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if the grid cell is valid and can be processed, `false` otherwise.
+    fn validate_point<'a>(&self, point: &'a mut GridPointMesh, out_idx: &'a mut usize, grid_view: &GxArrayView<'a, W>) -> bool;
+    
 }
 
 /// A validator implementation that unconditionally accepts all grid positions.
@@ -121,7 +139,13 @@ pub struct NoCheckGridMeshValidator {
 impl<W> GridMeshValidator<W> for NoCheckGridMeshValidator{
     
     #[inline]
-    fn validate<'a>(&self, _mesh: &'a mut GridMesh, _out_idx: &'a mut usize, _grid_view: &GxArrayView<'a, W>) -> bool
+    fn validate_mesh<'a>(&self, _mesh: &'a mut GridMesh, _out_idx: &'a mut usize, _grid_view: &GxArrayView<'a, W>) -> bool
+    {
+        true
+    }
+    
+    #[inline]
+    fn validate_point<'a>(&self, _point: &'a mut GridPointMesh, _out_idx: &'a mut usize, _grid_view: &GxArrayView<'a, W>) -> bool
     {
         true
     }
@@ -208,7 +232,7 @@ where
     /// # Inlined
     /// This method is marked `#[inline]` to encourage inlining during performance-critical loops.
     #[inline]
-    fn validate<'a>(&self, mesh: &'a mut GridMesh, _out_idx: &'a mut usize, grid_view: &GxArrayView<'a, W>) -> bool {
+    fn validate_mesh<'a>(&self, mesh: &'a mut GridMesh, _out_idx: &'a mut usize, grid_view: &GxArrayView<'a, W>) -> bool {
         
         match (mesh.grid_row_oversampling, mesh.grid_col_oversampling) {
             // Both are different from 1
@@ -243,6 +267,12 @@ where
             _ => !self.is_invalid(mesh.node1, &grid_view),
         }
     }
+    
+    #[inline]
+    fn validate_point<'a>(&self, point: &'a mut GridPointMesh, _out_idx: &'a mut usize, grid_view: &GxArrayView<'a, W>) -> bool
+    {
+        !self.is_invalid(point.node, &grid_view)
+    }
 }
 
 /// A validator that uses a binary mask array to determine validity.
@@ -274,7 +304,7 @@ where
     W: Copy,
 {
     #[inline]
-    fn validate(&self, mesh: &mut GridMesh, _out_idx: &mut usize, _grid_view: &GxArrayView<W>) -> bool
+    fn validate_mesh(&self, mesh: &mut GridMesh, _out_idx: &mut usize, _grid_view: &GxArrayView<W>) -> bool
     {
         let mask = &self.mask_view.data;
         
@@ -296,6 +326,13 @@ where
             // Default (1, 1)
             _ => node1_valid,
         }
+    }
+    
+    #[inline]
+    fn validate_point(&self, point: &mut GridPointMesh, _out_idx: &mut usize, _grid_view: &GxArrayView<W>) -> bool
+    {
+        let mask = &self.mask_view.data;
+        mask[point.node] == self.valid_value
     }
 }
 
@@ -346,10 +383,11 @@ where
 /// # Usage
 ///
 /// Typically, a `GridMesh` is iterated column-wise and row-wise over a `GxArrayWindow`, updating
-/// its internal corner nodes using [`next_src_col`] and [`next_src_row`] as needed.
+/// its internal corner nodes using [`next_src_col`], [`next_src_row`] and [`next`] as needed.
 ///
 /// [`next_src_col`]: Self::next_src_col
 /// [`next_src_row`]: Self::next_src_row
+/// [`next`]: Self::next
 #[derive(Debug)]
 pub struct GridMesh<'a> {
     node1: usize,
@@ -666,6 +704,228 @@ impl<'a> GridMesh<'a> {
         (grid_row_idx, grid_col_idx, out_col_idx, windowed_out_idx)
     }
 } 
+
+
+
+/// Represents a complete degenerated mesh.
+///
+/// `GridPointMesh` defines a cell within a full-resolution source grid. In such a case the cell
+/// is limited to a single point.
+/// This structure is primarily defined in order to implement the interface of the regular `GridMesh`
+/// with optimized computation : no interpolation is required when dealing with a full-resolution 
+/// source grid.
+
+/// The mesh is defined by one node, indexed into a flat 1D representation of the 2D source grid.
+///
+/// # Fields
+///
+/// - `node`: Index of the point.
+/// - `grid_nrow`: Total number of rows in the parent source grid.
+/// - `grid_ncol`: Total number of columns in the parent source grid.
+/// - `window_src`: The window applied on the native source grid to restrict the region of interpolation.
+///
+/// # Usage
+///
+/// Typically, a `GridPointMesh` is iterated column-wise and row-wise over a `GxArrayWindow`, updating
+/// its internal corner nodes using [`next_src_col`], [`next_src_row`] and [`next`] as needed.
+///
+/// [`next_src_col`]: Self::next_src_col
+/// [`next_src_row`]: Self::next_src_row
+/// [`next`]: Self::next
+#[derive(Debug)]
+pub struct GridPointMesh<'a> {
+    node: usize,
+    grid_nrow: usize,
+    grid_ncol: usize,
+    window_src: &'a GxArrayWindow,
+}
+
+impl<'a> GridPointMesh<'a> {
+    
+    /// Creates a new `GridPointMesh` from the dimensions of a source grid and a source window.
+    ///
+    /// The mesh is initially positioned at the top-left cell of the provided window.
+    ///
+    /// # Arguments
+    ///
+    /// - `grid_nrow`: Number of rows in the source grid.
+    /// - `grid_ncol`: Number of columns in the source grid.
+    /// - `window_src`: A reference to a window on the source grid defining the region to iterate over.
+    ///
+    /// # Returns
+    ///
+    /// A new `GridPointMesh` positioned at the top-left corner of `window_src`.
+    #[inline]
+    pub fn new(
+            grid_nrow: usize,
+            grid_ncol: usize,
+            window_src: &'a GxArrayWindow,
+        ) -> Result<Self, GxError>
+    {
+        let grid_size = grid_ncol * grid_nrow;
+        let node = window_src.start_row * grid_ncol + window_src.start_col;
+        if node >= grid_size {
+            // This can panic so we test it
+            return Err(GxError::WindowOutOfBounds { context:"GridMesh:new",
+                start_row: window_src.start_row, end_row: window_src.end_row,
+                start_col: window_src.start_col, end_col: window_src.end_col,
+                nrows: grid_nrow, ncols: grid_ncol
+            })
+        }
+        
+        Ok(Self {
+            node: node,
+            grid_nrow: grid_nrow,
+            grid_ncol: grid_ncol,
+            window_src: window_src,
+            })
+    }
+    
+    /// Traces the current mesh state to standard output for debugging purposes.
+    /// 
+    /// Displays flat (1D) and 2D node indices with grid bounds.
+    #[inline]
+    pub fn trace_current_mesh(&self) {
+        const MAX_LINE_WIDTH: usize = 100;
+        
+        println!("{}", "=".repeat(MAX_LINE_WIDTH));
+        println!("GridPointMesh Debug Trace");
+        println!("{}", "-".repeat(MAX_LINE_WIDTH));
+        
+        // Full debug output
+        println!("{:#?}", self);
+        println!();
+        
+        // Flat indices
+        let max_flat_idx = self.grid_nrow * self.grid_ncol - 1;
+        println!("Flat indices (max: {}):", max_flat_idx);
+        println!(
+            "  n1={:<6}",
+            self.node,
+        );
+        println!();
+        
+        // 2D coordinates helper
+        let to_2d = |idx: usize| (idx / self.grid_ncol, idx % self.grid_ncol);
+        
+        let (n1_row, n1_col) = to_2d(self.node);
+        
+        println!(
+            "2D coordinates (max: ({}, {})):",
+            self.grid_nrow - 1,
+            self.grid_ncol - 1
+        );
+        println!("  n1=({:>4}, {:>4})", n1_row, n1_col);
+        
+        println!("{}", "=".repeat(MAX_LINE_WIDTH));
+    }
+    
+    /// Advances the mesh one column to the right within the current row of the grid.
+    ///
+    /// This updates the four corner node indices to match the new column position.
+    /// If the current column is the last column in the grid, the mesh is collapsed into a
+    /// vertical line (zero-width), effectively duplicating the right corners to match the left ones.
+    ///
+    /// # Arguments
+    ///
+    /// - `grid_col_idx`: The current column index in the iteration.
+    #[inline]
+    pub fn next_src_col(&mut self) {
+        self.node += 1;
+    }
+    
+    /// Advances the mesh one row down within the grid.
+    ///
+    /// Updates the corner node indices to match the new row at the same column offset
+    /// defined by `window_src.start_col`.
+    /// If the current row is the last row in the grid, the mesh is collapsed vertically,
+    /// so that the bottom row nodes are set equal to the top row ones.
+    ///
+    /// # Arguments
+    ///
+    /// - `grid_row_idx`: The current row index in the iteration.
+    #[inline]
+    pub fn next_src_row(&mut self, grid_row_idx: usize) {
+        let node = grid_row_idx * self.grid_ncol + self.window_src.start_col;
+        self.node = node;
+    }
+    
+    /// Advances the current position within the interpolation grid.
+    ///
+    /// This is the core method invoked by the main interpolation loop to traverse the grid's mesh.
+    /// It manages both the global output position and the relative position within the current
+    /// grid cell's oversampled mesh.
+    ///
+    /// # Arguments
+    ///
+    /// * `grid_row_idx`: The current row index in the input grid iteration.
+    /// * `grid_col_idx`: The current column index in the input grid iteration.
+    /// * `out_col_idx`: The current column index within the *output* row being generated.
+    /// * `windowed_out_idx`: The absolute index for output buffer assignment within the current window.
+    /// * `window_out_idx_jump`: The index increment required when moving to the next output row.
+    /// * `ncol_out`: The total number of columns in an output row.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing the updated indices:
+    /// `(grid_row_idx, grid_col_idx, out_col_idx, windowed_out_idx)`
+    ///
+    /// # Behavior
+    ///
+    /// This method progresses the interpolation by:
+    /// 1. Incrementing the global output column index (`out_col_idx`) and the windowed output index (`windowed_out_idx`).
+    /// 2. Advancing the relative column index (`gmi_col_idx`) within the current mesh cell.
+    /// 3. If all columns within the current mesh cell's oversampling are processed:
+    ///    - Resets `gmi_col_idx` to 0.
+    ///    - Increments the input grid's column index (`grid_col_idx`).
+    ///    - Calls `self.next_src_col()` to update the source nodes for the next input column.
+    /// 4. If the end of the current output row (`ncol_out`) is reached:
+    ///    - Resets `out_col_idx` to 0.
+    ///    - Updates `windowed_out_idx` to point to the start of the next row's window.
+    ///    - Resets `grid_col_idx` to the starting column of the current processing window (`self.window_src.start_col`).
+    ///    - Resets `gmi_col_idx` to the starting relative column of the mesh window (`self.window_rel.start_col`).
+    ///    - Increments the relative row index (`gmi_row_idx`) within the current mesh cell.
+    ///    - If all rows within the current mesh cell's oversampling are processed:
+    ///        - Resets `gmi_row_idx` to 0.
+    ///        - Increments the input grid's row index (`grid_row_idx`).
+    ///    - Calls `self.next_src_row()` to update the source nodes for the next input row.
+    ///    - Updates the complement of the relative mesh row index (`self.gmi_row_idx_t`).
+    /// 5. Updates the complement of the relative mesh column index (`self.gmi_col_idx_t`).
+    #[inline]
+    pub fn next(&mut self,
+            grid_row_idx: usize,
+            grid_col_idx: usize,
+            out_col_idx: usize,
+            windowed_out_idx: usize,
+            window_out_idx_jump: usize,
+            ncol_out: usize,
+    ) -> (usize, usize, usize, usize)
+    {
+        let mut grid_row_idx = grid_row_idx;
+        let mut grid_col_idx = grid_col_idx;
+        // Global output : go next output column
+        let mut out_col_idx = out_col_idx + 1;
+        let mut windowed_out_idx = windowed_out_idx + 1;
+        
+        self.next_src_col();
+        
+        // Test if current output row is done
+        if out_col_idx == ncol_out {
+            
+            // Reset output column index to 0
+            out_col_idx = 0;
+            windowed_out_idx += window_out_idx_jump;
+            
+            // Reset column index relative to input grid
+            grid_col_idx = self.window_src.start_col;
+            grid_row_idx += 1;
+            
+            self.next_src_row(grid_row_idx);
+        }        
+        (grid_row_idx, grid_col_idx, out_col_idx, windowed_out_idx)
+    }
+} 
+
 
 /// Perform a bilinear grid interpolation with oversampling, computing interpolated
 /// values for both grid rows and columns. The grid is iterated over in a row-major
@@ -1063,34 +1323,11 @@ where
     // Current output position
     let mut out_col_idx: usize = 0;
     
-    // The 'gmi' prefix stands for grid mesh interpolation
-    // It is used for all variable relative to the grid mesh bilinear interpolation
-    // It defines the relative position in current grid mesh :
-    // - gmi_{row|col}_idx can be set in [0, grid_{row|col}_oversampling[
-    // - the init values (first iteration) are taken from the grid_window_rel
-    
-    /*
-    // The init idx is given by the relative position in the source window.
-    let mut gmi_row_idx: usize = grid_window_rel.start_row;
-    let mut gmi_col_idx: usize = grid_window_rel.start_col;
-    
-    // Complement of the relative position in current grid mesh 
-    let mut gmi_col_idx_t: usize = grid_col_oversampling - gmi_col_idx;
-    let mut gmi_row_idx_t: usize = grid_row_oversampling - gmi_row_idx;
-    */
-    
-    // Init the mesh used for grid values bilinear interpolation.
-    let mut gmi_mesh = GridMesh::new(grid_row_array.nrow, grid_row_array.ncol, grid_row_oversampling,
-            grid_col_oversampling, &grid_window_src, &grid_window_rel)?;
-    
-    // Mesh interpolation norm factor
-    let gmi_norm_factor: f64 = (grid_col_oversampling * grid_row_oversampling) as f64;
-    
     // Call the GxArrayViewInterpolator allocate_kernel_buffer to allocate
     // the buffer to store the kernel weights.
     // That buffer will be passed to the array1_interp2 method.
     let mut weights_buffer = interp.allocate_kernel_buffer();
-    
+        
     // Init the target idx in `ima_out`
     let mut windowed_out_idx: usize = out_window.start_row * ima_out.ncol + out_window.start_col;
     // Compute the shift to apply to go to next row first col
@@ -1098,79 +1335,148 @@ where
     let window_out_idx_jump: usize = ima_out.ncol - out_window.end_col + out_window.start_col - 1;
     let ima_out_var_size: usize = ima_out.nrow * ima_out.ncol;
     
-    for mut out_idx in 0..size_out {
+    // Choose path according to oversampling configuration.
+    // A fast path is used when the source grid is full-resolute (oversampling are equal to 1 for 
+    // both dimensions)
+    if grid_row_oversampling == 1 && grid_col_oversampling == 1 {
         
-        gmi_mesh.update_weights();
+        // Init the point mesh used for grid iteration
+        let mut gmi_point = GridPointMesh::new(grid_row_array.nrow, grid_row_array.ncol, &grid_window_src)?;
         
-        // Here we call the validity checker for each oversampled index.
-        // We may improve this loop by jumping to the next mesh directly
-        if grid_validity_checker.validate(&mut gmi_mesh, &mut out_idx, &grid_row_array) {
+        for mut out_idx in 0..size_out {
             
-            // Bilinear grid interpolation with oversampling
-            let gmi_w1: f64 = gmi_mesh.gmi_w1 as f64;
-            let gmi_w2: f64 = gmi_mesh.gmi_w2 as f64;
-            let gmi_w3: f64 = gmi_mesh.gmi_w3 as f64;
-            let gmi_w4: f64 = gmi_mesh.gmi_w4 as f64;
-            
-            // Perform the interpolation on column + apply origin bias
-            let mut grid_col_val: f64 = (
-                    grid_col_array.data[gmi_mesh.node1] * gmi_w1 +
-                    grid_col_array.data[gmi_mesh.node2] * gmi_w2 +
-                    grid_col_array.data[gmi_mesh.node3] * gmi_w3 +
-                    grid_col_array.data[gmi_mesh.node4] * gmi_w4
-                    ) / gmi_norm_factor + ima_in_origin_col;
-            
-            // Perform the interpolation on rows + apply origin bias
-            let mut grid_row_val: f64 = (
-                    grid_row_array.data[gmi_mesh.node1] * gmi_w1 +
-                    grid_row_array.data[gmi_mesh.node2] * gmi_w2 +
-                    grid_row_array.data[gmi_mesh.node3] * gmi_w3 +
-                    grid_row_array.data[gmi_mesh.node4] * gmi_w4
-                    ) / gmi_norm_factor + ima_in_origin_row;
-            
-            // Rounding interpolated values to avoid numerical instability.
-            // Precision is defined by F64_GRID_PRECISION (1.0e12).
-            // This allows rounding to the desired precision while avoiding floating-point errors.
-            grid_col_val = ( F64_GRID_PRECISION * grid_col_val + 0.5 ).floor() / F64_GRID_PRECISION;
-            grid_row_val = ( F64_GRID_PRECISION * grid_row_val + 0.5 ).floor() / F64_GRID_PRECISION;
-            
-            
-            // let kernel_center_row: i64 = (grid_row_val + 0.5).floor() as i64;
-            // let kernel_center_col: i64 = (grid_col_val + 0.5).floor() as i64;
-            // if (kernel_center_col > (ima_in.ncol - 2 - 1) as i64) || (kernel_center_row > (ima_in.nrow - 2 - 1) as i64) {
-                // println!( "warning panic will occur : input image size (nrow x ncol) : {} x {}", ima_in.nrow, ima_in.ncol);
-                // println!( "(out_idx {} - row {} col {} : grid_row_val = {} ; grid_col_val = {} ; kernel center row = {} ; kernel center col = {}", out_idx, grid_row_idx, grid_col_idx, grid_row_val , grid_col_val, kernel_center_row, kernel_center_col);
-            // }
-            //println!( "(out_idx {} - row {} col {} : grid_row_val = {} ; grid_col_val = {}", out_idx, grid_row_idx, grid_col_idx, grid_row_val , grid_col_val);
-            
-            // Do grid interpolation here
-            let _ = interp.array1_interp2(
-                    &mut weights_buffer,
-                    grid_row_val,
-                    grid_col_val,
-                    windowed_out_idx,
-                    ima_in,
-                    ima_out,
-                    nodata_val_out,
-                    context,
-                    );
-                    
-            // if (kernel_center_col > (ima_in.ncol - 2 - 1) as i64) || (kernel_center_row > (ima_in.nrow - 2 - 1) as i64) {
-                // println!( "panic did not occur");
-            // }
-        } else {
-            // do something
-            for ivar in 0..ima_in.nvar {
-                // Write nodata value to output buffer
-                //ima_out.data[out_idx + ivar * size_out] = nodata_val_out;
-                ima_out.data[windowed_out_idx + ivar * ima_out_var_size] = nodata_val_out;
+            if grid_validity_checker.validate_point(&mut gmi_point, &mut out_idx, &grid_row_array) {
+                // Get grid coordinates and add ima_in_origin to apply the corresponding shift
+                let mut grid_row_val: f64 = grid_row_array.data[gmi_point.node].into() + ima_in_origin_row;
+                let mut grid_col_val: f64 = grid_col_array.data[gmi_point.node].into() + ima_in_origin_col;
+                
+                // Rounding interpolated values to avoid numerical instability.
+                // Precision is defined by F64_GRID_PRECISION (1.0e12).
+                // This allows rounding to the desired precision while avoiding floating-point errors.
+                grid_col_val = ( F64_GRID_PRECISION * grid_col_val + 0.5 ).floor() / F64_GRID_PRECISION;
+                grid_row_val = ( F64_GRID_PRECISION * grid_row_val + 0.5 ).floor() / F64_GRID_PRECISION;
+                
+                let _ = interp.array1_interp2(
+                        &mut weights_buffer,
+                        grid_row_val,
+                        grid_col_val,
+                        windowed_out_idx,
+                        ima_in,
+                        ima_out,
+                        nodata_val_out,
+                        context,
+                        );
+            } else {
+                // do something
+                for ivar in 0..ima_in.nvar {
+                    // Write nodata value to output buffer
+                    //ima_out.data[out_idx + ivar * size_out] = nodata_val_out;
+                    ima_out.data[windowed_out_idx + ivar * ima_out_var_size] = nodata_val_out;
+                }
+                context.output_mask().set_value(windowed_out_idx, 0);
             }
-            context.output_mask().set_value(windowed_out_idx, 0);
+            // Prepare next iteration
+            (grid_row_idx, grid_col_idx, out_col_idx, windowed_out_idx) = gmi_point.next(grid_row_idx,
+                    grid_col_idx, out_col_idx, windowed_out_idx, window_out_idx_jump, ncol_out);
         }
-        // Prepare next iteration
-        (grid_row_idx, grid_col_idx, out_col_idx, windowed_out_idx) = gmi_mesh.next(grid_row_idx,
-                grid_col_idx, out_col_idx, windowed_out_idx, window_out_idx_jump, ncol_out);
+    } else {
+        // The 'gmi' prefix stands for grid mesh interpolation
+        // It is used for all variable relative to the grid mesh bilinear interpolation
+        // It defines the relative position in current grid mesh :
+        // - gmi_{row|col}_idx can be set in [0, grid_{row|col}_oversampling[
+        // - the init values (first iteration) are taken from the grid_window_rel
+        
+        /*
+        // The init idx is given by the relative position in the source window.
+        let mut gmi_row_idx: usize = grid_window_rel.start_row;
+        let mut gmi_col_idx: usize = grid_window_rel.start_col;
+        
+        // Complement of the relative position in current grid mesh 
+        let mut gmi_col_idx_t: usize = grid_col_oversampling - gmi_col_idx;
+        let mut gmi_row_idx_t: usize = grid_row_oversampling - gmi_row_idx;
+        */
+        
+        // Init the mesh used for grid values bilinear interpolation.
+        let mut gmi_mesh = GridMesh::new(grid_row_array.nrow, grid_row_array.ncol, grid_row_oversampling,
+                grid_col_oversampling, &grid_window_src, &grid_window_rel)?;
+        
+        // Mesh interpolation norm factor
+        let gmi_norm_factor: f64 = (grid_col_oversampling * grid_row_oversampling) as f64;
+        
+        for mut out_idx in 0..size_out {
+            
+            gmi_mesh.update_weights();
+            
+            // Here we call the validity checker for each oversampled index.
+            // We may improve this loop by jumping to the next mesh directly
+            if grid_validity_checker.validate_mesh(&mut gmi_mesh, &mut out_idx, &grid_row_array) {
+                
+                // Bilinear grid interpolation with oversampling
+                let gmi_w1: f64 = gmi_mesh.gmi_w1 as f64;
+                let gmi_w2: f64 = gmi_mesh.gmi_w2 as f64;
+                let gmi_w3: f64 = gmi_mesh.gmi_w3 as f64;
+                let gmi_w4: f64 = gmi_mesh.gmi_w4 as f64;
+                
+                // Perform the interpolation on column + apply origin bias
+                let mut grid_col_val: f64 = (
+                        grid_col_array.data[gmi_mesh.node1] * gmi_w1 +
+                        grid_col_array.data[gmi_mesh.node2] * gmi_w2 +
+                        grid_col_array.data[gmi_mesh.node3] * gmi_w3 +
+                        grid_col_array.data[gmi_mesh.node4] * gmi_w4
+                        ) / gmi_norm_factor + ima_in_origin_col;
+                
+                // Perform the interpolation on rows + apply origin bias
+                let mut grid_row_val: f64 = (
+                        grid_row_array.data[gmi_mesh.node1] * gmi_w1 +
+                        grid_row_array.data[gmi_mesh.node2] * gmi_w2 +
+                        grid_row_array.data[gmi_mesh.node3] * gmi_w3 +
+                        grid_row_array.data[gmi_mesh.node4] * gmi_w4
+                        ) / gmi_norm_factor + ima_in_origin_row;
+                
+                // Rounding interpolated values to avoid numerical instability.
+                // Precision is defined by F64_GRID_PRECISION (1.0e12).
+                // This allows rounding to the desired precision while avoiding floating-point errors.
+                grid_col_val = ( F64_GRID_PRECISION * grid_col_val + 0.5 ).floor() / F64_GRID_PRECISION;
+                grid_row_val = ( F64_GRID_PRECISION * grid_row_val + 0.5 ).floor() / F64_GRID_PRECISION;
+                
+                
+                // let kernel_center_row: i64 = (grid_row_val + 0.5).floor() as i64;
+                // let kernel_center_col: i64 = (grid_col_val + 0.5).floor() as i64;
+                // if (kernel_center_col > (ima_in.ncol - 2 - 1) as i64) || (kernel_center_row > (ima_in.nrow - 2 - 1) as i64) {
+                    // println!( "warning panic will occur : input image size (nrow x ncol) : {} x {}", ima_in.nrow, ima_in.ncol);
+                    // println!( "(out_idx {} - row {} col {} : grid_row_val = {} ; grid_col_val = {} ; kernel center row = {} ; kernel center col = {}", out_idx, grid_row_idx, grid_col_idx, grid_row_val , grid_col_val, kernel_center_row, kernel_center_col);
+                // }
+                //println!( "(out_idx {} - row {} col {} : grid_row_val = {} ; grid_col_val = {}", out_idx, grid_row_idx, grid_col_idx, grid_row_val , grid_col_val);
+                
+                // Do grid interpolation here
+                let _ = interp.array1_interp2(
+                        &mut weights_buffer,
+                        grid_row_val,
+                        grid_col_val,
+                        windowed_out_idx,
+                        ima_in,
+                        ima_out,
+                        nodata_val_out,
+                        context,
+                        );
+                        
+                // if (kernel_center_col > (ima_in.ncol - 2 - 1) as i64) || (kernel_center_row > (ima_in.nrow - 2 - 1) as i64) {
+                    // println!( "panic did not occur");
+                // }
+            } else {
+                // do something
+                for ivar in 0..ima_in.nvar {
+                    // Write nodata value to output buffer
+                    //ima_out.data[out_idx + ivar * size_out] = nodata_val_out;
+                    ima_out.data[windowed_out_idx + ivar * ima_out_var_size] = nodata_val_out;
+                }
+                context.output_mask().set_value(windowed_out_idx, 0);
+            }
+            // Prepare next iteration
+            (grid_row_idx, grid_col_idx, out_col_idx, windowed_out_idx) = gmi_mesh.next(grid_row_idx,
+                    grid_col_idx, out_col_idx, windowed_out_idx, window_out_idx_jump, ncol_out);
 
+        }
     }
     Ok(())
 }
@@ -1196,6 +1502,110 @@ mod gx_grid_resampling_test {
         a.iter()
             .zip(b.iter())
             .all(|(x, y)| (*x - *y).abs() <= tol)
+    }
+    
+    /// Test GridMesh vs GridPointMesh with idendity grid and bicubic interpolation
+    #[test]
+    fn test_array1_grid_resampling_gridmesh_vs_gridpointmesh_idendity() {
+        let interp = GxOptimizedBicubicInterpolator::new(&GxArrayViewInterpolatorNoArgs{});
+        
+        let margin = 0;
+        let oversampling_row=2;
+        let oversampling_col=3;
+        // the full resolute grid are given by 
+        //        nrow_out = (grid_row_lowres - 1) * oversampling_row + 1
+        //        ncol_out = (grid_col_lowres - 1) * oversampling_col + 1
+        //
+        // then :
+        let grid_nrow_lowres = 3;
+        let grid_ncol_lowres = 4;
+        let grid_nrow_highres = (grid_nrow_lowres - 1) * oversampling_row + 1;
+        let grid_ncol_highres = (grid_ncol_lowres - 1) * oversampling_col + 1;
+        
+        let mut grid_row_lowres = vec![0.0; grid_nrow_lowres * grid_ncol_lowres];
+        let mut grid_col_lowres = vec![0.0; grid_nrow_lowres * grid_ncol_lowres];
+        
+        let mut grid_row_highres = vec![0.0; grid_nrow_highres * grid_ncol_highres];
+        let mut grid_col_highres = vec![0.0; grid_nrow_highres * grid_ncol_highres];
+        
+        // Init grids (identity from 2 - margin)
+        for irow in 0..grid_nrow_highres {
+            for icol in 0..grid_ncol_highres {
+                grid_row_highres[irow * grid_ncol_highres + icol] = irow as f64 + margin as f64;
+                grid_col_highres[irow * grid_ncol_highres + icol] = icol as f64 + margin as f64;
+            }
+        }
+        for irow in 0..grid_nrow_lowres {
+            for icol in 0..grid_ncol_lowres {
+                grid_row_lowres[irow * grid_ncol_lowres + icol] = (oversampling_row * irow) as f64 + margin as f64;
+                grid_col_lowres[irow * grid_ncol_lowres + icol] = (oversampling_col * icol) as f64 + margin as f64;
+            }
+        }
+        
+        // Init data_in values       
+        let nrow_in = 2*margin + grid_nrow_highres;
+        let ncol_in = 2*margin + grid_ncol_highres;
+        let mut data_in = vec![0.0; nrow_in * ncol_in ];
+        
+        for irow in 0..nrow_in {
+            for icol in 0..ncol_in {
+                data_in[irow * ncol_in + icol] = 10.* (irow as f64) * (ncol_in as f64) + 2.5* (icol as f64);
+            }
+        }
+        
+        let mut data_out_highres = vec![0.0; grid_nrow_highres * grid_ncol_highres];
+        let mut data_out_lowres = vec![0.0; grid_nrow_highres * grid_ncol_highres];
+        
+        // Init input structures
+        let array_in = GxArrayView::new(&data_in, 1, nrow_in, ncol_in);
+        let array_grid_row_highres_in = GxArrayView::new(&grid_row_highres, 1, grid_nrow_highres, grid_ncol_highres);
+        let array_grid_col_highres_in = GxArrayView::new(&grid_col_highres, 1, grid_nrow_highres, grid_ncol_highres);
+        let array_grid_row_lowres_in = GxArrayView::new(&grid_row_lowres, 1, grid_nrow_lowres, grid_ncol_lowres);
+        let array_grid_col_lowres_in = GxArrayView::new(&grid_col_lowres, 1, grid_nrow_lowres, grid_ncol_lowres);
+        let mut array_out_highres = GxArrayViewMut::new(&mut data_out_highres, 1, grid_nrow_highres, grid_ncol_highres);
+        let mut array_out_lowres = GxArrayViewMut::new(&mut data_out_lowres, 1, grid_nrow_highres, grid_ncol_highres);
+        let grid_checker = NoCheckGridMeshValidator{};
+        
+        let _ = array1_grid_resampling::<f64, f64, f64, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(&interp,
+                &grid_checker, //grid_validity_checker
+                &array_in,
+                &array_grid_row_highres_in, //grid_row_array: &GxArrayView<'_, U>,
+                &array_grid_col_highres_in, //grid_col_array: &GxArrayView<'_, U>,
+                1, //grid_row_oversampling: usize,
+                1, //grid_col_oversampling: usize,
+                &mut array_out_highres, //ima_out: &mut GxArrayViewMut<'_, V>,
+                0., //nodata_val_out: V,
+                None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
+                None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
+                None, //grid_win: Option<&GxArrayWindow>,
+                None, //out_win: Option<&GxArrayWindow>,
+                None, //ima_in_origin_row: Option<f64>,
+                None, //ima_in_origin_col: Option<f64>,
+                true, // check_boundaries
+                );
+        
+        let _ = array1_grid_resampling::<f64, f64, f64, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(&interp,
+                &grid_checker, //grid_validity_checker
+                &array_in,
+                &array_grid_row_lowres_in, //grid_row_array: &GxArrayView<'_, U>,
+                &array_grid_col_lowres_in, //grid_col_array: &GxArrayView<'_, U>,
+                oversampling_row, //grid_row_oversampling: usize,
+                oversampling_col, //grid_col_oversampling: usize,
+                &mut array_out_lowres, //ima_out: &mut GxArrayViewMut<'_, V>,
+                0., //nodata_val_out: V,
+                None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
+                None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
+                None, //grid_win: Option<&GxArrayWindow>,
+                None, //out_win: Option<&GxArrayWindow>,
+                None, //ima_in_origin_row: Option<f64>,
+                None, //ima_in_origin_col: Option<f64>,
+                true, // check_boundaries
+                );
+        
+        // println!("  {:?}, {:?}", data_out_highres, data_out_lowres);
+        // println!("grid highres  {:?}, {:?}", grid_row_highres, grid_col_highres);
+        // println!("grid lowres  {:?}, {:?}", grid_row_lowres, grid_col_lowres);
+        assert!(approx_eq(&data_out_highres, &data_out_lowres, 1e-10));
     }
     
     /// This test makes sure that an identity transformation is correct

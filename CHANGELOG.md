@@ -4,6 +4,14 @@
 
 ### Added
 
+#### Grid Resampling
+
+- **Performance improvement : fast path for full resolution grid** (`core.gx_resampling_grid.rs`)
+  - Introduced a new structure `GridPointMesh` optimized for complete degenerated GridMesh reduced to one node only
+  - Added `validate_point method` to GridMeshValidator trait for validating grid points when using a `GridPointMesh`
+  - Added conditional logic to choose between the fast path using (`GridPointMesh`) and the regular interpolation path. The fast path is taken when oversampling factors equal to 1 for both dimensions.
+  - Added a new test case `test_array1_grid_resampling_gridmesh_vs_gridpointmesh_idendity` to verify the correctness of the interpolation with both `GridMesh` and `GridPointMesh`.
+
 #### Benchmarking
 - **Benchmark framework**:
   - Added pytest-benchmark based framework for CPU time benchmarking
@@ -19,6 +27,13 @@
     - Benchmarks `gridr.chain.grid_resampling_chain.basic_grid_resampling_chain` method
     - Tests limited parameter set (resolution, interpolation methods, multi-channel mode)
     - Compares with CNES proprietary ORION Software (requires ORION_BIN_PATH environment variable)
+
+### Changed
+
+#### Grid Resampling
+
+- **Rust module `core.gx_grid_resampling.rs`**
+  - Renamed `validate` method to `validate_mesh` in the `GridMeshValidator` trait and its implementations.
 
 ### Fixed
 
