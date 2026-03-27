@@ -2147,7 +2147,7 @@ mod gx_grid_resampling_test {
     #[test]
     fn test_array1_grid_resampling_optimized_bicubic_identity_window_edge_case() {
         let interp = GxOptimizedBicubicInterpolator::new(&GxArrayViewInterpolatorNoArgs{});
-        let tol = 1e-6;
+        // let tol = 1e-6;
         
         let oversampling_row = 1;
         let oversampling_col = 1;
@@ -2157,8 +2157,8 @@ mod gx_grid_resampling_test {
         let ncol_grid = ncol_in;
         
         // Define full output
-        let nrow_out_full = (nrow_in - 1) * oversampling_row + 1;
-        let ncol_out_full = (ncol_in - 1) * oversampling_col + 1;
+        // let nrow_out_full = (nrow_in - 1) * oversampling_row + 1;
+        // let ncol_out_full = (ncol_in - 1) * oversampling_col + 1;
         
         // Define window related 
         let window = GxArrayWindow{start_row: nrow_in-1, end_row: nrow_in-1, start_col: ncol_in-1, end_col: ncol_in-1};
