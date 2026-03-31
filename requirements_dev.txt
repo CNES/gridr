@@ -34,3 +34,6 @@ memray>=1.5
 pytest-memray>=1.5
 psutil>=5.9
 py-cpuinfo>=9.0
+
+# regression tests
+pytest-regressions[num]

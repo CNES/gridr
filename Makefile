@@ -184,7 +184,13 @@ build-sphinx-doc: $(GRIDR_VENV_SENTINEL) $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET) clea
 .PHONY: test-python
 test-python: $(GRIDR_VENV_SENTINEL) $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET) ## perform tests on python code
 	@echo "Testing..."
-	@source $(GRIDR_VENV)/bin/activate && PYTHONPATH=$(ROOT_DIR)python:$(PYTHONPATH) pytest --cov=python --cov-report=xml:.coverage-reports/coverage$(COVERAGE_REPORT_TAG).xml --cov-report=term --junitxml=report$(COVERAGE_REPORT_TAG).xml tests/python --ignore=tests/python/benchmarks
+	@source $(GRIDR_VENV)/bin/activate && PYTHONPATH=$(ROOT_DIR)python:$(PYTHONPATH) pytest --cov=python --cov-report=xml:.coverage-reports/coverage$(COVERAGE_REPORT_TAG).xml --cov-report=term --junitxml=report$(COVERAGE_REPORT_TAG).xml tests/python --ignore=tests/python/benchmarks --ignore=tests/python/regression
+
+
+.PHONY: test-python-regression
+test-python-regression: $(GRIDR_VENV_SENTINEL) $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET) ## perform tests on python code
+	@echo "Testing regression..."
+	@source $(GRIDR_VENV)/bin/activate && PYTHONPATH=$(ROOT_DIR)python:$(PYTHONPATH) pytest -s tests/python/regression 
 
 
 .PHONY: test
