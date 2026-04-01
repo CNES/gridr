@@ -65,7 +65,7 @@ except KeyError:
 
 warnings.filterwarnings("ignore", category=rasterio.errors.NotGeoreferencedWarning)
 
-NROUNDS = 10
+NROUNDS = 20
 NITERATIONS = 1
 NWARMUP = 3
 RESOLUTIONS = [

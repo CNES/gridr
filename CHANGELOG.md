@@ -38,6 +38,20 @@
 
 ### Changed
 
+#### Interpolation Architecture Refactoring
+
+- **Interpolation Architecture**:
+  - Refactored `core.interp.gx_array_view_interp` around const generic parameters `KROWS` and `KCOLS`, which define the kernel dimensions at compile time and enable generic, zero-cost implementations of the four separable convolution variants (masked/unmasked × bounds-checked/unchecked).
+  - Clear separation between the public API (`GxArrayViewInterpolator`) and the new internal computation trait (`GxArrayViewInterpolatorCore`).
+
+- **GxArrayViewInterpolatorCore**:
+  - Introduced the internal trait `GxArrayViewInterpolatorCore<KROWS, KCOLS, KSIZE>` providing default implementations for the four separable convolution variants and the unified dispatcher `array1_interp2_separable_core`.
+  - Concrete interpolators only need to implement `compute_weights`; all kernel logic is inherited automatically.
+  - Reduced code duplication across B-spline, bicubic, and linear interpolators by delegating their `array1_interp2` implementation to `array1_interp2_separable_core`. The nearest-neighbour interpolator retains a direct implementation as its kernel is not separable in the same sense.
+
+- **Tests**:
+  - Added comprehensive unit tests for the `GxArrayViewInterpolatorCore` trait in a dedicated module `core.interp.gx_array_view_interp_core_tests`. Tests cover all five trait methods across nominal, identity, multi-variable, boundary, out-of-bounds, masked-input, and output-mask scenarios.
+
 #### Grid Resampling
 
 - **Rust module `core.gx_grid_resampling.rs`**

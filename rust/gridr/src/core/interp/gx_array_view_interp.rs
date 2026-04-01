@@ -16,87 +16,188 @@
 // limitations under the License.
 
 #![warn(missing_docs)]
-//! This module defines an interpolation architecture over 1D arrays (`GxArrayView`)
-//! based on a flexible system of generic strategies to handle:
+//! Interpolation architecture over 1D array views (`GxArrayView`).
 //!
-//! 1. Input mask strategy (`InputMaskStrategy`): determines whether a given
-//!    input index should be considered valid.
+//! # Public API vs. internal computation trait
 //!
-//! 2. Output mask strategy (`OutputMaskStrategy`): marks or flags points
-//!    written to the output.
+//! This module draws a deliberate line between two concerns:
 //!
-//! 3. Bounds check strategy (`BoundsCheckStrategy`): controls whether index
-//!    boundary checks are performed.
+//! * **Public API** — [`GxArrayViewInterpolator`] is the single stable
+//!   interface that all concrete interpolators expose to callers.  It contains
+//!   only the methods that external code needs: construction, metadata
+//!   (`shortname`, `kernel_row_size`, `total_margins`, …), buffer allocation,
+//!   and the top-level dispatch method `array1_interp2`.
 //!
-//! These strategies are combined within a generic context `GxArrayViewInterpolationContext`
-//! allowing generic code without runtime dynamic dispatch, ensuring optimal
-//! performance and easy adaptability to future SIMD or other low-level optimizations.
+//! * **Internal computation** — [`GxArrayViewInterpolatorCore`] is an
+//!   *implementation-only* trait, not part of the public API contract.  It
+//!   provides the four separable kernel-convolution variants
+//!   (`interpolate_nomask_unchecked`, `interpolate_nomask_partial`,
+//!   `interpolate_masked_unchecked`, `interpolate_masked_partial`) and the
+//!   unified dispatcher `array1_interp2_separable_core` as **default method
+//!   implementations**.  A concrete interpolator only needs to provide
+//!   `compute_weights`; all kernel logic is inherited automatically.
 //!
-//! Using traits and generics avoids runtime indirection overhead while
-//! maintaining high flexibility in behavior.
+//! This separation ensures that:
+//! 1. Callers depend only on [`GxArrayViewInterpolator`] and are insulated
+//!    from implementation details.
+//! 2. New interpolators sharing the same separable-kernel structure (bicubic,
+//!    B-spline, …) reuse the four variants without code duplication.
+//! 3. Interpolators with non-separable kernels implement
+//!    [`GxArrayViewInterpolator`] directly, bypassing
+//!    [`GxArrayViewInterpolatorCore`] entirely.
 //!
-//! # Overall architecture
-//! ```text
-//! ┌─────────────────────────────────┐
-//! │ GxArrayViewInterpolationContext │
-//! │ ├─ InputMaskStrategy (trait)    │
-//! │ ├─ OutputMaskStrategy (trait)   │
-//! │ └─ BoundsCheckStrategy (trait)  │
-//! └─────────────────────────────────┘
-//! ```
+//! # Generic strategies
+//!
+//! Behaviour at array borders and on masked data is governed by three
+//! orthogonal strategy types that are composed at compile time inside a
+//! context object:
+//!
+//! 1. **Input mask** ([`GxArrayViewInterpolatorInputMaskStrategy`]):
+//!    determines whether a given input index should be considered valid.
+//!
+//! 2. **Output mask** ([`GxArrayViewInterpolatorOutputMaskStrategy`]):
+//!    marks or flags points written to the output.
+//!
+//! 3. **Bounds check** ([`GxArrayViewInterpolatorBoundsCheckStrategy`]):
+//!    controls whether index boundary checks are performed.
+//!
+//! The strategies are assembled in a [`GxArrayViewInterpolationContext`] and
+//! passed through all internal methods, enabling monomorphic code with zero
+//! runtime dynamic dispatch.
 //!
 //! Each strategy can be replaced by a custom implementation (e.g., binary mask,
-//! no mask, etc.). The context is passed to interpolation functions which adapt
-//! their behavior accordingly.
+//! no mask, etc.). The context is passed to core interpolation functions 
+//! implementation which adapt their behavior accordingly.
 //!
-//! This design facilitates maintainability, modularity, and performance,
-//! while preparing for future extensions such as SIMD or parallelization.
+//! # Module architecture
 //!
+//! ```text
+//! ┌──────────────────────────────────────────────────────────────┐
+//! │              GxArrayViewInterpolationContext                 │
+//! │  ├─ InputMaskStrategy  (NoInputMask | BinaryInputMask)       │
+//! │  ├─ OutputMaskStrategy (NoOutputMask | BinaryOutputMask)     │
+//! │  └─ BoundsCheckStrategy (NoBoundsCheck | BoundsCheck)        │
+//! └──────────────────────────────────────────────────────────────┘
+//!
+//!  ┌──────────────────────────────────────────────────────────────┐
+//!  │  GxArrayViewInterpolator          ← PUBLIC API               │
+//!  │  array1_interp2(), shortname(), total_margins(), …           │
+//!  └──────────────────────────────────────────────────────────────┘
+//!              ▲                              ▲
+//!              │ impl                         │ impl (direct, non-separable)
+//!              │                              │
+//!  ┌────────────────────────┐   ┌─────────────────────────────────┐
+//!  │ GxArrayViewInterp-     │   │ (non-separable interpolators    │
+//!  │ olatorCore             │   │  implement GxArrayViewInterp-   │
+//!  │ <KROWS, KCOLS, KSIZE>  │   │  olator directly)               │
+//!  │                        │   └─────────────────────────────────┘
+//!  │ INTERNAL TRAIT         │
+//!  │ compute_weights()  ←── │ only method to implement
+//!  │ interpolate_nomask_*   │ ← default implementations
+//!  │ interpolate_masked_*   │
+//!  │ array1_interp2_        │
+//!  │   separable_core()     │
+//!  └────────────────────────┘
+//!              ▲
+//!              │ impl GxArrayViewInterpolatorCore<5,5,25>
+//!              │
+//!  ┌────────────────────────┐
+//!  │ GxOptimizedBicubic-    │
+//!  │ Interpolator           │
+//!  │ GxBSplineInterp-       │
+//!  │ olator<N>              │
+//!  └────────────────────────┘
+//! ```
+//!
+//! # Design notes
+//!
+//! * **`KSIZE` explicit parameter** — `KROWS * KCOLS` cannot be used directly
+//!   as an array size in a trait method because `generic_const_exprs`
+//!   (rust-lang/rust#76560) is not yet stable.  `KSIZE` must be supplied
+//!   explicitly and must equal `KROWS * KCOLS`.  Once the feature stabilises,
+//!   `KSIZE` can be removed.
+//!
+//! * **Zero-cost abstractions** — `do_check()` and `is_enabled()` return
+//!   compile-time constants that LLVM folds away; the resulting machine code
+//!   contains only the branch taken for the instantiated strategy type.
 use std::marker::PhantomData;
 use crate::core::gx_array::{GxArrayView, GxArrayViewMut};
 use crate::core::gx_errors::GxError;
 
 
-/// Generic strategy trait to validate whether a given input point is valid.
+// =============================================================================
+// Input mask strategies
+// =============================================================================
+
+/// Strategy trait that determines whether a given input point is valid.
 ///
-/// This abstraction tests if a specific index in the input array should
-/// be considered during interpolation.
+/// This abstraction is queried for each input index during interpolation to
+/// decide whether the corresponding sample should contribute to the result.
 ///
-/// - `is_valid(idx)` returns 1 if valid, 0 otherwise.
-/// - `is_enabled()` indicates whether the mask strategy is active
-///   (useful to avoid unnecessary checks).
+/// # Contract
+/// - [`is_valid`](Self::is_valid) returns `1` if the point is valid, `0`
+///   otherwise.
+/// - [`is_enabled`](Self::is_enabled) returns `false` when the strategy is a
+///   no-op (all points valid), allowing callers to skip the validity check
+///   entirely.
 pub trait GxArrayViewInterpolatorInputMaskStrategy {
     /// Returns whether the point at index `idx` is valid (1) or invalid (0).
     fn is_valid(&self, idx: usize) -> u8;
     
-    /*
-    /// Returns whether the all the points in a array are valid (1) or invalid (0).
-    fn is_valid_window(&self, start_idx: usize, height: usize, width: usize, cache: &mut [u8]) -> u8;
-    */
+    /// Returns `1` if all points with non-zero weights in the window are valid,
+    /// `0` as soon as one invalid point is found.
+    ///
+    /// # Parameters
+    /// - `start_idx`: flat index of the top-left corner of the window in the
+    ///   input array.
+    /// - `height`: number of rows in the window (`KROWS`).
+    /// - `width`: number of columns in the window (`KCOLS`).
+    /// - `weights_row`: row-direction kernel weights (length `height`).
+    /// - `weights_col`: column-direction kernel weights (length `width`).
+    /// - `cache`: scratch buffer of length `height * width`; may be written
+    ///   to by the implementation.
+    fn is_valid_weighted_window(
+        &self,
+        start_idx: usize,
+        height: usize,
+        width: usize,
+        weights_row: &[f64],
+        weights_col: &[f64],
+        cache: &mut [u8]
+    ) -> u8;
     
-    /// Returns whether the all the points in a array are valid (1) or invalid (0).
-    fn is_valid_weighted_window(&self, start_idx: usize, height: usize, width: usize, weights_row: &[f64], weights_col: &[f64], cache: &mut [u8]) -> u8;
-    
-    /// Returns true if the input mask strategy is enabled.
+    /// Returns `true` if this mask strategy is active.
+    ///
+    /// When `false`, callers may skip all validity checks, yielding a
+    /// measurable performance gain on the hot path.
     fn is_enabled(&self) -> bool;
 }
 
-impl<T: GxArrayViewInterpolatorInputMaskStrategy> GxArrayViewInterpolatorInputMaskStrategy for &T {
+/// Blanket impl: a shared reference to a mask strategy is itself a mask
+/// strategy, delegating all calls to the inner value.
+impl<T: GxArrayViewInterpolatorInputMaskStrategy>
+    GxArrayViewInterpolatorInputMaskStrategy for &T
+{
     #[inline(always)]
     fn is_valid(&self, idx: usize) -> u8 {
         (*self).is_valid(idx)
     }
-    
-    /*
+
     #[inline(always)]
-    fn is_valid_window(&self, start_idx: usize, height: usize, width: usize, cache: &mut [u8]) -> u8 {
-        (*self).is_valid_window(start_idx, height, width, cache)
-    }
-    */
-    
-    #[inline(always)]
-    fn is_valid_weighted_window(&self, start_idx: usize, height: usize, width: usize, weights_row: &[f64], weights_col: &[f64], cache: &mut [u8]) -> u8 {
-        (*self).is_valid_weighted_window(start_idx, height, width, weights_row, weights_col, cache)
+    fn is_valid_weighted_window(
+        &self,
+        start_idx: usize,
+        height: usize,
+        width: usize,
+        weights_row: &[f64],
+        weights_col: &[f64],
+        cache: &mut [u8],
+    ) -> u8 {
+        (*self).is_valid_weighted_window(
+            start_idx, height, width,
+            weights_row, weights_col,
+            cache,
+        )
     }
 
     #[inline(always)]
@@ -105,7 +206,11 @@ impl<T: GxArrayViewInterpolatorInputMaskStrategy> GxArrayViewInterpolatorInputMa
     }
 }
 
-/// Default implementation: no input mask, all points considered valid.
+/// No-op input mask: all points are unconditionally considered valid.
+///
+/// Use this when the input data is guaranteed to contain no invalid samples.
+/// [`is_enabled`](GxArrayViewInterpolatorInputMaskStrategy::is_enabled) returns
+/// `false`, allowing callers to elide the mask-check branch entirely.
 #[derive(Default)]
 pub struct NoInputMask;
 
@@ -114,28 +219,32 @@ impl GxArrayViewInterpolatorInputMaskStrategy for NoInputMask {
     fn is_valid(&self, _idx: usize) -> u8 {
         1
     }
-    
-    /*
+
     #[inline(always)]
-    fn is_valid_window(&self, _start_idx: usize, _height: usize, _width: usize, _cache: &mut [u8]) -> u8 {
+    fn is_valid_weighted_window(
+        &self,
+        _start_idx: usize,
+        _height: usize,
+        _width: usize,
+        _weights_row: &[f64],
+        _weights_col: &[f64],
+        _cache: &mut [u8],
+    ) -> u8 {
         1
     }
-    */
-    
-    #[inline(always)]
-    fn is_valid_weighted_window(&self, _start_idx: usize, _height: usize, _width: usize, _weights_row: &[f64], _weights_col: &[f64], _cache: &mut [u8]) -> u8 {
-        1
-    }
-    
+
     #[inline(always)]
     fn is_enabled(&self) -> bool {
         false
     }
 }
 
-/// Binary input mask based on a `u8` array, where 1 = valid, 0 = invalid.
+/// Binary input mask backed by a `u8` array, where `1` = valid, `0` = invalid.
+///
+/// Points whose mask value is `0` are excluded from interpolation; the output
+/// is set to the caller-supplied `nodata` value instead.
 pub struct BinaryInputMask<'a> {
-    /// An immutable reference to a `GxArrayView<u8>` corresponding to the binary mask.
+    /// Immutable view of the binary mask array.
     pub mask: &'a GxArrayView<'a, u8>,
 }
 
@@ -145,15 +254,16 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
         self.mask.data[idx]
     }
     
-    /*
     #[inline(always)]
-    fn is_valid_window(&self, _start_idx: usize, _height: usize, _width: usize, _cache: &mut [u8]) -> u8 {
-        1
-    }
-    */
-    
-    #[inline(always)]
-    fn is_valid_weighted_window(&self, start_idx: usize, height: usize, width: usize, weights_row: &[f64], weights_col: &[f64], cache: &mut [u8]) -> u8 {
+    fn is_valid_weighted_window(
+        &self,
+        start_idx: usize,
+        height: usize,
+        width: usize,
+        weights_row: &[f64],
+        weights_col: &[f64],
+        cache: &mut [u8],
+    ) -> u8 {
         let mut arr_iflat = start_idx;
         let ncol = self.mask.ncol;
         let height_m1 = height - 1;
@@ -162,14 +272,14 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
         
         for irow in 0..height {
             if weights_row[height_m1 - irow as usize] == 0.0 {
-                // Go to next row
-                i += height;
+                // Skip the entire row — its weight is zero.
+                i += width;
                 arr_iflat += ncol;
                 continue;
             }
             for icol in 0..width {
                 if weights_col[width_m1 - icol as usize] == 0.0 {
-                    // Go to next col
+                    // Skip this column — its weight is zero.
                     arr_iflat += 1;
                     i += 1;
                     continue;
@@ -193,29 +303,38 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
     }
 }
 
-/// Enum wrapping possible input mask strategies.
+/// Convenience enum wrapping the two supported input mask strategies.
 pub enum InputMaskStrategy<'a> {
-    /// Enum item for BinaryInputMask strategy
+    /// Delegate to a [`BinaryInputMask`].
     Binary(BinaryInputMask<'a>),
-    /// Enum item for NoInputMask strategy
+    /// Delegate to [`NoInputMask`] (all points valid).
     None(NoInputMask),
 }
 
 
-/// Generic strategy trait for managing an output mask.
+// =============================================================================
+// Output mask strategies
+// =============================================================================
+
+/// Strategy trait for writing to an output validity mask.
 ///
-/// Allows marking points written to the output.
-/// Methods:
-/// - `is_enabled()` to query if the strategy is active.
-/// - `set_value(idx, value)` to set a mask value at the given index.
+/// An output mask records which output pixels were successfully interpolated
+/// (`1`) and which were set to `nodata` (`0`).
+///
+/// # Contract
+/// - [`is_enabled`](Self::is_enabled) returns `false` for no-op
+///   implementations; callers may skip the write in that case.
+/// - [`set_value`](Self::set_value) writes the mask value at flat index `idx`.
 pub trait GxArrayViewInterpolatorOutputMaskStrategy {   
-    /// Returns true if the output mask strategy is enabled.
+    /// Returns `true` if this mask strategy is active.
     fn is_enabled(&self) -> bool;
-    
-    /// Sets a mask value at the given index.
+
+    /// Writes `value` to the output mask at flat index `idx`.
     fn set_value(&mut self, idx: usize, value: u8);
 }
 
+/// Blanket impl: a mutable reference to an output mask strategy is itself an
+/// output mask strategy, delegating all calls to the inner value.
 impl<T: GxArrayViewInterpolatorOutputMaskStrategy> GxArrayViewInterpolatorOutputMaskStrategy for &mut T {
     #[inline(always)]
     fn is_enabled(&self) -> bool {
@@ -228,7 +347,9 @@ impl<T: GxArrayViewInterpolatorOutputMaskStrategy> GxArrayViewInterpolatorOutput
     }
 }
 
-/// Default implementation: no output mask (no marking).
+/// No-op output mask: mask writes are discarded.
+///
+/// Use this when no output validity tracking is required.
 #[derive(Default)]
 pub struct NoOutputMask;
 
@@ -242,9 +363,12 @@ impl GxArrayViewInterpolatorOutputMaskStrategy for NoOutputMask {
     fn set_value(&mut self, _idx: usize, _value: u8) {}
 }
 
-/// Binary output mask stored in a mutable `u8` array.
+/// Binary output mask backed by a mutable `u8` array.
+///
+/// Each call to [`set_value`](GxArrayViewInterpolatorOutputMaskStrategy::set_value)
+/// stores the value directly in the underlying array.
 pub struct BinaryOutputMask<'a> {
-    /// A mutable reference to a `GxArrayViewMut<u8>` corresponding to the output binary mask.
+    /// Mutable view of the output binary mask array.
     pub mask: &'a mut GxArrayViewMut<'a, u8>,
 }
 
@@ -261,51 +385,65 @@ impl<'a> GxArrayViewInterpolatorOutputMaskStrategy for BinaryOutputMask<'a> {
     }
 }
 
-/// Enum wrapping possible output mask strategies.
+/// Convenience enum wrapping the two supported output mask strategies.
 pub enum OutputMaskStrategy<'a> {
-    /// Enum item for BinaryOutputMask strategy
+    /// Delegate to a [`BinaryOutputMask`].
     Binary(BinaryOutputMask<'a>),
-    /// Enum item for NoOutputMask strategy
+    /// Delegate to [`NoOutputMask`] (writes discarded).
     None(NoOutputMask),
 }
 
 
-/// Strategy trait for controlling bounds checking.
+// =============================================================================
+// Bounds check strategy
+// =============================================================================
+
+/// Strategy trait for controlling whether index boundary checks are performed.
 ///
-/// This abstraction enables or disables index boundary checks,
-/// which can impact performance.
-///
-/// The `do_check()` method is static, enabling the compiler to optimize away
-/// the checks if disabled.
+/// The single static method [`do_check`](Self::do_check) allows the compiler
+/// to eliminate the bounds-checking branch entirely when the strategy is
+/// [`NoBoundsCheck`], yielding a zero-cost abstraction.
 pub trait GxArrayViewInterpolatorBoundsCheckStrategy {
-    /// Method that return either true or false depending on the target strategy implementation
+    /// Returns `true` if boundary checks should be performed, `false` if they
+    /// can be skipped (caller guarantees valid indices).
     fn do_check() -> bool;
 }
 
 /// Bounds checking disabled.
+///
+/// The caller guarantees that all kernel indices are within the input array.
 #[derive(Default)]
 pub struct NoBoundsCheck;
+
 impl GxArrayViewInterpolatorBoundsCheckStrategy for NoBoundsCheck {
     #[inline(always)]
-    fn do_check() -> bool { false }
+    fn do_check() -> bool {
+        false
+    }
 }
 
-/// Bounds checking enabled.
+/// Bounds checking enabled (default, safe).
 #[derive(Default)]
 pub struct BoundsCheck;
+
 impl GxArrayViewInterpolatorBoundsCheckStrategy for BoundsCheck {
     #[inline(always)]
-    fn do_check() -> bool { true }
+    fn do_check() -> bool {
+        true
+    }
 }
 
 
-/// Interpolation context aggregating the three strategies.
+// =============================================================================
+// Interpolation context
+// =============================================================================
+
+/// Interpolation context aggregating the three orthogonal strategies.
 ///
-/// The context is generic over the strategies, allowing compile-time
-/// monomorphization and zero runtime overhead.
-///
-/// PhantomData markers are used to handle typing and lifetimes,
-/// especially for the bounds check strategy which carries no state.
+/// The context is generic over the strategies, enabling compile-time
+/// monomorphisation with zero runtime overhead.  `PhantomData` markers are
+/// used to carry the `BoundsCheck` type (which has no runtime state) and the
+/// lifetime `'a`.
 ///
 /// # Type parameters
 /// - `IM`: input mask strategy.
@@ -317,46 +455,42 @@ where
     OM: GxArrayViewInterpolatorOutputMaskStrategy + 'a,
     BC: GxArrayViewInterpolatorBoundsCheckStrategy + 'a,
 {
-    /// Input mask strategy.
+    /// Input mask strategy instance.
     pub input_mask: IM,
-    
-    /// Output mask strategy.
+
+    /// Output mask strategy instance.
     pub output_mask: OM,
-    
-    /// PhantomData for bounds check strategy.
+
+    /// Carries the bounds-check strategy type without storing a value.
     pub _phantom_bounds: PhantomData<BC>,
-    
-    /// PhantomData for lifetime management.
+
+    /// Carries the lifetime `'a`.
     pub _phantom_lifetime: PhantomData<&'a ()>,
 }
 
-/// Context trait to easily access the contained strategies.
+/// Trait providing type-erased access to the strategies stored in a context.
 ///
-/// Allows writing generic code that depends on the context.
+/// Implement this trait on a context type to allow generic interpolation code
+/// to query the active strategies without knowing the concrete context type.
 pub trait GxArrayViewInterpolationContextTrait {
-    /// Alias for the input mask strategy type.
-    /// 
-    /// This type defines how input masking is handled during interpolation operations.
+    /// The concrete input mask strategy type.
     type InputMask: GxArrayViewInterpolatorInputMaskStrategy;
-    
-    /// Alias for the output mask strategy type.
-    /// 
-    /// This type defines how output masking is handled during interpolation operations.
+
+    /// The concrete output mask strategy type.
     type OutputMask: GxArrayViewInterpolatorOutputMaskStrategy;
-    
-    /// Alias for the bounds check strategy type.
-    /// 
-    /// This type defines how bounds checking is performed during interpolation operations.
+
+    /// The concrete bounds-check strategy type.
     type BoundsCheck: GxArrayViewInterpolatorBoundsCheckStrategy;
 
-    /// Returns a reference to the input mask strategy.
+    /// Returns a shared reference to the input mask strategy.
     fn input_mask(&self) -> &Self::InputMask;
-    
+
     /// Returns a mutable reference to the output mask strategy.
     fn output_mask(&mut self) -> &mut Self::OutputMask;
 }
 
-impl<'a, IM, OM, BC> GxArrayViewInterpolationContextTrait for GxArrayViewInterpolationContext<'a, IM, OM, BC>
+impl<'a, IM, OM, BC> GxArrayViewInterpolationContextTrait
+    for GxArrayViewInterpolationContext<'a, IM, OM, BC>
 where
     IM: GxArrayViewInterpolatorInputMaskStrategy,
     OM: GxArrayViewInterpolatorOutputMaskStrategy,
@@ -384,6 +518,9 @@ where
     BC: GxArrayViewInterpolatorBoundsCheckStrategy + 'a,
 {
     /// Creates a new interpolation context with the given strategies.
+    ///
+    /// The `_bounds_check` argument is consumed only to infer the `BC` type;
+    /// no value is stored (the type carries all information).
     pub fn new(input_mask: IM, output_mask: OM, _bounds_check: BC) -> Self {
         Self {
             input_mask,
@@ -394,44 +531,54 @@ where
     }
 }
 
+/// Default interpolation context: no input mask, no output mask, bounds
+/// checking enabled.
+pub type DefaultCtx<'a> =
+    GxArrayViewInterpolationContext<'a, NoInputMask, NoOutputMask, BoundsCheck>;
 
-/// Default context type for array view interpolation.
-/// 
-/// This type provides a convenient default implementation using no masking strategies
-/// and standard bounds checking.
-pub type DefaultCtx<'a> = GxArrayViewInterpolationContext<'a, NoInputMask, NoOutputMask, BoundsCheck>;
 impl<'a> DefaultCtx<'a> {
-    /// Creates a new default context with no input masking, no output masking,
-    /// and standard bounds checking.
-    /// 
-    /// # Returns
-    /// A new instance of `DefaultCtx` with default strategies.
+    /// Creates a [`DefaultCtx`] with no masking and standard bounds checking.
     pub fn default() -> Self {
         Self {
-            input_mask: NoInputMask::default(),
-            output_mask: NoOutputMask::default(),
-            _phantom_bounds: PhantomData,
+            input_mask:        NoInputMask::default(),
+            output_mask:       NoOutputMask::default(),
+            _phantom_bounds:   PhantomData,
             _phantom_lifetime: PhantomData,
         }
     }
 }
 
+// =============================================================================
+// Interpolator arguments
+// =============================================================================
 
-/// Trait defining arguments for GxArrayViewInterpolator instantiation.
+/// Trait providing construction arguments for [`GxArrayViewInterpolator`]
+/// instances.
 ///
-/// This trait provides a generic interface for specifying interpolation parameters
-/// required during the construction of GxArrayViewInterpolator instances.
-/// It serves as an abstraction layer that enables flexible parameter passing
-/// while maintaining type safety across different interpolation methods.
+/// Different interpolation algorithms require different parameters at
+/// construction time.  This trait acts as an abstraction layer so that all
+/// interpolators share the same `new(args: &dyn GxArrayViewInterpolatorArgs)`
+/// signature while each can retrieve only the fields it needs.
 ///
-/// The trait is designed to accommodate various interpolation algorithms including:
-/// - Nearest neighbor interpolation
-/// - Linear interpolation
-/// - Cubic spline interpolation
-/// - Cardinal B-spline prefiltering and interpolation
+/// Default implementations return sensible "not applicable" values, so that
+/// simple interpolators (nearest-neighbour, linear, cubic) can leave the
+/// B-spline accessor unimplemented.
 ///
-/// Implementation of this trait allows for compile-time verification of required
-/// parameters and provides a consistent interface for interpolation configuration.
+/// # Supported interpolation methods
+///
+/// | Method          | Required args               |
+/// |-----------------|-----------------------------|
+/// | Nearest-neighbour | none                      |
+/// | Linear          | none                        |
+/// | Cubic           | none                        |
+/// | B-spline        | `bspline_args` → `(ε, s)`   |
+///
+/// where `ε` is the prefiltering precision and `s` is the maximum acceptable
+/// influence from masked pixels.
+///
+/// Implementation of this trait allows for compile-time verification of 
+/// required parameters and provides a consistent interface for interpolation
+/// configuration.
 ///
 /// ## Design Considerations
 ///
@@ -439,156 +586,133 @@ impl<'a> DefaultCtx<'a> {
 /// existing interpolator types to provide appropriate parameter exposure. This
 /// design choice ensures that each interpolator receives only the parameters it
 /// requires, preventing misuse and enabling compile-time validation.
-///
-/// ## Usage
-///
-/// Implementors of this trait must provide appropriate parameter handling for
-/// their specific interpolation algorithm. The trait provides default implementations
-/// for common cases, allowing simple interpolators to implement only the minimal
-/// required functionality.
-///
-/// ## Interpolation Methods Supported
-///
-/// - **Nearest Neighbor**: Requires no parameter
-/// - **Linear**: Requires no parameter
-/// - **Cubic**: Requires no parameter
-/// - **B-spline**: Requires the prefiltering precision parameter. (Note that the B-spline order
-///    is passed as a const generic parameter in the corresponding monomorphic implementation)
-///
-/// ## Implementation Requirements
-///
-/// Implementors must ensure that the returned parameter sets are valid for the
-/// intended interpolation algorithm and that parameter combinations are mutually
-/// compatible. The trait's default implementations provide sensible fallbacks
-/// while allowing specialized behavior for specific interpolator types.
 pub trait GxArrayViewInterpolatorArgs {
-    
-    /// Basic function for interpolator that require no arguments.
-    /// 
-    /// Returns `true` if the interpolator can be instantiated with no parameter,
-    /// indicating that no extra configuration is needed beyond basic setup.
-    /// 
-    /// # Returns
-    /// - `true` if no arguments are required
-    /// - `false` if parameters are needed
+    /// Returns `true` if the interpolator requires no arguments beyond the
+    /// defaults.
     fn no_args(&self) -> bool {
         true
     }
     
-    /// Retrieves B-spline specific arguments for interpolation.
-    /// 
-    /// Provides access to parameters required for B-spline interpolation methods.
-    /// The targeted parameters correspond :
-    ///  - to the accepted error, aka `precision`, for the infinite sum approximation.
-    ///  - to the accepted influence of masked invalid data during the prefiltering
-    /// 
+    /// Returns the B-spline-specific arguments `(precision, influence)`.
+    ///
+    /// - `precision` (`ε`): accepted error for the infinite-sum approximation
+    ///   in the prefiltering step.
+    /// - `influence` (`s`): accepted relative contamination from masked invalid
+    ///   pixels during prefiltering.
+    ///
     /// # Returns
-    /// - `Some((f64, f64))` containing the B-spline `precision` and `influence` parameters
-    /// - `None` if B-spline parameters are not applicable or required
+    /// - `Some((f64, f64))` for B-spline interpolators.
+    /// - `None` for all other interpolators (default).
     fn bspline_args(&self) -> Option<(f64, f64)> {
         None
     }
 }
 
-/// Concrete implementation for interpolators requiring no additional arguments.
+/// Arguments for interpolators that require no additional configuration.
 ///
-/// This struct implements the `GxArrayViewInterpolatorArgs` trait for interpolators
-/// that can operate with minimal configuration. It serves as a default implementation
-/// for simple interpolation methods like nearest neighbor interpolation where
-/// basic coordinate mapping is sufficient.
-///
-/// The implementation provides a clean, zero-cost abstraction that requires no
-/// additional memory allocation or complex parameter handling.
+/// Implements [`GxArrayViewInterpolatorArgs`] with all-default behaviour,
+/// suitable for nearest-neighbour, linear, and cubic interpolators.
 pub struct GxArrayViewInterpolatorNoArgs;
 
 
 impl GxArrayViewInterpolatorArgs for GxArrayViewInterpolatorNoArgs {
-    // Default implementation inherited from trait
+    // All methods use the trait defaults.
 }
 
-/// Trait defining the core 2D interpolation methods for resampling.
+
+// =============================================================================
+// Public interpolator trait
+// =============================================================================
+
+/// Public trait defining the 2D interpolation interface.
 ///
-/// This trait provides a low-level abstraction for computing interpolated values at a given
-/// integer center coordinate over a 2D input array. Implementations can support multiple
-/// interpolation strategies, with or without input/output validity masks, and may optionally 
-/// perform bounds checking depending on the variant.
-///
-/// The interpolator operates on flattened views of 3D arrays, where the first dimension
-/// corresponds to multiple variables (or bands), and the last two dimensions correspond
-/// to rows and columns.
+/// An implementor computes interpolated values at arbitrary floating-point
+/// positions within a flattened 3D input array
+/// `[nvar, nrow, ncol]` and writes the result to a matching output array.
 ///
 /// # Coordinate Convention
-/// The interpolation is performed at a discrete center coordinate `(row_c, col_c)`,
-/// which defines the origin of a local neighborhood used for interpolation.
-/// Implementations determine the neighborhood pattern and weight usage.
+/// The interpolation is performed at a discrete center coordinate `(row_c, 
+/// col_c)`, which defines the origin of a local neighborhood used for 
+/// interpolation.
 ///
-/// # Data Layout
-/// All arrays follow a flattened 3D memory layout:
-/// - `GxArrayView`: read-only input data with dimensions `[nvar, nrow, ncol]`
-/// - `GxArrayViewMut`: mutable output data with the same layout
-/// - `GxArrayView<u8>`: optional validity mask for input values embedded in the `context` parameter.
-/// - `GxArrayViewMut<u8>`: optional mutable output mask embedded in the `context` parameter.
+/// # Data layout
 ///
-/// Flat indices must be computed manually using row and column sizes and variable offsets.
+/// All arrays follow a flattened row-major 3D layout:
 ///
-/// # Context Parameter
-/// This trait integrates a generic interpolation context parameter (`context`) that
-/// encapsulates the behavior for:
-/// - Input validity masks (determining whether input points are considered valid)
-/// - Output masks (enabling or disabling the production of an output mask)
-/// - Bounds checking strategies (enabling or disabling bounds verification)
+/// - [`GxArrayView`]: read-only input, dimensions `[nvar, nrow, ncol]`.
+/// - [`GxArrayViewMut`]: mutable output, same layout.
+/// - Optional validity masks (`u8`) are embedded in the `context` parameter.
 ///
-/// This design promotes flexibility, allowing different interpolation behaviors
-/// without runtime overhead, by leveraging generic context implementations.
+/// Flat indices are computed as `ivar * nrow * ncol + irow * ncol + icol`.
 ///
-/// # Type Parameters
-/// - `T`: Input scalar type, must support conversion to `f64` and multiplication with `f64`.
-/// - `V`: Output scalar type, must be constructible from `f64`.
-/// - `IC`: Interpolation context type implementing `GxArrayViewInterpolationContextTrait`,
-///   which controls masking and bounds checking strategies.
+/// # Context parameter
 ///
-/// # Related Types
-/// - `GxArrayView`: View of the input 3D array
-/// - `GxArrayViewMut`: Mutable view of the output 3D array
-/// - `GxArrayViewInterpolationContextTrait`: Trait for generic interpolation context controlling masks and bounds
-pub trait GxArrayViewInterpolator: Send + Sync
-{
-    /// Constructs a new instance of the interpolator.
+/// The generic `context` argument of [`array1_interp2`](Self::array1_interp2)
+/// encapsulates three orthogonal behaviours:
+///
+/// - **Input mask** — whether a given input sample is valid.
+/// - **Output mask** — whether to record which output pixels were written.
+/// - **Bounds check** — whether to verify that the interpolation stencil lies
+///   fully within the input array.
+///
+/// # Thread safety
+///
+/// Implementors must be `Send + Sync` so that interpolators can be shared
+/// across threads.
+pub trait GxArrayViewInterpolator: Send + Sync {
+    /// Constructs a new interpolator from the supplied arguments.
     fn new(args: &dyn GxArrayViewInterpolatorArgs) -> Self;
     
-    /// Get the short name of the interpolator
-    ///
-    /// # Returns
-    /// A string representing the short name of the interpolator
+    /// Returns a short human-readable identifier for this interpolator.
     fn shortname(&self) -> String;
     
-    /// Inializes internal parameters of buffer. For simple interpolation method (nearest, linear or cubic) the 
-    /// implementation will be empty, while it will serves for B-Spline interpolation to precompute some stuff.
+    /// Performs any pre-computation required before the first call to
+    /// [`array1_interp2`](Self::array1_interp2).
+    ///
+    /// For simple methods (nearest-neighbour, linear, cubic) this is a no-op.
+    /// For B-spline interpolators it computes the truncation indices and domain
+    /// extensions.
+    ///
+    /// # Returns
+    /// - `Ok(())` on success.
+    /// - `Err(String)` with a descriptive message on failure.
     fn initialize(&mut self) -> Result<(), String>;
     
-    /// Allocates a buffer for kernel weights.
+    /// Allocates a scratch buffer large enough to hold one row of kernel
+    /// weights plus one column of kernel weights.
+    ///
+    /// The returned buffer is intended to be passed to
+    /// [`array1_interp2`](Self::array1_interp2) as `weights_buffer` and reused
+    /// across calls to avoid repeated allocation.
     fn allocate_kernel_buffer<'a>(&'a self) -> Box<[f64]>;
     
     /// Performs 2D interpolation at the specified target position.
     ///
     /// # Parameters
-    /// - `weights_buffer`: Mutable buffer to store computed kernel weights.
-    /// - `target_row_pos`: Target row coordinate (floating point).
-    /// - `target_col_pos`: Target column coordinate (floating point).
-    /// - `out_idx`: Flat output index to write the result.
-    /// - `array_in`: Input data array (flattened 3D view).
-    /// - `array_out`: Output data array (mutable flattened 3D view).
-    /// - `nodata_out`: Value to use for nodata output.
-    /// - `context`: Interpolation context controlling input/output masks and bounds checking.
+    /// - `weights_buffer`: pre-allocated scratch buffer (see
+    ///   [`allocate_kernel_buffer`](Self::allocate_kernel_buffer)); its
+    ///   contents are overwritten on each call.
+    /// - `target_row_pos`: target row coordinate (floating-point).
+    /// - `target_col_pos`: target column coordinate (floating-point).
+    /// - `out_idx`: flat index in `array_out` at which to write the result
+    ///   (same offset for all variables).
+    /// - `array_in`: input data array `[nvar, nrow, ncol]`, flattened.
+    /// - `array_out`: output data array (same layout), written in place.
+    /// - `nodata_out`: value written when interpolation cannot be performed
+    ///   (e.g. out-of-bounds or masked input).
+    /// - `context`: interpolation context controlling masking and bounds
+    ///   checking.
     ///
     /// # Returns
     /// - `Ok(())` if interpolation succeeded.
-    /// - `Err(String)` with error message if interpolation failed (e.g., out of bounds).
+    /// - `Err(String)` with an error message on failure.
     ///
-    /// # Type constraints
-    /// - `T`: Input type supporting copying, equality, multiplication with `f64`, and conversion to `f64`.
-    /// - `V`: Output type supporting copying, equality, and construction from `f64`.
-    /// - `IC`: Interpolation context implementing `GxArrayViewInterpolationContextTrait`.
+    /// # Type parameters
+    /// - `T`: input element type — must be `Copy + PartialEq + Into<f64>`
+    ///   and support `Mul<f64, Output = f64>`.
+    /// - `V`: output element type — must be `Copy + PartialEq + From<f64>`.
+    /// - `IC`: context type implementing
+    ///   [`GxArrayViewInterpolationContextTrait`].
     fn array1_interp2<T, V, IC> (
             &self,
             weights_buffer: &mut [f64],
@@ -605,22 +729,797 @@ pub trait GxArrayViewInterpolator: Send + Sync
         V: Copy + PartialEq + From<f64>,
         IC: GxArrayViewInterpolationContextTrait;
     
-    /// Returns the kernel size in rows.
+    /// Returns the kernel height
     fn kernel_row_size(&self) -> usize;
     
-    /// Returns the kernel size in rows.
+    /// Returns the kernel width
     fn kernel_col_size(&self) -> usize;
     
-    /// Computes and returns the total margins required on each side for the entire interpolation process.
-    ///
-    /// The margins are provided as a 4-element `usize` array representing the top, bottom, left, and right sides respectively.
+    /// Returns the margins `[top, bottom, left, right]` (in pixels) that must 
+    /// be available around the region of interest for the interpolation to be 
+    /// valid.
     ///
     /// # Returns
-    /// A 4-element `usize` array where each element corresponds to:
-    /// - Index 0: Top margin
-    /// - Index 1: Bottom margin
-    /// - Index 2: Left margin
-    /// - Index 3: Right margin
+    /// - `Ok([usize; 4])` where indices map to `[top, bottom, left, right]`.
+    /// - `Err(GxError)` if the interpolator has not been initialised.
     fn total_margins(&self) -> Result<[usize; 4], GxError>;
 }
 
+
+// =============================================================================
+// Helper
+// =============================================================================
+
+/// Writes `nodata` to every variable plane at `out_idx` and sets the output
+/// mask to `0`.
+///
+/// This function is called in every branch where interpolation cannot be
+/// performed (out-of-bounds centre, masked input pixel, etc.) to guarantee
+/// that the output is always initialised.
+///
+/// # Parameters
+/// - `array_out`: mutable output array (all variable planes are written).
+/// - `out_idx`: flat pixel index within each plane.
+/// - `nodata`: the sentinel value to write.
+/// - `output_mask`: output mask strategy; `set_value(out_idx, 0)` is called.
+/// - `nvar`: number of variable planes.
+/// - `var_size`: stride between consecutive planes (`nrow * ncol`).
+///
+/// # Type parameters
+/// - `V`: output element type, must be `Copy`.
+/// - `OM`: output mask strategy, must implement
+///   [`GxArrayViewInterpolatorOutputMaskStrategy`].
+#[inline(always)]
+pub fn write_nodata_all_vars<V, OM>(
+    array_out: &mut GxArrayViewMut<'_, V>,
+    out_idx: usize,
+    nodata: V,
+    output_mask: &mut OM,
+    nvar: usize,
+    var_size: usize,
+) where
+    V: Copy,
+    OM: GxArrayViewInterpolatorOutputMaskStrategy,
+{
+    let mut shift = 0usize;
+    for _ in 0..nvar {
+        array_out.data[out_idx + shift] = nodata;
+        shift += var_size;
+    }
+    output_mask.set_value(out_idx, 0);
+}
+
+// =============================================================================
+// Internal interpolator trait
+// =============================================================================
+
+/// **Internal computation trait** for separable-kernel interpolators.
+///
+/// # Role and scope
+///
+/// [`GxArrayViewInterpolatorCore`] is *not* part of the public API: callers
+/// always interact with [`GxArrayViewInterpolator`].  Its purpose is to factor
+/// out the four separable kernel-convolution variants that would otherwise be
+/// copy-pasted into every concrete interpolator:
+///
+/// * `interpolate_nomask_unchecked`
+/// * `interpolate_nomask_partial`
+/// * `interpolate_masked_unchecked`
+/// * `interpolate_masked_partial`
+/// * `array1_interp2_separable_core` (dispatcher, calls the four above)
+///
+/// A concrete interpolator implementing this trait inherits all five methods
+/// for free; it only needs to provide
+/// [`compute_weights`](Self::compute_weights).
+///
+/// # When to implement this trait
+///
+/// Implement [`GxArrayViewInterpolatorCore`] when:
+/// - The stencil is **separable**.
+/// - The kernel dimensions are **fixed at compile time** (`KROWS`, `KCOLS`).
+///
+/// Interpolators with non-separable kernels or runtime-determined stencil
+/// sizes should implement [`GxArrayViewInterpolator`] directly and provide
+/// their own convolution logic.
+///
+/// # Const parameters
+///
+/// | Parameter | Meaning                       | Bicubic example |
+/// |-----------|-------------------------------|-----------------|
+/// | `KROWS`   | Kernel height in rows         | `5`             |
+/// | `KCOLS`   | Kernel width in columns       | `5`             |
+/// | `KSIZE`   | Must equal `KROWS * KCOLS`    | `25`            |
+///
+/// `KSIZE` is supplied explicitly because `generic_const_exprs`
+/// (rust-lang/rust#76560) is not yet stable and prevents writing
+/// `[u8; KROWS * KCOLS]` directly in a trait method body.  Once the feature
+/// lands, `KSIZE` can be removed.
+///
+/// # Provided methods
+///
+/// | Method                           | Input mask  | Bounds check |
+/// |----------------------------------|-------------|--------------|
+/// | `interpolate_nomask_unchecked`   | no          | no           |
+/// | `interpolate_nomask_partial`     | no          | yes          |
+/// | `interpolate_masked_unchecked`   | yes         | no           |
+/// | `interpolate_masked_partial`     | yes         | yes          |
+/// | `array1_interp2_separable_core`  | via context | via context  |
+///
+/// # Minimal implementation
+///
+/// ```ignore
+/// // Only `compute_weights` is required; all other methods are inherited.
+/// impl GxArrayViewInterpolatorCore<5, 5, 25> for MyInterpolator {
+///     fn compute_weights(&self, x: f64, weights: &mut [f64]) {
+///         my_kernel_weights(x, weights);
+///     }
+/// }
+/// ```
+///
+/// # Relationship with `GxArrayViewInterpolator`
+///
+/// A concrete type typically implements both traits.
+/// `array1_interp2_separable_core` is a natural delegate for the required
+/// `array1_interp2` method:
+///
+/// ```ignore
+/// impl GxArrayViewInterpolator for MyInterpolator {
+///     fn array1_interp2<T, V, IC>(
+///         &self, buf, row, col, idx, arr_in, arr_out, nodata, ctx,
+///     ) -> Result<(), String> {
+///         self.array1_interp2_separable_core(
+///             buf, row, col, idx, arr_in, arr_out, nodata, ctx)
+///     }
+///     // … other required methods …
+/// }
+/// ```
+pub trait GxArrayViewInterpolatorCore<
+    const KROWS: usize,
+    const KCOLS: usize,
+    const KSIZE: usize,
+> {
+    // =========================================================================
+    // interpolate_nomask_unchecked
+    // =========================================================================
+
+    /// Separable 2D convolution with no input mask and no bounds checking.
+    ///
+    /// Computes the interpolated value at `(row_c, col_c)` using a
+    /// `KROWS × KCOLS` separable stencil and writes it to `array_out` at
+    /// `out_idx` for every variable plane.
+    ///
+    /// # Parameters
+    /// - `weights_row`: row-direction kernel weights, length `KROWS`.
+    /// - `weights_col`: column-direction kernel weights, length `KCOLS`.
+    /// - `array_in`: input data array `[nvar, nrow, ncol]`, flattened.
+    /// - `array_out`: output array (same layout), written in place.
+    /// - `out_idx`: flat pixel index in the output (shared across all planes).
+    /// - `row_c`: integer row coordinate of the interpolation centre.
+    /// - `col_c`: integer column coordinate of the interpolation centre.
+    ///
+    /// # Safety
+    /// The caller must guarantee that every index
+    /// `row_c + irow - KROWS/2` and `col_c + icol - KCOLS/2`
+    /// is within the bounds of `array_in`.  Violating this precondition
+    /// results in a panic (index out of bounds) or, with unsafe indexing,
+    /// undefined behaviour.
+    ///
+    /// # Type parameters
+    /// - `T`: input element type.
+    /// - `V`: output element type.
+    #[inline(always)]
+    fn interpolate_nomask_unchecked<T, V>(
+        &self,
+        weights_row: &[f64],
+        weights_col: &[f64],
+        array_in: &GxArrayView<'_, T>,
+        array_out: &mut GxArrayViewMut<'_, V>,
+        out_idx: usize,
+        row_c: i64,
+        col_c: i64,
+    ) where
+        T: Copy + std::ops::Mul<f64, Output = f64> + Into<f64>,
+        V: Copy + From<f64>,
+    {
+        let half_rows = (KROWS / 2) as i64;
+        let half_cols = (KCOLS / 2) as i64;
+        let ncol      = array_in.ncol;
+        let in_var_sz   = array_in.var_size;
+        let out_var_sz   = array_out.var_size;
+        let mut in_shift  = 0usize;
+        let mut out_shift = 0usize;
+
+        for _ivar in 0..array_in.nvar {
+            let mut acc = 0.0f64;
+            for irow in 0..KROWS {
+                let r = (row_c + irow as i64 - half_rows) as usize;
+                let mut acc_col = 0.0f64;
+                for icol in 0..KCOLS {
+                    let c    = (col_c + icol as i64 - half_cols) as usize;
+                    // flat 1d index computation
+                    let flat = in_shift + r * ncol + c;
+                    // add current weighted product
+                    acc_col +=
+                        array_in.data[flat] * weights_col[KCOLS - 1 - icol];
+                }
+                // accumulate for current row
+                acc += weights_row[KROWS - 1 - irow] * acc_col;
+            }
+            // write interpolated value to output buffer
+            array_out.data[out_idx + out_shift] = V::from(acc);
+            // update shift for input array
+            in_shift  += in_var_sz;
+            // update shift for output array
+            out_shift += out_var_sz;
+        }
+    }
+    
+    // =========================================================================
+    // interpolate_nomask_partial
+    // =========================================================================
+    
+    /// Separable 2D convolution with no input mask, with bounds checking.
+    ///
+    /// Identical to [`interpolate_nomask_unchecked`](Self::interpolate_nomask_unchecked)
+    /// except that, before performing the convolution, every stencil position
+    /// whose weight is non-zero is checked against the array bounds.  If any
+    /// such position lies outside the array, the output at `out_idx` is set to
+    /// `nodata` for all variable planes, the output mask is set to `0`, and the
+    /// function returns early.
+    ///
+    /// Positions with zero weight that fall outside the array are silently
+    /// ignored (they contribute nothing to the sum).
+    ///
+    /// # Parameters
+    /// - `weights_row`: row-direction kernel weights, length `KROWS`.
+    /// - `weights_col`: column-direction kernel weights, length `KCOLS`.
+    /// - `array_in`: input data array `[nvar, nrow, ncol]`, flattened.
+    /// - `array_out`: output array (same layout), written in place.
+    /// - `output_mask`: output mask strategy; written once upon completion.
+    /// - `out_idx`: flat pixel index in the output (shared across all planes).
+    /// - `row_c`: integer row coordinate of the interpolation centre.
+    /// - `col_c`: integer column coordinate of the interpolation centre.
+    /// - `nodata`: sentinel value written when interpolation is invalid.
+    ///
+    /// # Type parameters
+    /// - `T`: input element type.
+    /// - `V`: output element type.
+    /// - `OM`: output mask strategy implementing
+    ///   [`GxArrayViewInterpolatorOutputMaskStrategy`].
+    #[inline(always)]
+    fn interpolate_nomask_partial<T, V, OM>(
+        &self,
+        weights_row: &[f64],
+        weights_col: &[f64],
+        array_in: &GxArrayView<'_, T>,
+        array_out: &mut GxArrayViewMut<'_, V>,
+        output_mask: &mut OM,
+        out_idx: usize,
+        row_c: i64,
+        col_c: i64,
+        nodata: V,
+    ) where
+        T: Copy + std::ops::Mul<f64, Output = f64> + Into<f64>,
+        V: Copy + From<f64>,
+        OM: GxArrayViewInterpolatorOutputMaskStrategy,
+    {
+        let half_rows = (KROWS / 2) as i64;
+        let half_cols = (KCOLS / 2) as i64;
+        let ncol    = array_in.ncol;
+        let in_var_sz = array_in.var_size;
+        let out_var_sz = array_out.var_size;
+
+        // Pre-check: every stencil position with non-zero weight must be
+        // in-bounds.  Positions with zero weight are skipped regardless.
+        for irow in 0..KROWS {
+            if weights_row[KROWS - 1 - irow] == 0.0 {
+                continue;
+            }
+            let r = row_c + irow as i64 - half_rows;
+            // current weight for row is non zero
+            for icol in 0..KCOLS {
+                if weights_col[KCOLS - 1 - icol] == 0.0 {
+                    continue;
+                }
+                let c = col_c + icol as i64 - half_cols;
+                
+                if r < 0 || r >= array_in.nrow_i64
+                    || c < 0 || c >= array_in.ncol_i64
+                {
+                    // Both weights are non-zero but the index is out of bounds:
+                    // the output is considered invalid.
+                    write_nodata_all_vars(
+                        array_out, out_idx, nodata,
+                        output_mask, array_in.nvar, out_var_sz,
+                    );
+                    return;
+                }
+            }
+        }
+
+        // Convolution — out-of-bounds positions with zero weight are silently
+        // skipped (they contribute nothing to the accumulator).
+        let mut in_shift  = 0usize;
+        let mut out_shift = 0usize;
+
+        for _ivar in 0..array_in.nvar {
+            let mut acc = 0.0f64;
+            for irow in 0..KROWS {
+                let r = row_c + irow as i64 - half_rows;
+                if r < 0 || r >= array_in.nrow_i64 {
+                    continue;
+                }
+                let mut acc_col = 0.0f64;
+                for icol in 0..KCOLS {
+                    let c = col_c + icol as i64 - half_cols;
+                    if c < 0 || c >= array_in.ncol_i64 {
+                        continue;
+                    }
+                    // flat 1d index computation
+                    let flat =
+                        in_shift + r as usize * ncol + c as usize;
+                    // add current weighted product
+                    acc_col +=
+                        array_in.data[flat] * weights_col[KCOLS - 1 - icol];
+                }
+                acc += weights_row[KROWS - 1 - irow] * acc_col;
+            }
+            // write interpolated value to output buffer
+            array_out.data[out_idx + out_shift] = V::from(acc);
+            // update shift for input array
+            in_shift  += in_var_sz;
+            // update shift for output array
+            out_shift += out_var_sz;
+        }
+        // validate output mask
+        output_mask.set_value(out_idx, 1);
+    }
+    
+    // =========================================================================
+    // interpolate_masked_unchecked
+    // =========================================================================
+
+    /// Separable 2D convolution with input mask validation, no bounds checking.
+    ///
+    /// Before performing the convolution the entire `KROWS × KCOLS` window is
+    /// tested against the input mask via
+    /// [`is_valid_weighted_window`][
+    /// GxArrayViewInterpolatorInputMaskStrategy::is_valid_weighted_window].
+    /// Stencil positions whose weight is zero are excluded from the mask check.
+    /// If any position with a non-zero weight is masked, the output is set to
+    /// `nodata` for all variable planes and the output mask is set to `0`.
+    ///
+    /// The mask scratch buffer `[u8; KSIZE]` is stack-allocated (size known at
+    /// compile time via the `KSIZE` const parameter).
+    ///
+    /// # Parameters
+    /// - `weights_row`: row-direction kernel weights, length `KROWS`.
+    /// - `weights_col`: column-direction kernel weights, length `KCOLS`.
+    /// - `array_in`: input data array `[nvar, nrow, ncol]`, flattened.
+    /// - `array_out`: output array (same layout), written in place.
+    /// - `out_idx`: flat pixel index in the output (shared across all planes).
+    /// - `row_c`: integer row coordinate of the interpolation centre.
+    /// - `col_c`: integer column coordinate of the interpolation centre.
+    /// - `nodata`: sentinel value written when the window contains masked pixels.
+    /// - `context`: interpolation context providing the input and output mask
+    ///   strategies.
+    ///
+    /// # Safety
+    /// The caller must guarantee that every stencil index is within the bounds
+    /// of both `array_in` and the mask array embedded in `context`.
+    ///
+    /// # Type parameters
+    /// - `T`: input element type.
+    /// - `V`: output element type.
+    /// - `IM`: interpolation context
+    ///   [`GxArrayViewInterpolationContext`].
+    #[inline(always)]
+    fn interpolate_masked_unchecked<T, V, IC>(
+        &self,
+        weights_row: &[f64],
+        weights_col: &[f64],
+        array_in: &GxArrayView<'_, T>,
+        array_out: &mut GxArrayViewMut<'_, V>,
+        out_idx: usize,
+        row_c: i64,
+        col_c: i64,
+        nodata: V,
+        context: &mut IC,
+    ) where
+        T: Copy + std::ops::Mul<f64, Output = f64> + Into<f64>,
+        V: Copy + From<f64>,
+        IC: GxArrayViewInterpolationContextTrait,
+    {
+        let half_rows = (KROWS / 2) as i64;
+        let half_cols = (KCOLS / 2) as i64;
+        let ncol    = array_in.ncol;
+        let in_var_sz = array_in.var_size;
+        let out_var_sz = array_out.var_size;
+
+        let row_start = (row_c - half_rows) as usize;
+        let col_start = (col_c - half_cols) as usize;
+        let flat_base = row_start * ncol + col_start;
+        
+        let mut mask_cache = [0u8; KSIZE];
+
+        // Pre check mask
+        // Ignore mask value where weights are zero
+        let valid = context.input_mask().is_valid_weighted_window(
+            flat_base, KROWS, KCOLS,
+            weights_row, weights_col,
+            &mut mask_cache,
+        );
+
+        if valid == 0 {
+            write_nodata_all_vars(
+                array_out, out_idx, nodata,
+                context.output_mask(), array_in.nvar, out_var_sz,
+            );
+            return;
+        }
+
+        let mut out_shift = 0usize;
+        // Loop on multipe variables in input array.
+        for ivar in 0..array_in.nvar {
+            let ain_base = flat_base + ivar * in_var_sz;
+            let mut acc  = 0.0f64;
+            let mut flat = ain_base;
+
+            for irow in 0..KROWS {
+                let mut acc_col = 0.0f64;
+                for icol in 0..KCOLS {
+                    // add current weighted product
+                    acc_col +=
+                        array_in.data[flat] * weights_col[KCOLS - 1 - icol];
+                    // flat 1d index computation - go to next col
+                    flat += 1;
+                }
+                acc  += weights_row[KROWS - 1 - irow] * acc_col;
+                // flat 1d index computation - go to next row
+                flat += ncol - KCOLS;
+            }
+            array_out.data[out_idx + out_shift] = V::from(acc);
+            // update shift for output array
+            out_shift += out_var_sz;
+        }
+        // validate output mask
+        context.output_mask().set_value(out_idx, 1);
+    }
+    
+    // =========================================================================
+    // interpolate_masked_partial
+    // =========================================================================
+
+    /// Separable 2D convolution with input mask validation and bounds checking.
+    ///
+    /// Combines the bounds checking of
+    /// [`interpolate_nomask_partial`](Self::interpolate_nomask_partial) with
+    /// the mask validation of
+    /// [`interpolate_masked_unchecked`](Self::interpolate_masked_unchecked).
+    ///
+    /// The pre-validation pass checks, for every stencil position with a
+    /// non-zero weight:
+    /// 1. That the position lies within the input array bounds.
+    /// 2. That the corresponding input mask value is `1` (valid).
+    ///
+    /// If either check fails the function writes `nodata` to all output planes
+    /// and returns early.  If both checks pass, the convolution is executed
+    /// without further bound or mask testing (guaranteed safe by the pre-pass).
+    ///
+    /// Out-of-bounds or masked positions with zero weight are silently ignored.
+    ///
+    /// # Parameters
+    /// - `weights_row`: row-direction kernel weights, length `KROWS`.
+    /// - `weights_col`: column-direction kernel weights, length `KCOLS`.
+    /// - `array_in`: input data array `[nvar, nrow, ncol]`, flattened.
+    /// - `array_out`: output array (same layout), written in place.
+    /// - `out_idx`: flat pixel index in the output (shared across all planes).
+    /// - `row_c`: integer row coordinate of the interpolation centre.
+    /// - `col_c`: integer column coordinate of the interpolation centre.
+    /// - `nodata`: sentinel value written when interpolation is invalid.
+    /// - `context`: interpolation context providing mask and bounds strategies.
+    ///
+    /// # See also
+    /// - [`interpolate_masked_unchecked`](Self::interpolate_masked_unchecked):
+    ///   faster variant assuming in-bounds indices.
+    /// - [`interpolate_nomask_partial`](Self::interpolate_nomask_partial):
+    ///   bounds-checked variant without mask testing.
+    ///
+    /// # Type parameters
+    /// - `T`: input element type.
+    /// - `V`: output element type.
+    /// - `IM`: interpolation context
+    ///   [`GxArrayViewInterpolationContext`].
+    #[inline(always)]
+    fn interpolate_masked_partial<T, V, IC>(
+        &self,
+        weights_row: &[f64],
+        weights_col: &[f64],
+        array_in: &GxArrayView<'_, T>,
+        array_out: &mut GxArrayViewMut<'_, V>,
+        out_idx: usize,
+        row_c: i64,
+        col_c: i64,
+        nodata: V,
+        context: &mut IC,
+    ) where
+        T: Copy + std::ops::Mul<f64, Output = f64> + Into<f64> + PartialEq,
+        V: Copy + From<f64> + PartialEq,
+        IC: GxArrayViewInterpolationContextTrait,
+    {
+        let half_rows = (KROWS / 2) as i64;
+        let half_cols = (KCOLS / 2) as i64;
+        let ncol    = array_in.ncol;
+        let in_var_sz = array_in.var_size;
+        let out_var_sz = array_out.var_size;
+
+        for irow in 0..KROWS {
+            if weights_row[KROWS - 1 - irow] == 0.0 {
+                continue;
+            }
+            let r = row_c + irow as i64 - half_rows;
+            for icol in 0..KCOLS {
+                if weights_col[KCOLS - 1 - icol] == 0.0 {
+                    continue;
+                }
+                if r < 0 || r >= array_in.nrow_i64 {
+                    // If we came here the weights are both positivs, we cant
+                    // ignore that we go out of bounds as far as the validity is
+                    // concerned.
+                    write_nodata_all_vars(
+                        array_out, out_idx, nodata,
+                        context.output_mask(), array_in.nvar, out_var_sz,
+                    );
+                    return;
+                }
+                let c = col_c + icol as i64 - half_cols;
+                if c < 0 || c >= array_in.ncol_i64 {
+                    // If we came here the weights are both positivs, we cant
+                    // ignore that we go out of bounds as far as the validity is
+                    // concerned.
+                    write_nodata_all_vars(
+                        array_out, out_idx, nodata,
+                        context.output_mask(), array_in.nvar, out_var_sz,
+                    );
+                    return;
+                }
+                let flat = r as usize * ncol + c as usize;
+                if context.input_mask().is_valid(flat) == 0 {
+                    write_nodata_all_vars(
+                        array_out, out_idx, nodata,
+                        context.output_mask(), array_in.nvar, out_var_sz,
+                    );
+                    return;
+                }
+            }
+        }
+
+        // Loop on multipe variables in input array.
+        // If a iteration condition fails it is equivalent as considering a zero
+        // for the corresponding row or column value.
+        let mut in_shift  = 0usize;
+        let mut out_shift = 0usize;
+
+        for _ivar in 0..array_in.nvar {
+            let mut acc = 0.0f64;
+            for irow in 0..KROWS {
+                let r = row_c + irow as i64 - half_rows;
+                if r < 0 || r >= array_in.nrow_i64 {
+                    // If we came here the corresponding weights are zero
+                    continue;
+                }
+                let mut acc_col = 0.0f64;
+                for icol in 0..KCOLS {
+                    let c    = col_c + icol as i64 - half_cols;
+                    if c < 0 || c >= array_in.ncol_i64 {
+                        // If we came here the corresponding weights are zero
+                        continue;
+                    }
+                    // flat 1d index computation
+                    let flat = in_shift + r as usize * ncol + c as usize;
+                    // add current weighted product
+                    acc_col +=
+                        array_in.data[flat] * weights_col[KCOLS - 1 - icol];
+                }
+                acc += weights_row[KROWS - 1 - irow] * acc_col;
+            }
+            // write interpolated value to output buffer
+            array_out.data[out_idx + out_shift] = V::from(acc);
+            // update shift for input array
+            in_shift  += in_var_sz;
+            // update shift for output array
+            out_shift += out_var_sz;
+        }
+        // validate output mask
+        context.output_mask().set_value(out_idx, 1);
+    }
+    
+    // =========================================================================
+    // compute_weights  (required)
+    // =========================================================================
+
+    /// Computes the `KROWS` (or `KCOLS`) kernel weights for the given
+    /// sub-pixel offset `x` and writes them into `weights`.
+    ///
+    /// This method is called twice per pixel — once for the row direction and
+    /// once for the column direction — by
+    /// [`array1_interp2_separable_core`](Self::array1_interp2_separable_core).
+    ///
+    /// # Parameters
+    /// - `x`: sub-pixel offset
+    /// - `weights`: output slice of length `KROWS` (or `KCOLS`); the
+    ///   implementor writes one weight per stencil position.
+    fn compute_weights(&self, x: f64, weights: &mut [f64]);
+    
+    // =========================================================================
+    // array1_interp2_separable_core
+    // =========================================================================
+
+    /// Performs 2D interpolation at a floating-point target position using the
+    /// separable kernel defined by [`compute_weights`](Self::compute_weights).
+    ///
+    /// This method implements the full interpolation pipeline:
+    ///
+    /// 1. Computes the nearest integer centre `(kernel_center_row,
+    ///    kernel_center_col)` from the target position.
+    /// 2. If bounds checking is enabled (`IC::BoundsCheck::do_check()`):
+    ///    - **Interior path** — the entire `KROWS × KCOLS` stencil fits inside
+    ///      the array: calls `interpolate_*_unchecked`.
+    ///    - **Border path** — the centre is inside the array but the stencil
+    ///      may cross a border: calls `interpolate_*_partial`.
+    ///    - **Outside path** — the centre is outside the array: writes `nodata`
+    ///      and sets the output mask to `0`.
+    /// 3. If bounds checking is disabled: always calls `interpolate_*_unchecked`.
+    ///
+    /// The mask branch (`interpolate_masked_*` vs `interpolate_nomask_*`) is
+    /// selected at compile time via `context.input_mask().is_enabled()`.
+    ///
+    /// Both branches compile to zero-cost monomorphic code: the bounds-check
+    /// and mask-check conditionals are eliminated by the compiler when the
+    /// corresponding strategy types implement constant-folding methods.
+    ///
+    /// # Parameters
+    /// - `weights_buffer`: pre-allocated scratch buffer of length
+    ///   `KROWS + KCOLS`; split at `KROWS` into row and column weight slices.
+    /// - `target_row_pos`: target row in floating-point coordinates.
+    /// - `target_col_pos`: target column in floating-point coordinates.
+    /// - `out_idx`: flat output index (same across all variable planes).
+    /// - `array_in`: input data array `[nvar, nrow, ncol]`, flattened.
+    /// - `array_out`: output array (same layout), written in place.
+    /// - `nodata_out`: sentinel value written for invalid output pixels.
+    /// - `context`: interpolation context (masks + bounds check strategy).
+    ///
+    /// # Returns
+    /// - `Ok(())` on success.
+    /// - `Err(String)` with an error message on failure.
+    ///
+    /// # Type parameters
+    /// - `T`: input element type.
+    /// - `V`: output element type.
+    /// - `IC`: context type implementing
+    ///   [`GxArrayViewInterpolationContextTrait`].
+    #[inline]
+    fn array1_interp2_separable_core<T, V, IC>(
+            &self,
+            weights_buffer: &mut [f64],
+            target_row_pos: f64,
+            target_col_pos: f64,
+            out_idx: usize,
+            array_in: &GxArrayView<'_, T>,
+            array_out: &mut GxArrayViewMut<'_, V>,
+            nodata_out: V,
+            context: &mut IC,
+    ) -> Result<(), String>
+    where
+        T: Copy + PartialEq + std::ops::Mul<f64, Output=f64> + Into<f64>,
+        V: Copy + PartialEq + From<f64>,
+        IC: GxArrayViewInterpolationContextTrait,
+    {
+        let half_rows = (KROWS / 2) as i64;
+        let half_cols = (KCOLS / 2) as i64;
+        
+        // Nearest integer centre for the interpolation stencil.
+        let kernel_center_row: i64 = (target_row_pos + 0.5).floor() as i64;
+        let kernel_center_col: i64 = (target_col_pos + 0.5).floor() as i64;
+ 
+        let out_var_sz = array_out.var_size;
+        
+        // Initialise the output mask as valid; the interpolation variants will
+        // overwrite it to 0 if the pixel turns out to be invalid.
+        context.output_mask().set_value(out_idx, 1);
+        
+        if IC::BoundsCheck::do_check() {
+            // Interior path: the full stencil fits strictly inside the array.
+            // No per-element bounds checking is needed inside the inner loops.
+            if (kernel_center_row >= half_rows)
+                    && (kernel_center_row < array_in.nrow_i64-half_rows)
+                    && (kernel_center_col >= half_cols)
+                    && (kernel_center_col < array_in.ncol_i64-half_cols) {
+                let rel_row: f64 = target_row_pos - kernel_center_row as f64;
+                let rel_col: f64 = target_col_pos - kernel_center_col as f64;
+                
+                // Create slices to give to weight computation methods
+                let (w_row, w_col) =
+                    weights_buffer.split_at_mut(KROWS);
+                self.compute_weights(rel_row, w_row);
+                self.compute_weights(rel_col, w_col);
+
+                if context.input_mask().is_enabled() {
+                    self.interpolate_masked_unchecked(
+                        w_row, w_col,
+                        array_in, array_out, out_idx,
+                        kernel_center_row, kernel_center_col,
+                        nodata_out, context,
+                    );
+                } else {
+                    self.interpolate_nomask_unchecked(
+                        w_row, w_col,
+                        array_in, array_out, out_idx,
+                        kernel_center_row, kernel_center_col,
+                    );
+                }
+            }
+            // Border path: the centre is inside the array but the stencil may
+            // cross one or more borders.
+            else if (kernel_center_row >=0)
+                    && (kernel_center_row < array_in.nrow_i64)
+                    && (kernel_center_col >= 0)
+                    && (kernel_center_col < array_in.ncol_i64) {
+                let rel_row: f64 = target_row_pos - kernel_center_row as f64;
+                let rel_col: f64 = target_col_pos - kernel_center_col as f64;
+                
+                let (w_row, w_col) =
+                    weights_buffer.split_at_mut(KROWS);
+                self.compute_weights(rel_row, w_row);
+                self.compute_weights(rel_col, w_col);
+
+                if context.input_mask().is_enabled() {
+                    self.interpolate_masked_partial(
+                        w_row, w_col,
+                        array_in, array_out, out_idx,
+                        kernel_center_row, kernel_center_col,
+                        nodata_out, context,
+                    );
+                } else {
+                    self.interpolate_nomask_partial(
+                        w_row, w_col,
+                        array_in, array_out,
+                        context.output_mask(), out_idx,
+                        kernel_center_row, kernel_center_col,
+                        nodata_out,
+                    );
+                }
+            } else {
+                // Outside path: the centre is entirely outside the array.
+                write_nodata_all_vars(
+                    array_out, out_idx, nodata_out,
+                    context.output_mask(), array_in.nvar, out_var_sz,
+                );
+            }
+        } else {
+            // No bounds check: the caller guarantees all indices are valid.
+            let rel_row: f64 = target_row_pos - kernel_center_row as f64;
+            let rel_col: f64 = target_col_pos - kernel_center_col as f64;
+            
+            let (w_row, w_col) = weights_buffer.split_at_mut(KROWS);
+            self.compute_weights(rel_row, w_row);
+            self.compute_weights(rel_col, w_col);
+
+            if context.input_mask().is_enabled() {
+                self.interpolate_masked_unchecked(
+                    w_row, w_col,
+                    array_in, array_out, out_idx,
+                    kernel_center_row, kernel_center_col,
+                    nodata_out, context,
+                );
+            } else {
+                self.interpolate_nomask_unchecked(
+                    w_row, w_col,
+                    array_in, array_out, out_idx,
+                    kernel_center_row, kernel_center_col,
+                );
+            }
+        }
+        Ok(())
+    }
+}

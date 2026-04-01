@@ -16,21 +16,31 @@
 // limitations under the License.
 
 #![warn(missing_docs)]
-//! Implementation of GxArrayViewInterpolator for a nearest neighbor interpolator
+//! Implementation of GxArrayViewInterpolator for a nearest neighbor
+//! interpolator
 use crate::core::gx_array::{GxArrayView, GxArrayViewMut};
 use crate::core::gx_errors::GxError;
-use super::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewInterpolatorArgs, GxArrayViewInterpolationContextTrait, GxArrayViewInterpolatorBoundsCheckStrategy, GxArrayViewInterpolatorInputMaskStrategy, GxArrayViewInterpolatorOutputMaskStrategy};
+use super::gx_array_view_interp::{
+    GxArrayViewInterpolator,
+    GxArrayViewInterpolatorArgs,
+    GxArrayViewInterpolationContextTrait,
+    GxArrayViewInterpolatorBoundsCheckStrategy,
+    GxArrayViewInterpolatorInputMaskStrategy,
+    GxArrayViewInterpolatorOutputMaskStrategy,
+};
 
 
 /// Nearest neighbor interpolator implementation
 /// 
-/// This structure implements the `GxArrayViewInterpolator` trait for nearest neighbor
-/// interpolation operations.
+/// This structure implements the `GxArrayViewInterpolator` trait for nearest
+/// neighbor interpolation operations.
 #[derive(Clone, Debug)]
 pub struct GxNearestInterpolator {
-    /// The size of the kernel alongs the rows - it is set to 1 in the implemented new() method.
+    /// The size of the kernel alongs the rows - it is set to 1 in the 
+    /// implemented new() method.
     kernel_row_size: usize,
-    /// The size of the kernel alongs the columns - it is set to 1 in the implemented new() method.
+    /// The size of the kernel alongs the columns - it is set to 1 in the 
+    ///implemented new() method.
     kernel_col_size: usize,
 }
 
@@ -43,10 +53,6 @@ impl GxArrayViewInterpolator for GxNearestInterpolator
         }
     }
     
-    /// Get the short name of the interpolator
-    ///
-    /// # Returns
-    /// A string representing the short name of the interpolator
     fn shortname(&self) -> String {
         "nearest".to_string()
     }
@@ -63,16 +69,6 @@ impl GxArrayViewInterpolator for GxNearestInterpolator
         self.kernel_col_size
     }
     
-    /// Computes and returns the total margins required on each side for the entire interpolation process.
-    ///
-    /// The margins are provided as a 4-element `usize` array representing the top, bottom, left, and right sides respectively.
-    ///
-    /// # Returns
-    /// A 4-element `usize` array where each element corresponds to:
-    /// - Index 0: Top margin
-    /// - Index 1: Bottom margin
-    /// - Index 2: Left margin
-    /// - Index 3: Right margin
     #[inline(always)]
     fn total_margins(&self) -> Result<[usize; 4], GxError> {
         Ok([1, 1, 1, 1])
@@ -83,6 +79,9 @@ impl GxArrayViewInterpolator for GxNearestInterpolator
         buffer.into_boxed_slice()
     }
     
+    /// Direct implementation without delegation to the 
+    /// [`GxArrayViewInterpolatorCore`] trait : snaps directly to the nearest
+    /// integer position if valid.
     fn array1_interp2<T, V, IC>(
             &self,
             _weights_buffer: &mut [f64],
@@ -99,56 +98,51 @@ impl GxArrayViewInterpolator for GxNearestInterpolator
         V: Copy + PartialEq + From<f64>,
         IC: GxArrayViewInterpolationContextTrait,
     {
-        // Get the nearest corresponding index corresponding to the target position 
+        // Nearest integer centre for the interpolation stencil.
         let kernel_center_row: i64 = (target_row_pos + 0.5).floor() as i64;
         let kernel_center_col: i64 = (target_col_pos + 0.5).floor() as i64;
  
-        let array_in_var_size: usize = array_in.nrow * array_in.ncol;
-        let array_out_var_size: usize = array_out.nrow * array_out.ncol;
+        let in_var_sz: usize = array_in.nrow * array_in.ncol;
+        let out_var_sz: usize = array_out.nrow * array_out.ncol;
         
-        let mut arr_iflat: usize = (kernel_center_row as usize) * array_in.ncol + (kernel_center_col as usize);
+        let mut arr_iflat: usize =
+            (kernel_center_row as usize) * array_in.ncol +
+            (kernel_center_col as usize);
         let mut out_idx_ivar: usize = out_idx;
         
-        // Consider mask valid (if any)
+        // Initialise the output mask as valid; the interpolation variants will
+        // overwrite it to 0 if the pixel turns out to be invalid.
         context.output_mask().set_value(out_idx, 1);
         
-        // After compilation that test will have no cost in monomorphic created
-        // method
         if IC::BoundsCheck::do_check() {
-            // Check that the required data for interpolation is within the input
-            // array shape
-            // Here we do not need to check borders inside the inner loops.
-            // That should be the most common path.
+            // Interior path: the full stencil fits strictly inside the array.
+            // No per-element bounds checking is needed inside the inner loops.
             if (kernel_center_row >=0)
                     && (kernel_center_row < array_in.nrow_i64)
                     && (kernel_center_col >= 0)
                     && (kernel_center_col < array_in.ncol_i64) {
                 
                 if context.input_mask().is_enabled() {
-                    // There is a mask
                     if context.input_mask().is_valid(arr_iflat) == 1 {
-                        // The mask is valid by default
-                        // Set output
+                        // The mask is valid by default - set output data
                         for _ivar in 0..array_in.nvar {
-                            // Set output data
-                            array_out.data[out_idx_ivar] = V::from((array_in.data[arr_iflat]).into());
+                            array_out.data[out_idx_ivar] =
+                                V::from((array_in.data[arr_iflat]).into());
                             
                             // Prepare indices for next iteration
-                            arr_iflat += array_in_var_size;
-                            out_idx_ivar += array_out_var_size;
+                            arr_iflat += in_var_sz;
+                            out_idx_ivar += out_var_sz;
                         }
-                        // The mask is valid by default
                     }
                     else {
-                        // Set output to nodata
+                        // Set output data as nodata
                         for _ivar in 0..array_in.nvar {
-                            // Set output data
                             array_out.data[out_idx_ivar] = nodata_out;
                             
                             // Prepare indices for next iteration
-                            out_idx_ivar += array_out_var_size;
+                            out_idx_ivar += out_var_sz;
                         }
-                        // Set output_mask
+                        // Set output_mask as invalid
                         context.output_mask().set_value(out_idx, 0);
                     }
                 }
@@ -156,11 +150,12 @@ impl GxArrayViewInterpolator for GxNearestInterpolator
                     // There is no mask - the boundary check has been performed
                     for _ivar in 0..array_in.nvar {
                         // Set output data
-                        array_out.data[out_idx_ivar] = V::from((array_in.data[arr_iflat]).into());
+                        array_out.data[out_idx_ivar] =
+                            V::from((array_in.data[arr_iflat]).into());
                             
                         // Prepare indices for next iteration
-                        arr_iflat += array_in_var_size;
-                        out_idx_ivar += array_out_var_size;
+                        arr_iflat += in_var_sz;
+                        out_idx_ivar += out_var_sz;
                     }
                 }
             }
@@ -170,51 +165,46 @@ impl GxArrayViewInterpolator for GxNearestInterpolator
                     array_out.data[out_idx_ivar] = nodata_out;
                             
                     // Prepare indices for next iteration
-                    //arr_iflat += array_in_var_size;
-                    out_idx_ivar += array_out_var_size;
+                    out_idx_ivar += out_var_sz;
                 }
+                // Set output_mask as invalid
                 context.output_mask().set_value(out_idx, 0);
             }
         } else {
-            // Here there is no boundary check - this code can panic !
-            // This code is implemented for performance issue
+            // No bounds check: the caller guarantees all indices are valid.
             if context.input_mask().is_enabled() {
-                // There is a mask
                 if context.input_mask().is_valid(arr_iflat) == 1 {
-                    // The mask is valid by default
-                    // Set output
+                    // The mask is valid by default - set output data
                     for _ivar in 0..array_in.nvar {
-                        // Set output data
-                        array_out.data[out_idx_ivar] = V::from((array_in.data[arr_iflat]).into());
+                        array_out.data[out_idx_ivar] =
+                            V::from((array_in.data[arr_iflat]).into());
                         
                         // Prepare indices for next iteration
-                        arr_iflat += array_in_var_size;
-                        out_idx_ivar += array_out_var_size;
+                        arr_iflat += in_var_sz;
+                        out_idx_ivar += out_var_sz;
                     }
-                    // The mask is valid by default
                 }
                 else {
-                    // Set output to nodata
+                    // Set output data as nodata
                     for _ivar in 0..array_in.nvar {
-                        // Set output data
                         array_out.data[out_idx_ivar] = nodata_out;
                         
                         // Prepare indices for next iteration
-                        out_idx_ivar += array_out_var_size;
+                        out_idx_ivar += out_var_sz;
                     }
-                    // Set output_mask
+                    // Set output_mask as invalid
                     context.output_mask().set_value(out_idx, 0);
                 }
             }
             else {
-                // Set output
+                // Set output data
                 for _ivar in 0..array_in.nvar {
-                    // Set output data
-                    array_out.data[out_idx_ivar] = V::from((array_in.data[arr_iflat]).into());
+                    array_out.data[out_idx_ivar] =
+                        V::from((array_in.data[arr_iflat]).into());
                     
                     // Prepare indices for next iteration
-                    arr_iflat += array_in_var_size;
-                    out_idx_ivar += array_out_var_size;
+                    arr_iflat += in_var_sz;
+                    out_idx_ivar += out_var_sz;
                 }
             }
         }
@@ -227,7 +217,13 @@ impl GxArrayViewInterpolator for GxNearestInterpolator
 #[cfg(test)]
 mod gx_linear_kernel_tests {
     use super::*;
-    use crate::core::interp::gx_array_view_interp::{GxArrayViewInterpolatorNoArgs, GxArrayViewInterpolationContext, BinaryInputMask, BinaryOutputMask, BoundsCheck};
+    use crate::core::interp::gx_array_view_interp::{
+        GxArrayViewInterpolatorNoArgs,
+        GxArrayViewInterpolationContext,
+        BinaryInputMask,
+        BinaryOutputMask,
+        BoundsCheck
+    };
 
     #[test]
     fn test_array1_interp2_idendity_mask_full_valid() {

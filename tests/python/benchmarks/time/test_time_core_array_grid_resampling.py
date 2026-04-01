@@ -36,7 +36,7 @@ from scipy.ndimage import map_coordinates
 
 from gridr.core.grid.grid_resampling import array_grid_resampling
 
-NROUNDS = 100
+NROUNDS = 20
 NITERATIONS = 1
 NWARMUP = 3
 NSIZES = [
