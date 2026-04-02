@@ -89,7 +89,7 @@
 //!  ┌────────────────────────┐   ┌─────────────────────────────────┐
 //!  │ GxArrayViewInterp-     │   │ (non-separable interpolators    │
 //!  │ olatorCore             │   │  implement GxArrayViewInterp-   │
-//!  │ <KROWS, KCOLS, KSIZE>  │   │  olator directly)               │
+//!  │ <KROWS, KCOLS>         │   │  olator directly)               │
 //!  │                        │   └─────────────────────────────────┘
 //!  │ INTERNAL TRAIT         │
 //!  │ compute_weights()  ←── │ only method to implement
@@ -99,7 +99,7 @@
 //!  │   separable_core()     │
 //!  └────────────────────────┘
 //!              ▲
-//!              │ impl GxArrayViewInterpolatorCore<5,5,25>
+//!              │ impl GxArrayViewInterpolatorCore<5,5>
 //!              │
 //!  ┌────────────────────────┐
 //!  │ GxOptimizedBicubic-    │
@@ -110,12 +110,6 @@
 //! ```
 //!
 //! # Design notes
-//!
-//! * **`KSIZE` explicit parameter** — `KROWS * KCOLS` cannot be used directly
-//!   as an array size in a trait method because `generic_const_exprs`
-//!   (rust-lang/rust#76560) is not yet stable.  `KSIZE` must be supplied
-//!   explicitly and must equal `KROWS * KCOLS`.  Once the feature stabilises,
-//!   `KSIZE` can be removed.
 //!
 //! * **Zero-cost abstractions** — `do_check()` and `is_enabled()` return
 //!   compile-time constants that LLVM folds away; the resulting machine code
@@ -144,6 +138,32 @@ pub trait GxArrayViewInterpolatorInputMaskStrategy {
     /// Returns whether the point at index `idx` is valid (1) or invalid (0).
     fn is_valid(&self, idx: usize) -> u8;
     
+    /// Returns `1` if all points in the window are valid, `0` oterhwise.
+    ///
+    /// # Parameters
+    /// - `start_idx`: flat index of the top-left corner of the window in the
+    ///
+    /// # Const parameters
+    /// - `H`: window's height.
+    /// - `W`: widows's width.
+    fn is_valid_window<const H: usize, const W: usize>(
+        &self, 
+        start_idx: usize,
+    ) -> u8;
+    
+    /// Returns the number of valid points within the window
+    ///
+    /// # Parameters
+    /// - `start_idx`: flat index of the top-left corner of the window in the
+    ///
+    /// # Const parameters
+    /// - `H`: window's height.
+    /// - `W`: widows's width.
+    fn count_valid_window<const H: usize, const W: usize>(
+        &self, 
+        start_idx: usize,
+    ) -> usize;
+    
     /// Returns `1` if all points with non-zero weights in the window are valid,
     /// `0` as soon as one invalid point is found.
     ///
@@ -163,7 +183,6 @@ pub trait GxArrayViewInterpolatorInputMaskStrategy {
         width: usize,
         weights_row: &[f64],
         weights_col: &[f64],
-        cache: &mut [u8]
     ) -> u8;
     
     /// Returns `true` if this mask strategy is active.
@@ -182,6 +201,26 @@ impl<T: GxArrayViewInterpolatorInputMaskStrategy>
     fn is_valid(&self, idx: usize) -> u8 {
         (*self).is_valid(idx)
     }
+    
+    #[inline(always)]
+    fn is_valid_window<const H: usize, const W: usize>(
+        &self, 
+        start_idx: usize,
+    ) -> u8 {
+        (*self).is_valid_window::<H, W>(
+            start_idx,
+        )
+    }
+    
+    #[inline(always)]
+    fn count_valid_window<const H: usize, const W: usize>(
+        &self, 
+        start_idx: usize,
+    ) -> usize {
+        (*self).count_valid_window::<H, W>(
+            start_idx,
+        )
+    }
 
     #[inline(always)]
     fn is_valid_weighted_window(
@@ -191,12 +230,10 @@ impl<T: GxArrayViewInterpolatorInputMaskStrategy>
         width: usize,
         weights_row: &[f64],
         weights_col: &[f64],
-        cache: &mut [u8],
     ) -> u8 {
         (*self).is_valid_weighted_window(
             start_idx, height, width,
             weights_row, weights_col,
-            cache,
         )
     }
 
@@ -221,6 +258,22 @@ impl GxArrayViewInterpolatorInputMaskStrategy for NoInputMask {
     }
 
     #[inline(always)]
+    fn is_valid_window<const H: usize, const W: usize>(
+        &self, 
+        _start_idx: usize,
+    ) -> u8 {
+        1
+    }
+
+    #[inline(always)]
+    fn count_valid_window<const H: usize, const W: usize>(
+        &self, 
+        _start_idx: usize,
+    ) -> usize {
+        H*W
+    }
+    
+    #[inline(always)]
     fn is_valid_weighted_window(
         &self,
         _start_idx: usize,
@@ -228,7 +281,6 @@ impl GxArrayViewInterpolatorInputMaskStrategy for NoInputMask {
         _width: usize,
         _weights_row: &[f64],
         _weights_col: &[f64],
-        _cache: &mut [u8],
     ) -> u8 {
         1
     }
@@ -253,6 +305,40 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
     fn is_valid(&self, idx: usize) -> u8 {
         self.mask.data[idx]
     }
+
+    #[inline(always)]
+    fn is_valid_window<const H: usize, const W: usize>(
+        &self, 
+        start_idx: usize,
+    ) -> u8 {
+        let mut arr_iflat = start_idx;
+        let ncol = self.mask.ncol;
+        let mut acc: u8 = 1;
+        for _irow in 0..H {
+            for icol in 0..W {
+                acc &= self.mask.data[arr_iflat + icol];
+            }
+            arr_iflat += ncol;
+        }
+        acc
+    }
+
+    #[inline(always)]
+    fn count_valid_window<const H: usize, const W: usize>(
+        &self, 
+        start_idx: usize,
+    ) -> usize {
+        let mut arr_iflat = start_idx;
+        let ncol = self.mask.ncol;
+        let mut acc: usize = 0;
+        for _irow in 0..H {
+            for icol in 0..W {
+                acc += self.mask.data[arr_iflat + icol] as usize;
+            }
+            arr_iflat += ncol;
+        }
+        acc
+    }
     
     #[inline(always)]
     fn is_valid_weighted_window(
@@ -262,18 +348,15 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
         width: usize,
         weights_row: &[f64],
         weights_col: &[f64],
-        cache: &mut [u8],
     ) -> u8 {
         let mut arr_iflat = start_idx;
         let ncol = self.mask.ncol;
         let height_m1 = height - 1;
         let width_m1 = width - 1;
-        let mut i: usize = 0;
         
         for irow in 0..height {
             if weights_row[height_m1 - irow as usize] == 0.0 {
                 // Skip the entire row — its weight is zero.
-                i += width;
                 arr_iflat += ncol;
                 continue;
             }
@@ -281,16 +364,12 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
                 if weights_col[width_m1 - icol as usize] == 0.0 {
                     // Skip this column — its weight is zero.
                     arr_iflat += 1;
-                    i += 1;
                     continue;
                 }
-                cache[i] = self.mask.data[arr_iflat];
-                
-                if cache[i] == 0 {
+                if self.mask.data[arr_iflat] == 0 {
                     return 0;
                 }
                 arr_iflat += 1;
-                i += 1;
             }
             arr_iflat += ncol - width;
         }
@@ -828,12 +907,6 @@ pub fn write_nodata_all_vars<V, OM>(
 /// |-----------|-------------------------------|-----------------|
 /// | `KROWS`   | Kernel height in rows         | `5`             |
 /// | `KCOLS`   | Kernel width in columns       | `5`             |
-/// | `KSIZE`   | Must equal `KROWS * KCOLS`    | `25`            |
-///
-/// `KSIZE` is supplied explicitly because `generic_const_exprs`
-/// (rust-lang/rust#76560) is not yet stable and prevents writing
-/// `[u8; KROWS * KCOLS]` directly in a trait method body.  Once the feature
-/// lands, `KSIZE` can be removed.
 ///
 /// # Provided methods
 ///
@@ -849,7 +922,7 @@ pub fn write_nodata_all_vars<V, OM>(
 ///
 /// ```ignore
 /// // Only `compute_weights` is required; all other methods are inherited.
-/// impl GxArrayViewInterpolatorCore<5, 5, 25> for MyInterpolator {
+/// impl GxArrayViewInterpolatorCore<5, 5> for MyInterpolator {
 ///     fn compute_weights(&self, x: f64, weights: &mut [f64]) {
 ///         my_kernel_weights(x, weights);
 ///     }
@@ -873,11 +946,7 @@ pub fn write_nodata_all_vars<V, OM>(
 ///     // … other required methods …
 /// }
 /// ```
-pub trait GxArrayViewInterpolatorCore<
-    const KROWS: usize,
-    const KCOLS: usize,
-    const KSIZE: usize,
-> {
+pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
     // =========================================================================
     // interpolate_nomask_unchecked
     // =========================================================================
@@ -1081,16 +1150,15 @@ pub trait GxArrayViewInterpolatorCore<
 
     /// Separable 2D convolution with input mask validation, no bounds checking.
     ///
-    /// Before performing the convolution the entire `KROWS × KCOLS` window is
-    /// tested against the input mask via
-    /// [`is_valid_weighted_window`][
-    /// GxArrayViewInterpolatorInputMaskStrategy::is_valid_weighted_window].
-    /// Stencil positions whose weight is zero are excluded from the mask check.
-    /// If any position with a non-zero weight is masked, the output is set to
-    /// `nodata` for all variable planes and the output mask is set to `0`.
-    ///
-    /// The mask scratch buffer `[u8; KSIZE]` is stack-allocated (size known at
-    /// compile time via the `KSIZE` const parameter).
+    /// # Design : Exact Interpolation Policy
+    /// The mask validation operates on weighted support rather than on the 
+    /// target coordinates alone. Stencil positions whose kernel weight is zero
+    /// are excluded from the validity check, regardless of their mask value.
+    /// This ensures that when the kernel reduces to a Dirac at the nearest grid
+    /// node (all off-centre wieghts vanish), the method returns the source 
+    /// value provided that single node is valid -- even if neighbouring samples
+    /// in the convolution are masked.
+    /// This is a design choice
     ///
     /// # Parameters
     /// - `weights_row`: row-direction kernel weights, length `KROWS`.
@@ -1103,6 +1171,19 @@ pub trait GxArrayViewInterpolatorCore<
     /// - `nodata`: sentinel value written when the window contains masked pixels.
     /// - `context`: interpolation context providing the input and output mask
     ///   strategies.
+    ///
+    /// # Performance
+    /// The mask validation follows a two-stage short-circuit strategy ordered
+    /// by decreasing probability to minimise the cost of the common case.
+    /// First, a branchless pass over the KROWS x KCOLS window accumulates the 
+    /// number of valid samples. The resulting count feeds a short-circuit
+    /// conditional :
+    /// 1. count == KROWS x KSIZE (all valid) -- the dominant case
+    /// 2. count == 0 (all masked) -- second most frequent and cheap
+    /// 3. 0 < count < KROWS x KZIZE -- Both guards pass, triggering the full
+    ///   [`is_valid_weighted_window()`](
+    ///   GxArrayViewInterpolatorInputMaskStrategy::is_valid_weighted_window())
+    ///   check required due to the exact policy.
     ///
     /// # Safety
     /// The caller must guarantee that every stencil index is within the bounds
@@ -1139,51 +1220,56 @@ pub trait GxArrayViewInterpolatorCore<
         let row_start = (row_c - half_rows) as usize;
         let col_start = (col_c - half_cols) as usize;
         let flat_base = row_start * ncol + col_start;
-        
-        let mut mask_cache = [0u8; KSIZE];
 
-        // Pre check mask
-        // Ignore mask value where weights are zero
-        let valid = context.input_mask().is_valid_weighted_window(
-            flat_base, KROWS, KCOLS,
-            weights_row, weights_col,
-            &mut mask_cache,
+        // Count the number of valid point within the convolution window
+        let count = context.input_mask().count_valid_window::<KROWS, KCOLS>(
+            flat_base
         );
+        // Do the convolution using a short-circuit conditional
+        // conditional :
+        // 1. count == KROWS x KSIZE (all valid) -- the dominant case
+        // 2. count == 0 (all masked) -- second most frequent and cheap
+        // 3. 0 < count < KROWS x KZIZE -- Both guards pass, triggering the
+        //   full weighted check (required due to exact policy)
+        if count == KROWS * KCOLS ||
+            (count > 0 && context.input_mask().is_valid_weighted_window(
+                    flat_base, KROWS, KCOLS,
+                    weights_row, weights_col,
+                   ) == 1
+            )
+        {
+            let mut out_shift = 0usize;
+            // Loop on multipe variables in input array.
+            for ivar in 0..array_in.nvar {
+                let ain_base = flat_base + ivar * in_var_sz;
+                let mut acc  = 0.0f64;
+                let mut flat = ain_base;
 
-        if valid == 0 {
+                for irow in 0..KROWS {
+                    let mut acc_col = 0.0f64;
+                    for icol in 0..KCOLS {
+                        // add current weighted product
+                        acc_col +=
+                            array_in.data[flat] * weights_col[KCOLS - 1 - icol];
+                        // flat 1d index computation - go to next col
+                        flat += 1;
+                    }
+                    acc  += weights_row[KROWS - 1 - irow] * acc_col;
+                    // flat 1d index computation - go to next row
+                    flat += ncol - KCOLS;
+                }
+                array_out.data[out_idx + out_shift] = V::from(acc);
+                // update shift for output array
+                out_shift += out_var_sz;
+            }
+            // validate output mask
+            context.output_mask().set_value(out_idx, 1);
+        } else {
             write_nodata_all_vars(
                 array_out, out_idx, nodata,
                 context.output_mask(), array_in.nvar, out_var_sz,
             );
-            return;
         }
-
-        let mut out_shift = 0usize;
-        // Loop on multipe variables in input array.
-        for ivar in 0..array_in.nvar {
-            let ain_base = flat_base + ivar * in_var_sz;
-            let mut acc  = 0.0f64;
-            let mut flat = ain_base;
-
-            for irow in 0..KROWS {
-                let mut acc_col = 0.0f64;
-                for icol in 0..KCOLS {
-                    // add current weighted product
-                    acc_col +=
-                        array_in.data[flat] * weights_col[KCOLS - 1 - icol];
-                    // flat 1d index computation - go to next col
-                    flat += 1;
-                }
-                acc  += weights_row[KROWS - 1 - irow] * acc_col;
-                // flat 1d index computation - go to next row
-                flat += ncol - KCOLS;
-            }
-            array_out.data[out_idx + out_shift] = V::from(acc);
-            // update shift for output array
-            out_shift += out_var_sz;
-        }
-        // validate output mask
-        context.output_mask().set_value(out_idx, 1);
     }
     
     // =========================================================================

@@ -79,8 +79,8 @@ pub struct GxLinearInterpolator {
 }
 
 // Use generic implementation from GxArrayViewInterpolatorCore for
-// KROWS = 3, NCOLS = 3, KSIZE = 9
-impl GxArrayViewInterpolatorCore<3, 3, 9> for GxLinearInterpolator {
+// KROWS = 3, NCOLS = 3
+impl GxArrayViewInterpolatorCore<3, 3> for GxLinearInterpolator {
     
     #[inline(always)]
     fn compute_weights(&self, x: f64, weights: &mut [f64])

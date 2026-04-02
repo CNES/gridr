@@ -286,8 +286,8 @@ pub struct GxOptimizedBicubicInterpolator {
 }
 
 // Use generic implementation from GxArrayViewInterpolatorCore for
-// KROWS = 5, NCOLS = 5, KSIZE = 25
-impl GxArrayViewInterpolatorCore<5, 5, 25> for GxOptimizedBicubicInterpolator {
+// KROWS = 5, NCOLS = 5
+impl GxArrayViewInterpolatorCore<5, 5> for GxOptimizedBicubicInterpolator {
         
     #[inline(always)]
     fn compute_weights(&self, x: f64, weights: &mut [f64])

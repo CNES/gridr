@@ -415,35 +415,35 @@ impl<const N: usize> GxBSplineInterpolatorTrait<N> for GxBSplineInterpolator<N> 
 }
 
 
-impl<const N: usize> GxArrayViewInterpolatorCore<5, 5, 25> for GxBSplineInterpolator<N> {
+impl<const N: usize> GxArrayViewInterpolatorCore<5, 5> for GxBSplineInterpolator<N> {
     #[inline(always)]
     fn compute_weights(&self, x: f64, weights: &mut [f64])
     {
         self.bspline_kernel_weights(x, weights)
     }
 }
-impl<const N: usize> GxArrayViewInterpolatorCore<7, 7, 49> for GxBSplineInterpolator<N> {
+impl<const N: usize> GxArrayViewInterpolatorCore<7, 7> for GxBSplineInterpolator<N> {
     #[inline(always)]
     fn compute_weights(&self, x: f64, weights: &mut [f64])
     {
         self.bspline_kernel_weights(x, weights)
     }
 }
-impl<const N: usize> GxArrayViewInterpolatorCore<9, 9, 81> for GxBSplineInterpolator<N> {
+impl<const N: usize> GxArrayViewInterpolatorCore<9, 9> for GxBSplineInterpolator<N> {
     #[inline(always)]
     fn compute_weights(&self, x: f64, weights: &mut [f64])
     {
         self.bspline_kernel_weights(x, weights)
     }
 }
-impl<const N: usize> GxArrayViewInterpolatorCore<11, 11, 121> for GxBSplineInterpolator<N> {
+impl<const N: usize> GxArrayViewInterpolatorCore<11, 11> for GxBSplineInterpolator<N> {
     #[inline(always)]
     fn compute_weights(&self, x: f64, weights: &mut [f64])
     {
         self.bspline_kernel_weights(x, weights)
     }
 }
-impl<const N: usize> GxArrayViewInterpolatorCore<13, 13, 169> for GxBSplineInterpolator<N> {
+impl<const N: usize> GxArrayViewInterpolatorCore<13, 13> for GxBSplineInterpolator<N> {
     #[inline(always)]
     fn compute_weights(&self, x: f64, weights: &mut [f64])
     {
@@ -472,23 +472,23 @@ impl<const N: usize> GxBSplineInterpolator<N>
     {
        
         match N {
-            3 => GxArrayViewInterpolatorCore::<5, 5, 25>::array1_interp2_separable_core(
+            3 => GxArrayViewInterpolatorCore::<5, 5>::array1_interp2_separable_core(
                     self, weights_buffer, target_row_pos, target_col_pos,
                     out_idx, array_in, array_out, nodata_out, context
                  ),
-            5 => GxArrayViewInterpolatorCore::<7, 7, 49>::array1_interp2_separable_core(
+            5 => GxArrayViewInterpolatorCore::<7, 7>::array1_interp2_separable_core(
                     self, weights_buffer, target_row_pos, target_col_pos,
                     out_idx, array_in, array_out, nodata_out, context
                  ),
-            7 => GxArrayViewInterpolatorCore::<9, 9, 81>::array1_interp2_separable_core(
+            7 => GxArrayViewInterpolatorCore::<9, 9>::array1_interp2_separable_core(
                     self, weights_buffer, target_row_pos, target_col_pos,
                     out_idx, array_in, array_out, nodata_out, context
                  ),
-            9 => GxArrayViewInterpolatorCore::<11, 11, 121>::array1_interp2_separable_core(
+            9 => GxArrayViewInterpolatorCore::<11, 11>::array1_interp2_separable_core(
                     self, weights_buffer, target_row_pos, target_col_pos,
                     out_idx, array_in, array_out, nodata_out, context
                  ),
-            11 => GxArrayViewInterpolatorCore::<13, 13, 169>::array1_interp2_separable_core(
+            11 => GxArrayViewInterpolatorCore::<13, 13>::array1_interp2_separable_core(
                     self, weights_buffer, target_row_pos, target_col_pos,
                     out_idx, array_in, array_out, nodata_out, context
                  ),
