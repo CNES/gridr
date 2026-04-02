@@ -11,6 +11,7 @@
   - Added `validate_point method` to GridMeshValidator trait for validating grid points when using a `GridPointMesh`
   - Added conditional logic to choose between the fast path using (`GridPointMesh`) and the regular interpolation path. The fast path is taken when oversampling factors equal to 1 for both dimensions.
   - Added a new test case `test_array1_grid_resampling_gridmesh_vs_gridpointmesh_idendity` to verify the correctness of the interpolation with both `GridMesh` and `GridPointMesh`.
+  
 
 #### Benchmarking
 - **Benchmark framework**:
@@ -43,9 +44,10 @@
 - **Interpolation Architecture**:
   - Refactored `core.interp.gx_array_view_interp` around const generic parameters `KROWS` and `KCOLS`, which define the kernel dimensions at compile time and enable generic, zero-cost implementations of the four separable convolution variants (masked/unmasked × bounds-checked/unchecked).
   - Clear separation between the public API (`GxArrayViewInterpolator`) and the new internal computation trait (`GxArrayViewInterpolatorCore`).
+  - Removed the `cache` parameter from `GxArrayViewInterpolatorInputMaskStrategy::is_valid_weighted_window`.
 
 - **GxArrayViewInterpolatorCore**:
-  - Introduced the internal trait `GxArrayViewInterpolatorCore<KROWS, KCOLS, KSIZE>` providing default implementations for the four separable convolution variants and the unified dispatcher `array1_interp2_separable_core`.
+  - Introduced the internal trait `GxArrayViewInterpolatorCore<KROWS, KCOLS>` providing default implementations for the four separable convolution variants and the unified dispatcher `array1_interp2_separable_core`.
   - Concrete interpolators only need to implement `compute_weights`; all kernel logic is inherited automatically.
   - Reduced code duplication across B-spline, bicubic, and linear interpolators by delegating their `array1_interp2` implementation to `array1_interp2_separable_core`. The nearest-neighbour interpolator retains a direct implementation as its kernel is not separable in the same sense.
 
@@ -56,6 +58,15 @@
 
 - **Rust module `core.gx_grid_resampling.rs`**
   - Renamed `validate` method to `validate_mesh` in the `GridMeshValidator` trait and its implementations.
+
+#### Mask Validation
+
+- **`GxArrayViewInterpolatorInputMaskStrategy`** (`core.interp.gx_array_view_interp.rs`)
+  - Added `is_valid_window<H, W>` to `GxArrayViewInterpolatorInputMaskStrategy` : branchless AND-accumulated check that return 1 if all samples are valid. Implemented for `NoInputMask` and `BinaryInputMask`.
+  - Added `count_valid_window<H, W>` to `GxArrayViewInterpolatorInputMaskStrategy` : returns the number of valid samples in  the H x W window. Implemented for `NoInputMask` and `BinaryInputMask`.
+
+- **Performance improvment** (`core.interp.gx_array_view_interp.rs`)
+  - Refactored `interpolate_masked_unchecked` to use a two-stage short-circuit mask validation ordered by decreasing probability, avoiding the systematic call to `is_valid_weighted_window`.
 
 ### Fixed
 
