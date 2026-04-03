@@ -43,6 +43,7 @@
 
 - **Interpolation Architecture**:
   - Refactored `core.interp.gx_array_view_interp` around const generic parameters `KROWS` and `KCOLS`, which define the kernel dimensions at compile time and enable generic, zero-cost implementations of the four separable convolution variants (masked/unmasked × bounds-checked/unchecked).
+  - Each convolution variants now provides two implementations: a safe version using pre-slicing and iterators to eliminate bounds checks in the inner loops while remaining fully safe, and an unsafe version using `get_unchecked` where all bounds checking is bypassed under the assumption that the caller guarantees index validity -- a precondition enforced by the bounds classification in `array1_interp2_separable_core`.
   - Clear separation between the public API (`GxArrayViewInterpolator`) and the new internal computation trait (`GxArrayViewInterpolatorCore`).
   - Removed the `cache` parameter from `GxArrayViewInterpolatorInputMaskStrategy::is_valid_weighted_window`.
 
@@ -50,6 +51,7 @@
   - Introduced the internal trait `GxArrayViewInterpolatorCore<KROWS, KCOLS>` providing default implementations for the four separable convolution variants and the unified dispatcher `array1_interp2_separable_core`.
   - Concrete interpolators only need to implement `compute_weights`; all kernel logic is inherited automatically.
   - Reduced code duplication across B-spline, bicubic, and linear interpolators by delegating their `array1_interp2` implementation to `array1_interp2_separable_core`. The nearest-neighbour interpolator retains a direct implementation as its kernel is not separable in the same sense.
+  - `array1_interp2_separable_core` calls unsafe variants as it guarantees that the data that will be accessed is in bounds.
 
 - **Tests**:
   - Added comprehensive unit tests for the `GxArrayViewInterpolatorCore` trait in a dedicated module `core.interp.gx_array_view_interp_core_tests`. Tests cover all five trait methods across nominal, identity, multi-variable, boundary, out-of-bounds, masked-input, and output-mask scenarios.
@@ -67,6 +69,7 @@
 
 - **Performance improvment** (`core.interp.gx_array_view_interp.rs`)
   - Refactored `interpolate_masked_unchecked` to use a two-stage short-circuit mask validation ordered by decreasing probability, avoiding the systematic call to `is_valid_weighted_window`.
+  - Each mask strategy method (`is_valid`, `is_valid_window`, `count_valid_window` and `is_valid_weighted_window`) now provides two implementations: a safe version using pre-sliced rows and iterators to eliminate bounds checks in the inner loops, and an unsafe version using `get_unchecked` for both mask data and weight accesses. Please note that this change does really affect only `BinaryInputMask`. `NoInputMask` remains unchanged as all its methods are compile-time constants with no data access.
 
 ### Fixed
 

@@ -137,7 +137,10 @@ use crate::core::gx_errors::GxError;
 pub trait GxArrayViewInterpolatorInputMaskStrategy {
     /// Returns whether the point at index `idx` is valid (1) or invalid (0).
     fn is_valid(&self, idx: usize) -> u8;
-    
+
+    /// Returns whether the point at index `idx` is valid (1) or invalid (0).
+    unsafe fn is_valid_unsafe(&self, idx: usize) -> u8;
+
     /// Returns `1` if all points in the window are valid, `0` oterhwise.
     ///
     /// # Parameters
@@ -150,7 +153,20 @@ pub trait GxArrayViewInterpolatorInputMaskStrategy {
         &self, 
         start_idx: usize,
     ) -> u8;
-    
+
+    /// Returns `1` if all points in the window are valid, `0` oterhwise.
+    ///
+    /// # Parameters
+    /// - `start_idx`: flat index of the top-left corner of the window in the
+    ///
+    /// # Const parameters
+    /// - `H`: window's height.
+    /// - `W`: widows's width.
+    unsafe fn is_valid_window_unsafe<const H: usize, const W: usize>(
+        &self, 
+        start_idx: usize,
+    ) -> u8;
+
     /// Returns the number of valid points within the window
     ///
     /// # Parameters
@@ -160,6 +176,19 @@ pub trait GxArrayViewInterpolatorInputMaskStrategy {
     /// - `H`: window's height.
     /// - `W`: widows's width.
     fn count_valid_window<const H: usize, const W: usize>(
+        &self, 
+        start_idx: usize,
+    ) -> usize;
+    
+    /// Returns the number of valid points within the window
+    ///
+    /// # Parameters
+    /// - `start_idx`: flat index of the top-left corner of the window in the
+    ///
+    /// # Const parameters
+    /// - `H`: window's height.
+    /// - `W`: widows's width.
+    unsafe fn count_valid_window_unsafe<const H: usize, const W: usize>(
         &self, 
         start_idx: usize,
     ) -> usize;
@@ -177,6 +206,27 @@ pub trait GxArrayViewInterpolatorInputMaskStrategy {
     /// - `cache`: scratch buffer of length `height * width`; may be written
     ///   to by the implementation.
     fn is_valid_weighted_window(
+        &self,
+        start_idx: usize,
+        height: usize,
+        width: usize,
+        weights_row: &[f64],
+        weights_col: &[f64],
+    ) -> u8;
+    
+    /// Returns `1` if all points with non-zero weights in the window are valid,
+    /// `0` as soon as one invalid point is found.
+    ///
+    /// # Parameters
+    /// - `start_idx`: flat index of the top-left corner of the window in the
+    ///   input array.
+    /// - `height`: number of rows in the window (`KROWS`).
+    /// - `width`: number of columns in the window (`KCOLS`).
+    /// - `weights_row`: row-direction kernel weights (length `height`).
+    /// - `weights_col`: column-direction kernel weights (length `width`).
+    /// - `cache`: scratch buffer of length `height * width`; may be written
+    ///   to by the implementation.
+    unsafe fn is_valid_weighted_window_unsafe(
         &self,
         start_idx: usize,
         height: usize,
@@ -203,6 +253,11 @@ impl<T: GxArrayViewInterpolatorInputMaskStrategy>
     }
     
     #[inline(always)]
+    unsafe fn is_valid_unsafe(&self, idx: usize) -> u8 {
+        (*self).is_valid_unsafe(idx)
+    }
+    
+    #[inline(always)]
     fn is_valid_window<const H: usize, const W: usize>(
         &self, 
         start_idx: usize,
@@ -213,11 +268,31 @@ impl<T: GxArrayViewInterpolatorInputMaskStrategy>
     }
     
     #[inline(always)]
+    unsafe fn is_valid_window_unsafe<const H: usize, const W: usize>(
+        &self, 
+        start_idx: usize,
+    ) -> u8 {
+        (*self).is_valid_window_unsafe::<H, W>(
+            start_idx,
+        )
+    }
+    
+    #[inline(always)]
     fn count_valid_window<const H: usize, const W: usize>(
         &self, 
         start_idx: usize,
     ) -> usize {
         (*self).count_valid_window::<H, W>(
+            start_idx,
+        )
+    }
+    
+    #[inline(always)]
+    unsafe fn count_valid_window_unsafe<const H: usize, const W: usize>(
+        &self, 
+        start_idx: usize,
+    ) -> usize {
+        (*self).count_valid_window_unsafe::<H, W>(
             start_idx,
         )
     }
@@ -232,6 +307,21 @@ impl<T: GxArrayViewInterpolatorInputMaskStrategy>
         weights_col: &[f64],
     ) -> u8 {
         (*self).is_valid_weighted_window(
+            start_idx, height, width,
+            weights_row, weights_col,
+        )
+    }
+    
+    #[inline(always)]
+    unsafe fn is_valid_weighted_window_unsafe(
+        &self,
+        start_idx: usize,
+        height: usize,
+        width: usize,
+        weights_row: &[f64],
+        weights_col: &[f64],
+    ) -> u8 {
+        (*self).is_valid_weighted_window_unsafe(
             start_idx, height, width,
             weights_row, weights_col,
         )
@@ -256,9 +346,22 @@ impl GxArrayViewInterpolatorInputMaskStrategy for NoInputMask {
     fn is_valid(&self, _idx: usize) -> u8 {
         1
     }
+    
+    #[inline(always)]
+    unsafe fn is_valid_unsafe(&self, _idx: usize) -> u8 {
+       1
+    }
 
     #[inline(always)]
     fn is_valid_window<const H: usize, const W: usize>(
+        &self, 
+        _start_idx: usize,
+    ) -> u8 {
+        1
+    }
+
+    #[inline(always)]
+    unsafe fn is_valid_window_unsafe<const H: usize, const W: usize>(
         &self, 
         _start_idx: usize,
     ) -> u8 {
@@ -272,9 +375,29 @@ impl GxArrayViewInterpolatorInputMaskStrategy for NoInputMask {
     ) -> usize {
         H*W
     }
+
+    #[inline(always)]
+    unsafe fn count_valid_window_unsafe<const H: usize, const W: usize>(
+        &self, 
+        _start_idx: usize,
+    ) -> usize {
+        H*W
+    }
     
     #[inline(always)]
     fn is_valid_weighted_window(
+        &self,
+        _start_idx: usize,
+        _height: usize,
+        _width: usize,
+        _weights_row: &[f64],
+        _weights_col: &[f64],
+    ) -> u8 {
+        1
+    }
+    
+    #[inline(always)]
+    unsafe fn is_valid_weighted_window_unsafe(
         &self,
         _start_idx: usize,
         _height: usize,
@@ -301,45 +424,102 @@ pub struct BinaryInputMask<'a> {
 }
 
 impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
+
+
     #[inline(always)]
     fn is_valid(&self, idx: usize) -> u8 {
         self.mask.data[idx]
     }
 
     #[inline(always)]
+    unsafe fn is_valid_unsafe(&self, idx: usize) -> u8 {
+        // SAFETY: caller guarantees idx is within mask bounds.
+        *self.mask.data.get_unchecked(idx)
+    }
+
+    /// Pre-slices one row at a time to eliminate bounds checks in the
+    /// inner loop.  The iterator `fold` compiles to a tight AND chain
+    /// that LLVM can vectorize.
+    #[inline(always)]
     fn is_valid_window<const H: usize, const W: usize>(
-        &self, 
+        &self,
         start_idx: usize,
     ) -> u8 {
-        let mut arr_iflat = start_idx;
         let ncol = self.mask.ncol;
+        let mut row_base = start_idx;
         let mut acc: u8 = 1;
+
         for _irow in 0..H {
-            for icol in 0..W {
-                acc &= self.mask.data[arr_iflat + icol];
-            }
-            arr_iflat += ncol;
+            let row_slice = &self.mask.data[row_base..row_base + W];
+            acc = row_slice.iter().fold(acc, |a, &v| a & v);
+            row_base += ncol;
         }
         acc
     }
 
     #[inline(always)]
-    fn count_valid_window<const H: usize, const W: usize>(
-        &self, 
+    unsafe fn is_valid_window_unsafe<const H: usize, const W: usize>(
+        &self,
         start_idx: usize,
-    ) -> usize {
-        let mut arr_iflat = start_idx;
+    ) -> u8 {
         let ncol = self.mask.ncol;
-        let mut acc: usize = 0;
+        let data = &self.mask.data;
+        let mut row_base = start_idx;
+        let mut acc: u8 = 1;
+
+        // SAFETY: the caller guarantees that
+        // start_idx + irow * ncol + icol is within bounds for
+        // all irow in 0..H and icol in 0..W.
         for _irow in 0..H {
             for icol in 0..W {
-                acc += self.mask.data[arr_iflat + icol] as usize;
+                acc &= *data.get_unchecked(row_base + icol);
             }
-            arr_iflat += ncol;
+            row_base += ncol;
         }
         acc
     }
-    
+
+    /// Pre-slices one row at a time.  The `map(|&v| v as usize).sum()`
+    /// pattern compiles to a tight add chain without bounds checks.
+    #[inline(always)]
+    fn count_valid_window<const H: usize, const W: usize>(
+        &self,
+        start_idx: usize,
+    ) -> usize {
+        let ncol = self.mask.ncol;
+        let mut row_base = start_idx;
+        let mut acc: usize = 0;
+
+        for _irow in 0..H {
+            let row_slice = &self.mask.data[row_base..row_base + W];
+            acc += row_slice.iter().map(|&v| v as usize).sum::<usize>();
+            row_base += ncol;
+        }
+        acc
+    }
+
+    #[inline(always)]
+    unsafe fn count_valid_window_unsafe<const H: usize, const W: usize>(
+        &self,
+        start_idx: usize,
+    ) -> usize {
+        let ncol = self.mask.ncol;
+        let data = &self.mask.data;
+        let mut row_base = start_idx;
+        let mut acc: usize = 0;
+
+        // SAFETY: same as is_valid_window.
+        for _irow in 0..H {
+            for icol in 0..W {
+                acc += *data.get_unchecked(row_base + icol) as usize;
+            }
+            row_base += ncol;
+        }
+        acc
+    }
+
+    /// For active rows, the inner loop uses a pre-sliced row and iterator to
+    /// eliminate bounds checks.
     #[inline(always)]
     fn is_valid_weighted_window(
         &self,
@@ -349,29 +529,66 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
         weights_row: &[f64],
         weights_col: &[f64],
     ) -> u8 {
-        let mut arr_iflat = start_idx;
         let ncol = self.mask.ncol;
+        let wr = &weights_row[..height];
+        let wc = &weights_col[..width];
         let height_m1 = height - 1;
         let width_m1 = width - 1;
-        
+        let mut row_base = start_idx;
+
         for irow in 0..height {
-            if weights_row[height_m1 - irow as usize] == 0.0 {
-                // Skip the entire row — its weight is zero.
-                arr_iflat += ncol;
+            if wr[height_m1 - irow] == 0.0 {
+                row_base += ncol;
+                continue;
+            }
+
+            let row_slice = &self.mask.data[row_base..row_base + width];
+
+            for (icol, &mask_val) in row_slice.iter().enumerate() {
+                if wc[width_m1 - icol] == 0.0 {
+                    continue;
+                }
+                if mask_val == 0 {
+                    return 0;
+                }
+            }
+
+            row_base += ncol;
+        }
+        1
+    }
+
+    #[inline(always)]
+    unsafe fn is_valid_weighted_window_unsafe(
+        &self,
+        start_idx: usize,
+        height: usize,
+        width: usize,
+        weights_row: &[f64],
+        weights_col: &[f64],
+    ) -> u8 {
+        let ncol = self.mask.ncol;
+        let data = &self.mask.data;
+        let height_m1 = height - 1;
+        let width_m1 = width - 1;
+        let mut row_base = start_idx;
+
+        // SAFETY: the caller guarantees all indices are within bounds.
+        // Weight slices have length >= height and >= width respectively.
+        for irow in 0..height {
+            if *weights_row.get_unchecked(height_m1 - irow) == 0.0 {
+                row_base += ncol;
                 continue;
             }
             for icol in 0..width {
-                if weights_col[width_m1 - icol as usize] == 0.0 {
-                    // Skip this column — its weight is zero.
-                    arr_iflat += 1;
+                if *weights_col.get_unchecked(width_m1 - icol) == 0.0 {
                     continue;
                 }
-                if self.mask.data[arr_iflat] == 0 {
+                if *data.get_unchecked(row_base + icol) == 0 {
                     return 0;
                 }
-                arr_iflat += 1;
             }
-            arr_iflat += ncol - width;
+            row_base += ncol;
         }
         1
     }
@@ -947,6 +1164,8 @@ pub fn write_nodata_all_vars<V, OM>(
 /// }
 /// ```
 pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
+    
+    /*
     // =========================================================================
     // interpolate_nomask_unchecked
     // =========================================================================
@@ -1420,6 +1639,814 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         context.output_mask().set_value(out_idx, 1);
     }
     
+    */
+    
+    // =========================================================================
+    // interpolate_nomask_unchecked
+    // =========================================================================
+
+    /// Separable 2D convolution with no input mask and no bounds checking.
+    ///
+    /// Computes the interpolated value at `(row_c, col_c)` using a
+    /// `KROWS × KCOLS` separable stencil and writes it to `array_out` at
+    /// `out_idx` for every variable plane.
+    ///
+    /// # Parameters
+    /// - `weights_row`: row-direction kernel weights, length `KROWS`.
+    /// - `weights_col`: column-direction kernel weights, length `KCOLS`.
+    /// - `array_in`: input data array `[nvar, nrow, ncol]`, flattened.
+    /// - `array_out`: output array (same layout), written in place.
+    /// - `out_idx`: flat pixel index in the output (shared across all planes).
+    /// - `row_c`: integer row coordinate of the interpolation centre.
+    /// - `col_c`: integer column coordinate of the interpolation centre.
+    ///
+    /// # Safety
+    /// The caller must guarantee that every index
+    /// `row_c + irow - KROWS/2` and `col_c + icol - KCOLS/2`
+    /// is within the bounds of `array_in`.  Violating this precondition
+    /// results in a panic (index out of bounds) or, with unsafe indexing,
+    /// undefined behaviour.
+    ///
+    /// # Type parameters
+    /// - `T`: input element type.
+    /// - `V`: output element type.
+    #[inline(always)]
+    fn interpolate_nomask_unchecked<T, V>(
+        &self,
+        weights_row: &[f64],
+        weights_col: &[f64],
+        array_in: &GxArrayView<'_, T>,
+        array_out: &mut GxArrayViewMut<'_, V>,
+        out_idx: usize,
+        row_c: i64,
+        col_c: i64,
+    ) where
+        T: Copy + std::ops::Mul<f64, Output = f64> + Into<f64>,
+        V: Copy + From<f64>,
+    {
+        let half_rows  = (KROWS / 2) as i64;
+        let half_cols  = (KCOLS / 2) as i64;
+        let ncol       = array_in.ncol;
+        let in_var_sz  = array_in.var_size;
+        let out_var_sz = array_out.var_size;
+
+        let row_start = (row_c - half_rows) as usize;
+        let col_start = (col_c - half_cols) as usize;
+
+        // Pre-slice weights: one bounds check each, inner loops are free.
+        let wr = &weights_row[..KROWS];
+        let wc = &weights_col[..KCOLS];
+
+        let mut in_shift  = 0usize;
+        let mut out_shift = 0usize;
+
+        for _ivar in 0..array_in.nvar {
+            let mut acc = 0.0f64;
+            for irow in 0..KROWS {
+                // Pre-slice one row of input data.
+                let base = in_shift + (row_start + irow) * ncol + col_start;
+                let row_slice = &array_in.data[base..base + KCOLS];
+
+                // Iterator-based dot product: zero bounds checks.
+                let acc_col: f64 = row_slice.iter()
+                    .zip(wc.iter().rev())
+                    .map(|(&d, &w)| d * w)
+                    .sum();
+
+                acc += wr[KROWS - 1 - irow] * acc_col;
+            }
+            array_out.data[out_idx + out_shift] = V::from(acc);
+            in_shift  += in_var_sz;
+            out_shift += out_var_sz;
+        }
+    }
+
+    // =========================================================================
+    // interpolate_nomask_partial
+    // =========================================================================
+    
+    /// Separable 2D convolution with no input mask, with bounds checking.
+    ///
+    /// Identical to [`interpolate_nomask_unchecked`](Self::interpolate_nomask_unchecked)
+    /// except that, before performing the convolution, every stencil position
+    /// whose weight is non-zero is checked against the array bounds.  If any
+    /// such position lies outside the array, the output at `out_idx` is set to
+    /// `nodata` for all variable planes, the output mask is set to `0`, and the
+    /// function returns early.
+    ///
+    /// Positions with zero weight that fall outside the array are silently
+    /// ignored (they contribute nothing to the sum).
+    ///
+    /// # Parameters
+    /// - `weights_row`: row-direction kernel weights, length `KROWS`.
+    /// - `weights_col`: column-direction kernel weights, length `KCOLS`.
+    /// - `array_in`: input data array `[nvar, nrow, ncol]`, flattened.
+    /// - `array_out`: output array (same layout), written in place.
+    /// - `output_mask`: output mask strategy; written once upon completion.
+    /// - `out_idx`: flat pixel index in the output (shared across all planes).
+    /// - `row_c`: integer row coordinate of the interpolation centre.
+    /// - `col_c`: integer column coordinate of the interpolation centre.
+    /// - `nodata`: sentinel value written when interpolation is invalid.
+    ///
+    /// # Type parameters
+    /// - `T`: input element type.
+    /// - `V`: output element type.
+    /// - `OM`: output mask strategy implementing
+    ///   [`GxArrayViewInterpolatorOutputMaskStrategy`].
+    #[inline(always)]
+    fn interpolate_nomask_partial<T, V, OM>(
+        &self,
+        weights_row: &[f64],
+        weights_col: &[f64],
+        array_in: &GxArrayView<'_, T>,
+        array_out: &mut GxArrayViewMut<'_, V>,
+        output_mask: &mut OM,
+        out_idx: usize,
+        row_c: i64,
+        col_c: i64,
+        nodata: V,
+    ) where
+        T: Copy + std::ops::Mul<f64, Output = f64> + Into<f64>,
+        V: Copy + From<f64>,
+        OM: GxArrayViewInterpolatorOutputMaskStrategy,
+    {
+        let half_rows  = (KROWS / 2) as i64;
+        let half_cols  = (KCOLS / 2) as i64;
+        let ncol       = array_in.ncol;
+        let in_var_sz  = array_in.var_size;
+        let out_var_sz = array_out.var_size;
+
+        let wr = &weights_row[..KROWS];
+        let wc = &weights_col[..KCOLS];
+
+        // Pre-check: every stencil position with non-zero weight must
+        // be in-bounds.
+        for irow in 0..KROWS {
+            if wr[KROWS - 1 - irow] == 0.0 {
+                continue;
+            }
+            let r = row_c + irow as i64 - half_rows;
+            for icol in 0..KCOLS {
+                if wc[KCOLS - 1 - icol] == 0.0 {
+                    continue;
+                }
+                let c = col_c + icol as i64 - half_cols;
+                if r < 0 || r >= array_in.nrow_i64
+                    || c < 0 || c >= array_in.ncol_i64
+                {
+                    write_nodata_all_vars(
+                        array_out, out_idx, nodata,
+                        output_mask, array_in.nvar, out_var_sz,
+                    );
+                    return;
+                }
+            }
+        }
+
+        // Convolution.
+        let mut in_shift  = 0usize;
+        let mut out_shift = 0usize;
+
+        for _ivar in 0..array_in.nvar {
+            let mut acc = 0.0f64;
+            for irow in 0..KROWS {
+                let r = row_c + irow as i64 - half_rows;
+                if r < 0 || r >= array_in.nrow_i64 {
+                    continue;
+                }
+                let ru = r as usize;
+
+                // Compute valid column range for this row.
+                let c_first = col_c - half_cols;
+                let c_last  = col_c + (KCOLS as i64 - 1) - half_cols;
+
+                let col_lo = c_first.max(0) as usize;
+                let col_hi = (c_last.min(array_in.ncol_i64 - 1) + 1) as usize;
+
+                // Offset into the kernel for the first valid column.
+                let icol_start = (col_lo as i64 - c_first) as usize;
+                let icol_end   = icol_start + (col_hi - col_lo);
+
+                // Pre-slice input row and matching weight segment.
+                let row_base = in_shift + ru * ncol;
+                let row_slice = &array_in.data[row_base + col_lo
+                    ..row_base + col_hi];
+                let wc_slice = &wc[KCOLS - icol_end..KCOLS - icol_start];
+
+                let acc_col: f64 = row_slice.iter()
+                    .zip(wc_slice.iter().rev())
+                    .map(|(&d, &w)| d * w)
+                    .sum();
+
+                acc += wr[KROWS - 1 - irow] * acc_col;
+            }
+            array_out.data[out_idx + out_shift] = V::from(acc);
+            in_shift  += in_var_sz;
+            out_shift += out_var_sz;
+        }
+        output_mask.set_value(out_idx, 1);
+    }
+
+    // =========================================================================
+    // interpolate_masked_unchecked
+    // =========================================================================
+
+    /// Separable 2D convolution with input mask validation, no bounds checking.
+    ///
+    /// # Design : Exact Interpolation Policy
+    /// The mask validation operates on weighted support rather than on the 
+    /// target coordinates alone. Stencil positions whose kernel weight is zero
+    /// are excluded from the validity check, regardless of their mask value.
+    /// This ensures that when the kernel reduces to a Dirac at the nearest grid
+    /// node (all off-centre wieghts vanish), the method returns the source 
+    /// value provided that single node is valid -- even if neighbouring samples
+    /// in the convolution are masked.
+    /// This is a design choice
+    ///
+    /// # Parameters
+    /// - `weights_row`: row-direction kernel weights, length `KROWS`.
+    /// - `weights_col`: column-direction kernel weights, length `KCOLS`.
+    /// - `array_in`: input data array `[nvar, nrow, ncol]`, flattened.
+    /// - `array_out`: output array (same layout), written in place.
+    /// - `out_idx`: flat pixel index in the output (shared across all planes).
+    /// - `row_c`: integer row coordinate of the interpolation centre.
+    /// - `col_c`: integer column coordinate of the interpolation centre.
+    /// - `nodata`: sentinel value written when the window contains masked pixels.
+    /// - `context`: interpolation context providing the input and output mask
+    ///   strategies.
+    ///
+    /// # Performance
+    /// The mask validation follows a two-stage short-circuit strategy ordered
+    /// by decreasing probability to minimise the cost of the common case.
+    /// First, a branchless pass over the KROWS x KCOLS window accumulates the 
+    /// number of valid samples. The resulting count feeds a short-circuit
+    /// conditional :
+    /// 1. count == KROWS x KSIZE (all valid) -- the dominant case
+    /// 2. count == 0 (all masked) -- second most frequent and cheap
+    /// 3. 0 < count < KROWS x KZIZE -- Both guards pass, triggering the full
+    ///   [`is_valid_weighted_window()`](
+    ///   GxArrayViewInterpolatorInputMaskStrategy::is_valid_weighted_window())
+    ///   check required due to the exact policy.
+    ///
+    /// # Safety
+    /// The caller must guarantee that every stencil index is within the bounds
+    /// of both `array_in` and the mask array embedded in `context`.
+    ///
+    /// # Type parameters
+    /// - `T`: input element type.
+    /// - `V`: output element type.
+    /// - `IM`: interpolation context
+    ///   [`GxArrayViewInterpolationContext`].
+    #[inline(always)]
+    fn interpolate_masked_unchecked<T, V, IC>(
+        &self,
+        weights_row: &[f64],
+        weights_col: &[f64],
+        array_in: &GxArrayView<'_, T>,
+        array_out: &mut GxArrayViewMut<'_, V>,
+        out_idx: usize,
+        row_c: i64,
+        col_c: i64,
+        nodata: V,
+        context: &mut IC,
+    ) where
+        T: Copy + std::ops::Mul<f64, Output = f64> + Into<f64>,
+        V: Copy + From<f64>,
+        IC: GxArrayViewInterpolationContextTrait,
+    {
+        let half_rows  = (KROWS / 2) as i64;
+        let half_cols  = (KCOLS / 2) as i64;
+        let ncol       = array_in.ncol;
+        let in_var_sz  = array_in.var_size;
+        let out_var_sz = array_out.var_size;
+
+        let row_start = (row_c - half_rows) as usize;
+        let col_start = (col_c - half_cols) as usize;
+        let flat_base = row_start * ncol + col_start;
+
+        let wr = &weights_row[..KROWS];
+        let wc = &weights_col[..KCOLS];
+
+        // Two-stage short-circuit mask validation.
+        let count = context.input_mask()
+            .count_valid_window::<KROWS, KCOLS>(flat_base);
+
+        if count == KROWS * KCOLS
+            || (count > 0
+                && context.input_mask().is_valid_weighted_window(
+                    flat_base, KROWS, KCOLS,
+                    weights_row, weights_col,
+                ) == 1)
+        {
+            // Convolution with iterator-based inner loop.
+            let mut out_shift = 0usize;
+            for ivar in 0..array_in.nvar {
+                let ain_base = flat_base + ivar * in_var_sz;
+                let mut acc = 0.0f64;
+
+                for irow in 0..KROWS {
+                    let base = ain_base + irow * ncol;
+                    let row_slice = &array_in.data[base..base + KCOLS];
+
+                    let acc_col: f64 = row_slice.iter()
+                        .zip(wc.iter().rev())
+                        .map(|(&d, &w)| d * w)
+                        .sum();
+
+                    acc += wr[KROWS - 1 - irow] * acc_col;
+                }
+                array_out.data[out_idx + out_shift] = V::from(acc);
+                out_shift += out_var_sz;
+            }
+            context.output_mask().set_value(out_idx, 1);
+        } else {
+            write_nodata_all_vars(
+                array_out, out_idx, nodata,
+                context.output_mask(), array_in.nvar, out_var_sz,
+            );
+        }
+    }
+
+    // =========================================================================
+    // interpolate_masked_partial
+    // =========================================================================
+
+    /// Separable 2D convolution with input mask validation and bounds checking.
+    ///
+    /// Combines the bounds checking of
+    /// [`interpolate_nomask_partial`](Self::interpolate_nomask_partial) with
+    /// the mask validation of
+    /// [`interpolate_masked_unchecked`](Self::interpolate_masked_unchecked).
+    ///
+    /// The pre-validation pass checks, for every stencil position with a
+    /// non-zero weight:
+    /// 1. That the position lies within the input array bounds.
+    /// 2. That the corresponding input mask value is `1` (valid).
+    ///
+    /// If either check fails the function writes `nodata` to all output planes
+    /// and returns early.  If both checks pass, the convolution is executed
+    /// without further bound or mask testing (guaranteed safe by the pre-pass).
+    ///
+    /// Out-of-bounds or masked positions with zero weight are silently ignored.
+    ///
+    /// # Parameters
+    /// - `weights_row`: row-direction kernel weights, length `KROWS`.
+    /// - `weights_col`: column-direction kernel weights, length `KCOLS`.
+    /// - `array_in`: input data array `[nvar, nrow, ncol]`, flattened.
+    /// - `array_out`: output array (same layout), written in place.
+    /// - `out_idx`: flat pixel index in the output (shared across all planes).
+    /// - `row_c`: integer row coordinate of the interpolation centre.
+    /// - `col_c`: integer column coordinate of the interpolation centre.
+    /// - `nodata`: sentinel value written when interpolation is invalid.
+    /// - `context`: interpolation context providing mask and bounds strategies.
+    ///
+    /// # See also
+    /// - [`interpolate_masked_unchecked`](Self::interpolate_masked_unchecked):
+    ///   faster variant assuming in-bounds indices.
+    /// - [`interpolate_nomask_partial`](Self::interpolate_nomask_partial):
+    ///   bounds-checked variant without mask testing.
+    ///
+    /// # Type parameters
+    /// - `T`: input element type.
+    /// - `V`: output element type.
+    /// - `IM`: interpolation context
+    ///   [`GxArrayViewInterpolationContext`].
+    #[inline(always)]
+    fn interpolate_masked_partial<T, V, IC>(
+        &self,
+        weights_row: &[f64],
+        weights_col: &[f64],
+        array_in: &GxArrayView<'_, T>,
+        array_out: &mut GxArrayViewMut<'_, V>,
+        out_idx: usize,
+        row_c: i64,
+        col_c: i64,
+        nodata: V,
+        context: &mut IC,
+    ) where
+        T: Copy + std::ops::Mul<f64, Output = f64> + Into<f64> + PartialEq,
+        V: Copy + From<f64> + PartialEq,
+        IC: GxArrayViewInterpolationContextTrait,
+    {
+        let half_rows  = (KROWS / 2) as i64;
+        let half_cols  = (KCOLS / 2) as i64;
+        let ncol       = array_in.ncol;
+        let in_var_sz  = array_in.var_size;
+        let out_var_sz = array_out.var_size;
+
+        let wr = &weights_row[..KROWS];
+        let wc = &weights_col[..KCOLS];
+
+        // Pre-validation: bounds + mask for all active stencil positions.
+        for irow in 0..KROWS {
+            if wr[KROWS - 1 - irow] == 0.0 {
+                continue;
+            }
+            let r = row_c + irow as i64 - half_rows;
+            for icol in 0..KCOLS {
+                if wc[KCOLS - 1 - icol] == 0.0 {
+                    continue;
+                }
+                if r < 0 || r >= array_in.nrow_i64 {
+                    write_nodata_all_vars(
+                        array_out, out_idx, nodata,
+                        context.output_mask(), array_in.nvar, out_var_sz,
+                    );
+                    return;
+                }
+                let c = col_c + icol as i64 - half_cols;
+                if c < 0 || c >= array_in.ncol_i64 {
+                    write_nodata_all_vars(
+                        array_out, out_idx, nodata,
+                        context.output_mask(), array_in.nvar, out_var_sz,
+                    );
+                    return;
+                }
+                let flat = r as usize * ncol + c as usize;
+                if context.input_mask().is_valid(flat) == 0 {
+                    write_nodata_all_vars(
+                        array_out, out_idx, nodata,
+                        context.output_mask(), array_in.nvar, out_var_sz,
+                    );
+                    return;
+                }
+            }
+        }
+
+        // Convolution -- bounds and mask guaranteed by pre-pass.
+        let mut in_shift  = 0usize;
+        let mut out_shift = 0usize;
+
+        for _ivar in 0..array_in.nvar {
+            let mut acc = 0.0f64;
+            for irow in 0..KROWS {
+                let r = row_c + irow as i64 - half_rows;
+                if r < 0 || r >= array_in.nrow_i64 {
+                    continue;
+                }
+                let ru = r as usize;
+
+                // Valid column range.
+                let c_first = col_c - half_cols;
+                let c_last  = col_c + (KCOLS as i64 - 1) - half_cols;
+
+                let col_lo = c_first.max(0) as usize;
+                let col_hi = (c_last.min(array_in.ncol_i64 - 1) + 1) as usize;
+
+                let icol_start = (col_lo as i64 - c_first) as usize;
+                let icol_end   = icol_start + (col_hi - col_lo);
+
+                let row_base = in_shift + ru * ncol;
+                let row_slice = &array_in.data[row_base + col_lo
+                    ..row_base + col_hi];
+                let wc_slice = &wc[KCOLS - icol_end..KCOLS - icol_start];
+
+                let acc_col: f64 = row_slice.iter()
+                    .zip(wc_slice.iter().rev())
+                    .map(|(&d, &w)| d * w)
+                    .sum();
+
+                acc += wr[KROWS - 1 - irow] * acc_col;
+            }
+            array_out.data[out_idx + out_shift] = V::from(acc);
+            in_shift  += in_var_sz;
+            out_shift += out_var_sz;
+        }
+        context.output_mask().set_value(out_idx, 1);
+    }
+    
+// =============================================================================
+// Interpolation variants — unsafe implementations
+// =============================================================================
+
+    // =========================================================================
+    // interpolate_nomask_unchecked_unsafe
+    // =========================================================================
+
+    /// Unsafe variant for interpolate_nomask_unchecked
+    /// See the safe variant for details
+    #[inline(always)]
+    unsafe fn interpolate_nomask_unchecked_unsafe<T, V>(
+        &self,
+        weights_row: &[f64],
+        weights_col: &[f64],
+        array_in: &GxArrayView<'_, T>,
+        array_out: &mut GxArrayViewMut<'_, V>,
+        out_idx: usize,
+        row_c: i64,
+        col_c: i64,
+    ) where
+        T: Copy + std::ops::Mul<f64, Output = f64> + Into<f64>,
+        V: Copy + From<f64>,
+    {
+        let half_rows  = (KROWS / 2) as i64;
+        let half_cols  = (KCOLS / 2) as i64;
+        let ncol       = array_in.ncol;
+        let in_var_sz  = array_in.var_size;
+        let out_var_sz = array_out.var_size;
+
+        let row_start = (row_c - half_rows) as usize;
+        let col_start = (col_c - half_cols) as usize;
+
+        let mut in_shift  = 0usize;
+        let mut out_shift = 0usize;
+
+        // SAFETY: the interior path guarantees that
+        // row_start..row_start+KROWS and col_start..col_start+KCOLS
+        // are within array bounds for all variable planes.
+        for _ivar in 0..array_in.nvar {
+            let mut acc = 0.0f64;
+            for irow in 0..KROWS {
+                let base = in_shift
+                    + (row_start + irow) * ncol + col_start;
+                let mut acc_col = 0.0f64;
+                for icol in 0..KCOLS {
+                    acc_col +=
+                        *array_in.data.get_unchecked(base + icol)
+                        * *weights_col.get_unchecked(KCOLS - 1 - icol);
+                }
+                acc += *weights_row.get_unchecked(KROWS - 1 - irow)
+                    * acc_col;
+            }
+            *array_out.data.get_unchecked_mut(out_idx + out_shift) =
+                V::from(acc);
+            in_shift  += in_var_sz;
+            out_shift += out_var_sz;
+        }
+    }
+
+    // =========================================================================
+    // interpolate_nomask_partial_unsafe
+    // =========================================================================
+
+    /// Unsafe variant for interpolate_nomask_partial_unsafe
+    /// See the safe variant for details
+    #[inline(always)]
+    unsafe fn interpolate_nomask_partial_unsafe<T, V, OM>(
+        &self,
+        weights_row: &[f64],
+        weights_col: &[f64],
+        array_in: &GxArrayView<'_, T>,
+        array_out: &mut GxArrayViewMut<'_, V>,
+        output_mask: &mut OM,
+        out_idx: usize,
+        row_c: i64,
+        col_c: i64,
+        nodata: V,
+    ) where
+        T: Copy + std::ops::Mul<f64, Output = f64> + Into<f64>,
+        V: Copy + From<f64>,
+        OM: GxArrayViewInterpolatorOutputMaskStrategy,
+    {
+        let half_rows  = (KROWS / 2) as i64;
+        let half_cols  = (KCOLS / 2) as i64;
+        let ncol       = array_in.ncol;
+        let in_var_sz  = array_in.var_size;
+        let out_var_sz = array_out.var_size;
+
+        // Pre-check: use get_unchecked on weights only (indices are
+        // const-generic derived, always valid).
+        // SAFETY: KROWS - 1 - irow and KCOLS - 1 - icol are within
+        // 0..KROWS and 0..KCOLS respectively.
+        for irow in 0..KROWS {
+            if *weights_row.get_unchecked(KROWS - 1 - irow) == 0.0 {
+                continue;
+            }
+            let r = row_c + irow as i64 - half_rows;
+            for icol in 0..KCOLS {
+                if *weights_col.get_unchecked(KCOLS - 1 - icol) == 0.0 {
+                    continue;
+                }
+                let c = col_c + icol as i64 - half_cols;
+                if r < 0 || r >= array_in.nrow_i64
+                    || c < 0 || c >= array_in.ncol_i64
+                {
+                    write_nodata_all_vars(
+                        array_out, out_idx, nodata,
+                        output_mask, array_in.nvar, out_var_sz,
+                    );
+                    return;
+                }
+            }
+        }
+
+        // Convolution — positions validated above.
+        let mut in_shift  = 0usize;
+        let mut out_shift = 0usize;
+
+        // SAFETY: the pre-check above guarantees that all accessed
+        // positions with non-zero weight are within bounds.
+        // Positions with zero weight may be out of bounds but are
+        // skipped by the continue.
+        for _ivar in 0..array_in.nvar {
+            let mut acc = 0.0f64;
+            for irow in 0..KROWS {
+                let r = row_c + irow as i64 - half_rows;
+                if r < 0 || r >= array_in.nrow_i64 {
+                    continue;
+                }
+                let ru = r as usize;
+                let mut acc_col = 0.0f64;
+                for icol in 0..KCOLS {
+                    let c = col_c + icol as i64 - half_cols;
+                    if c < 0 || c >= array_in.ncol_i64 {
+                        continue;
+                    }
+                    let flat = in_shift + ru * ncol + c as usize;
+                    acc_col +=
+                        *array_in.data.get_unchecked(flat)
+                        * *weights_col.get_unchecked(KCOLS - 1 - icol);
+                }
+                acc += *weights_row.get_unchecked(KROWS - 1 - irow)
+                    * acc_col;
+            }
+            *array_out.data.get_unchecked_mut(out_idx + out_shift) =
+                V::from(acc);
+            in_shift  += in_var_sz;
+            out_shift += out_var_sz;
+        }
+        output_mask.set_value(out_idx, 1);
+    }
+
+    // =========================================================================
+    // interpolate_masked_unchecked
+    // =========================================================================
+
+    /// Unsafe variant for interpolate_masked_unchecked
+    /// See the safe variant for details
+    #[inline(always)]
+    unsafe fn interpolate_masked_unchecked_unsafe<T, V, IC>(
+        &self,
+        weights_row: &[f64],
+        weights_col: &[f64],
+        array_in: &GxArrayView<'_, T>,
+        array_out: &mut GxArrayViewMut<'_, V>,
+        out_idx: usize,
+        row_c: i64,
+        col_c: i64,
+        nodata: V,
+        context: &mut IC,
+    ) where
+        T: Copy + std::ops::Mul<f64, Output = f64> + Into<f64>,
+        V: Copy + From<f64>,
+        IC: GxArrayViewInterpolationContextTrait,
+    {
+        let half_rows  = (KROWS / 2) as i64;
+        let half_cols  = (KCOLS / 2) as i64;
+        let ncol       = array_in.ncol;
+        let in_var_sz  = array_in.var_size;
+        let out_var_sz = array_out.var_size;
+
+        let row_start = (row_c - half_rows) as usize;
+        let col_start = (col_c - half_cols) as usize;
+        let flat_base = row_start * ncol + col_start;
+
+        // Two-stage short-circuit mask validation.
+        let count = context.input_mask()
+            .count_valid_window::<KROWS, KCOLS>(flat_base);
+
+        if count == KROWS * KCOLS
+            || (count > 0
+                && context.input_mask().is_valid_weighted_window_unsafe(
+                    flat_base, KROWS, KCOLS,
+                    weights_row, weights_col,
+                ) == 1)
+        {
+            // SAFETY: the interior path guarantees all stencil indices
+            // are within bounds. Weights buffer has at least KROWS and
+            // KCOLS elements respectively.
+            let mut out_shift = 0usize;
+            for ivar in 0..array_in.nvar {
+                let ain_base = flat_base + ivar * in_var_sz;
+                let mut acc = 0.0f64;
+
+                for irow in 0..KROWS {
+                    let base = ain_base + irow * ncol;
+                    let mut acc_col = 0.0f64;
+                    for icol in 0..KCOLS {
+                        acc_col +=
+                            *array_in.data.get_unchecked(base + icol)
+                            * *weights_col.get_unchecked(
+                                KCOLS - 1 - icol);
+                    }
+                    acc += *weights_row.get_unchecked(KROWS - 1 - irow)
+                        * acc_col;
+                }
+                *array_out.data.get_unchecked_mut(
+                    out_idx + out_shift) = V::from(acc);
+                out_shift += out_var_sz;
+            }
+            context.output_mask().set_value(out_idx, 1);
+        } else {
+            write_nodata_all_vars(
+                array_out, out_idx, nodata,
+                context.output_mask(), array_in.nvar, out_var_sz,
+            );
+        }
+    }
+
+    // =========================================================================
+    // interpolate_masked_partial
+    // =========================================================================
+
+    /// Unsafe variant for interpolate_masked_partial
+    /// See the safe variant for details
+    #[inline(always)]
+    unsafe fn interpolate_masked_partial_unsafe<T, V, IC>(
+        &self,
+        weights_row: &[f64],
+        weights_col: &[f64],
+        array_in: &GxArrayView<'_, T>,
+        array_out: &mut GxArrayViewMut<'_, V>,
+        out_idx: usize,
+        row_c: i64,
+        col_c: i64,
+        nodata: V,
+        context: &mut IC,
+    ) where
+        T: Copy + std::ops::Mul<f64, Output = f64> + Into<f64> + PartialEq,
+        V: Copy + From<f64> + PartialEq,
+        IC: GxArrayViewInterpolationContextTrait,
+    {
+        let half_rows  = (KROWS / 2) as i64;
+        let half_cols  = (KCOLS / 2) as i64;
+        let ncol       = array_in.ncol;
+        let in_var_sz  = array_in.var_size;
+        let out_var_sz = array_out.var_size;
+
+        // Pre-validation: bounds + mask.
+        // SAFETY: weight indices are const-generic derived, always valid.
+        for irow in 0..KROWS {
+            if *weights_row.get_unchecked(KROWS - 1 - irow) == 0.0 {
+                continue;
+            }
+            let r = row_c + irow as i64 - half_rows;
+            for icol in 0..KCOLS {
+                if *weights_col.get_unchecked(KCOLS - 1 - icol) == 0.0 {
+                    continue;
+                }
+                if r < 0 || r >= array_in.nrow_i64 {
+                    write_nodata_all_vars(
+                        array_out, out_idx, nodata,
+                        context.output_mask(), array_in.nvar, out_var_sz,
+                    );
+                    return;
+                }
+                let c = col_c + icol as i64 - half_cols;
+                if c < 0 || c >= array_in.ncol_i64 {
+                    write_nodata_all_vars(
+                        array_out, out_idx, nodata,
+                        context.output_mask(), array_in.nvar, out_var_sz,
+                    );
+                    return;
+                }
+                let flat = r as usize * ncol + c as usize;
+                if context.input_mask().is_valid(flat) == 0 {
+                    write_nodata_all_vars(
+                        array_out, out_idx, nodata,
+                        context.output_mask(), array_in.nvar, out_var_sz,
+                    );
+                    return;
+                }
+            }
+        }
+
+        // Convolution — bounds and mask guaranteed by pre-pass.
+        let mut in_shift  = 0usize;
+        let mut out_shift = 0usize;
+
+        // SAFETY: the pre-validation above guarantees all accessed
+        // positions with non-zero weight are within bounds and valid.
+        for _ivar in 0..array_in.nvar {
+            let mut acc = 0.0f64;
+            for irow in 0..KROWS {
+                let r = row_c + irow as i64 - half_rows;
+                if r < 0 || r >= array_in.nrow_i64 {
+                    continue;
+                }
+                let ru = r as usize;
+                let mut acc_col = 0.0f64;
+                for icol in 0..KCOLS {
+                    let c = col_c + icol as i64 - half_cols;
+                    if c < 0 || c >= array_in.ncol_i64 {
+                        continue;
+                    }
+                    let flat = in_shift + ru * ncol + c as usize;
+                    acc_col +=
+                        *array_in.data.get_unchecked(flat)
+                        * *weights_col.get_unchecked(KCOLS - 1 - icol);
+                }
+                acc += *weights_row.get_unchecked(KROWS - 1 - irow)
+                    * acc_col;
+            }
+            *array_out.data.get_unchecked_mut(out_idx + out_shift) =
+                V::from(acc);
+            in_shift  += in_var_sz;
+            out_shift += out_var_sz;
+        }
+        context.output_mask().set_value(out_idx, 1);
+    }
+    
     // =========================================================================
     // compute_weights  (required)
     // =========================================================================
@@ -1531,18 +2558,24 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
                 self.compute_weights(rel_col, w_col);
 
                 if context.input_mask().is_enabled() {
-                    self.interpolate_masked_unchecked(
-                        w_row, w_col,
-                        array_in, array_out, out_idx,
-                        kernel_center_row, kernel_center_col,
-                        nodata_out, context,
-                    );
+                    // SAFETY : check has been performed in the previous if test
+                    unsafe {
+                        self.interpolate_masked_unchecked_unsafe(
+                            w_row, w_col,
+                            array_in, array_out, out_idx,
+                            kernel_center_row, kernel_center_col,
+                            nodata_out, context,
+                        );
+                    }
                 } else {
-                    self.interpolate_nomask_unchecked(
-                        w_row, w_col,
-                        array_in, array_out, out_idx,
-                        kernel_center_row, kernel_center_col,
-                    );
+                    // SAFETY : check has been performed in the previous if test
+                    unsafe {
+                        self.interpolate_nomask_unchecked_unsafe(
+                            w_row, w_col,
+                            array_in, array_out, out_idx,
+                            kernel_center_row, kernel_center_col,
+                        );
+                    }
                 }
             }
             // Border path: the centre is inside the array but the stencil may
@@ -1560,20 +2593,30 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
                 self.compute_weights(rel_col, w_col);
 
                 if context.input_mask().is_enabled() {
-                    self.interpolate_masked_partial(
-                        w_row, w_col,
-                        array_in, array_out, out_idx,
-                        kernel_center_row, kernel_center_col,
-                        nodata_out, context,
-                    );
+                    // SAFETY : check has been performed in the previous if test
+                    // The partial variant ensures that out of bounds position
+                    // are not used by checking the kernel weights
+                    unsafe {
+                        self.interpolate_masked_partial_unsafe(
+                            w_row, w_col,
+                            array_in, array_out, out_idx,
+                            kernel_center_row, kernel_center_col,
+                            nodata_out, context,
+                        );
+                    }
                 } else {
-                    self.interpolate_nomask_partial(
-                        w_row, w_col,
-                        array_in, array_out,
-                        context.output_mask(), out_idx,
-                        kernel_center_row, kernel_center_col,
-                        nodata_out,
-                    );
+                    // SAFETY : check has been performed in the previous if test
+                    // The partial variant ensures that out of bounds position
+                    // are not used by checking the kernel weights
+                    unsafe {
+                        self.interpolate_nomask_partial_unsafe(
+                            w_row, w_col,
+                            array_in, array_out,
+                            context.output_mask(), out_idx,
+                            kernel_center_row, kernel_center_col,
+                            nodata_out,
+                        );
+                    }
                 }
             } else {
                 // Outside path: the centre is entirely outside the array.
@@ -1592,18 +2635,24 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
             self.compute_weights(rel_col, w_col);
 
             if context.input_mask().is_enabled() {
-                self.interpolate_masked_unchecked(
-                    w_row, w_col,
-                    array_in, array_out, out_idx,
-                    kernel_center_row, kernel_center_col,
-                    nodata_out, context,
-                );
+                unsafe {
+                    // SAFETY : check has been performed in the previous if test
+                    self.interpolate_masked_unchecked_unsafe(
+                        w_row, w_col,
+                        array_in, array_out, out_idx,
+                        kernel_center_row, kernel_center_col,
+                        nodata_out, context,
+                    );
+                }
             } else {
-                self.interpolate_nomask_unchecked(
-                    w_row, w_col,
-                    array_in, array_out, out_idx,
-                    kernel_center_row, kernel_center_col,
-                );
+                unsafe {
+                    // SAFETY : check has been performed in the previous if test
+                    self.interpolate_nomask_unchecked_unsafe(
+                        w_row, w_col,
+                        array_in, array_out, out_idx,
+                        kernel_center_row, kernel_center_col,
+                    );
+                }
             }
         }
         Ok(())
