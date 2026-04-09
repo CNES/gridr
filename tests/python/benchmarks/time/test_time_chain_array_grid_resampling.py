@@ -65,14 +65,20 @@ except KeyError:
 
 warnings.filterwarnings("ignore", category=rasterio.errors.NotGeoreferencedWarning)
 
-NROUNDS = 20
+NROUNDS = 1
 NITERATIONS = 1
-NWARMUP = 3
+NWARMUP = 0
 RESOLUTIONS = [
     (1, 1),
     (10, 10),
     (100, 100),
 ]
+
+DO_TEST_001=False
+DO_TEST_INIT_ORION=False
+DO_TEST_002=False
+DO_TEST_003=True
+DO_TEST_004=False
 
 
 def write_array(array, dtype, fileout):
@@ -216,6 +222,281 @@ def input_data_001_mandrill_grid_f64(tmp_path_factory):
     return ret
 
 
+
+
+def input_data_002_mandrill_grid_f64(tmp_path_factory, res):
+    """Create input data"""
+    input_raster_dtype = mandrill.dtype
+    input_grid_dtype = np.float64
+
+    tmp_dir = tmp_path_factory.mktemp("raster")
+
+    output_shape_target = (10000, 10000)
+    grid_in_shape = (
+        (output_shape_target[0] - 1) // res[0] + 1,
+        (output_shape_target[1] - 1) // res[1] + 1
+    )
+    v_row_y = (mandrill.shape[0] / output_shape_target[0])
+    v_row_x = (0.0002)
+    v_col_y = (-0.0005)
+    v_col_x = (mandrill.shape[1] / output_shape_target[1])
+    
+
+    ret = {
+        "raster_in_path": tmp_dir / "test_raster_in.tif",
+        "raster_in_nbands": mandrill.shape[0],
+        "raster_in_mask_band": None,
+        "grid_in_path": {
+            "tif": tmp_dir / "test_grid_in.tif",
+            "bsq": {res: tmp_dir / f"test_grid_in.bsq_{res[0]}_{res[1]}.hd"},
+        },
+        "grid_in_shape": grid_in_shape,
+        "grid_mask_flag": False,
+        "grid_mask_in_path": None,
+        "grid_mask_in_masked_value": None,
+        "grid_in_nodata": None,
+    }
+
+    # write input raster as tif
+    write_array(mandrill, dtype=input_raster_dtype, fileout=ret["raster_in_path"])
+    
+
+    # create grid
+    grid_row, grid_col = create_grid_generic(
+        nrow=ret["grid_in_shape"][0],
+        ncol=ret["grid_in_shape"][1],
+        origin_pos=np.array((0.3, 0.2)),
+        origin_node=np.array((0.0, 0.0)),
+        v_row_y=v_row_y,
+        v_row_x=v_row_x,
+        v_col_y=v_col_y,
+        v_col_x=v_col_x,
+        random_seed=1,
+        random_std=0.05 * mandrill.shape[1] / output_shape_target[1],
+        dtype=input_grid_dtype,
+    )
+
+    # write grid as tif
+    write_array(
+        np.array([grid_row, grid_col]), dtype=input_grid_dtype, fileout=ret["grid_in_path"]["tif"]
+    )
+    if USE_ORION:
+        # write grid as bsq - it requires to write header for each resolution
+        # here we write full grid data for each resolution to make it simple
+        write_array_bsq(
+                np.array([grid_row, grid_col]),
+                dtype=input_grid_dtype,
+                fileout=ret["grid_in_path"]["bsq"][res],
+                oversampling_row=res[0],
+                oversampling_col=res[1],
+            )
+
+    return ret
+
+
+
+@pytest.fixture(scope="session")
+def input_data_002_mandrill_grid_50_f64(tmp_path_factory):
+    res = (50, 50)
+    return input_data_002_mandrill_grid_f64(tmp_path_factory, res)
+
+@pytest.fixture(scope="session")
+def input_data_002_mandrill_grid_100_f64(tmp_path_factory):
+    res = (100, 100)
+    return input_data_002_mandrill_grid_f64(tmp_path_factory, res)
+
+@pytest.fixture(scope="session")
+def input_data_002_mandrill_grid_500_f64(tmp_path_factory):
+    res = (500, 500)
+    return input_data_002_mandrill_grid_f64(tmp_path_factory, res)
+
+
+
+def input_data_003_12000_grid_f64(tmp_path_factory, res):
+    """Create input data"""
+    input_raster_dtype = np.float64
+    input_grid_dtype = np.float64
+
+    tmp_dir = tmp_path_factory.mktemp("raster")
+
+    input_shape = (3, 12000, 12000)
+    output_shape_target = (10000, 10000)
+    grid_in_shape = (
+        (output_shape_target[0] - 1) // res[0] + 1,
+        (output_shape_target[1] - 1) // res[1] + 1
+    )
+    v_row_y = (input_shape[1] / output_shape_target[0])
+    v_row_x = 0.0002 * res[1]
+    v_col_y = 0.0005 * res[0]
+    v_col_x = (input_shape[2] / output_shape_target[1])
+
+    input_data = np.arange(input_shape[0]*input_shape[1]*input_shape[2], dtype=np.uint16) % 4000
+    input_data = input_data.reshape(input_shape).astype(input_raster_dtype)
+
+    ret = {
+        "raster_in_path": tmp_dir / "test_raster_in.tif",
+        "raster_in_nbands": input_data.shape[0],
+        "raster_in_mask_band": None,
+        "grid_in_path": {
+            "tif": tmp_dir / "test_grid_in.tif",
+            "bsq": {res: tmp_dir / f"test_grid_in.bsq_{res[0]}_{res[1]}.hd"},
+        },
+        "grid_in_shape": grid_in_shape,
+        "grid_mask_flag": False,
+        "grid_mask_in_path": None,
+        "grid_mask_in_masked_value": None,
+        "grid_in_nodata": None,
+    }
+
+    # write input raster as tif
+    write_array(input_data, dtype=input_raster_dtype, fileout=ret["raster_in_path"])
+
+    # create grid
+    grid_row, grid_col = create_grid_generic(
+        nrow=ret["grid_in_shape"][0],
+        ncol=ret["grid_in_shape"][1],
+        origin_pos=np.array((0.3, 0.2)),
+        origin_node=np.array((0.0, 0.0)),
+        v_row_y=v_row_y,
+        v_row_x=v_row_x,
+        v_col_y=v_col_y,
+        v_col_x=v_col_x,
+        random_seed=1,
+        random_std=0.05 * input_data.shape[1] / output_shape_target[1],
+        dtype=input_grid_dtype,
+    )
+
+    # write grid as tif
+    write_array(
+        np.array([grid_row, grid_col]), dtype=input_grid_dtype, fileout=ret["grid_in_path"]["tif"]
+    )
+    if USE_ORION:
+        # write grid as bsq - it requires to write header for each resolution
+        # here we write full grid data for each resolution to make it simple
+        write_array_bsq(
+                np.array([grid_row, grid_col]),
+                dtype=input_grid_dtype,
+                fileout=ret["grid_in_path"]["bsq"][res],
+                oversampling_row=res[0],
+                oversampling_col=res[1],
+            )
+
+    return ret
+
+@pytest.fixture(scope="session")
+def input_data_003_12000_grid_1_f64(tmp_path_factory):
+    res = (1, 1)
+    return input_data_003_12000_grid_f64(tmp_path_factory, res)
+    
+@pytest.fixture(scope="session")
+def input_data_003_12000_grid_50_f64(tmp_path_factory):
+    res = (50, 50)
+    return input_data_003_12000_grid_f64(tmp_path_factory, res)
+
+@pytest.fixture(scope="session")
+def input_data_003_12000_grid_100_f64(tmp_path_factory):
+    res = (100, 100)
+    return input_data_003_12000_grid_f64(tmp_path_factory, res)
+
+@pytest.fixture(scope="session")
+def input_data_003_12000_grid_200_f64(tmp_path_factory):
+    res = (200, 200)
+    return input_data_003_12000_grid_f64(tmp_path_factory, res)
+
+
+def input_data_004_4000_grid_f64(tmp_path_factory, res):
+    """Create input data"""
+    input_raster_dtype = np.float64
+    input_grid_dtype = np.float64
+
+    tmp_dir = tmp_path_factory.mktemp("raster")
+
+    input_shape = (3, 4000, 4000)
+    output_shape_target = (3900, 3900)
+    grid_in_shape = (
+        (output_shape_target[0] - 1) // res[0] + 1,
+        (output_shape_target[1] - 1) // res[1] + 1
+    )
+    v_row_y = (input_shape[1] / output_shape_target[0])
+    v_row_x = 0.0002 * res[1]
+    v_col_y = 0.0005 * res[0]
+    v_col_x = (input_shape[2] / output_shape_target[1])
+
+    input_data = np.arange(input_shape[0]*input_shape[1]*input_shape[2], dtype=np.uint16) % 4000
+    input_data = input_data.reshape(input_shape).astype(input_raster_dtype)
+
+    ret = {
+        "raster_in_path": tmp_dir / "test_raster_in.tif",
+        "raster_in_nbands": input_data.shape[0],
+        "raster_in_mask_band": None,
+        "grid_in_path": {
+            "tif": tmp_dir / "test_grid_in.tif",
+            "bsq": {res: tmp_dir / f"test_grid_in.bsq_{res[0]}_{res[1]}.hd"},
+        },
+        "grid_in_shape": grid_in_shape,
+        "grid_mask_flag": False,
+        "grid_mask_in_path": None,
+        "grid_mask_in_masked_value": None,
+        "grid_in_nodata": None,
+    }
+
+    # write input raster as tif
+    write_array(input_data, dtype=input_raster_dtype, fileout=ret["raster_in_path"])
+
+    # create grid
+    grid_row, grid_col = create_grid_generic(
+        nrow=ret["grid_in_shape"][0],
+        ncol=ret["grid_in_shape"][1],
+        origin_pos=np.array((0.3, 0.2)),
+        origin_node=np.array((0.0, 0.0)),
+        v_row_y=v_row_y,
+        v_row_x=v_row_x,
+        v_col_y=v_col_y,
+        v_col_x=v_col_x,
+        random_seed=1,
+        random_std=0.05 * input_data.shape[1] / output_shape_target[1],
+        dtype=input_grid_dtype,
+    )
+
+    # write grid as tif
+    write_array(
+        np.array([grid_row, grid_col]), dtype=input_grid_dtype, fileout=ret["grid_in_path"]["tif"]
+    )
+    if USE_ORION:
+        # write grid as bsq - it requires to write header for each resolution
+        # here we write full grid data for each resolution to make it simple
+        write_array_bsq(
+                np.array([grid_row, grid_col]),
+                dtype=input_grid_dtype,
+                fileout=ret["grid_in_path"]["bsq"][res],
+                oversampling_row=res[0],
+                oversampling_col=res[1],
+            )
+
+    return ret
+
+@pytest.fixture(scope="session")
+def input_data_004_4000_grid_1_f64(tmp_path_factory):
+    res = (1, 1)
+    return input_data_004_4000_grid_f64(tmp_path_factory, res)
+    
+@pytest.fixture(scope="session")
+def input_data_004_4000_grid_50_f64(tmp_path_factory):
+    res = (50, 50)
+    return input_data_004_4000_grid_f64(tmp_path_factory, res)
+
+@pytest.fixture(scope="session")
+def input_data_004_4000_grid_100_f64(tmp_path_factory):
+    res = (100, 100)
+    return input_data_004_4000_grid_f64(tmp_path_factory, res)
+
+@pytest.fixture(scope="session")
+def input_data_004_4000_grid_200_f64(tmp_path_factory):
+    res = (200, 200)
+    return input_data_004_4000_grid_f64(tmp_path_factory, res)
+
+
+
 @pytest.fixture(scope="session")
 def input_data(request):
     """Create the requested input data"""
@@ -277,6 +558,7 @@ CANONICAL_PARAMS = {
         "bspline11",
     ],
 }
+
 
 PARAM_MAP = {
     "gridr.chain.grid_resampling_chain.basic_grid_resampling_chain": {
@@ -384,7 +666,11 @@ class GridrAdapter(BenchAdapter):
 
         # For GridR we use the TIF input grid
         self._grid_in_path = self._grid_in_path_dict["tif"]
-
+        
+        with rasterio.open(self._input_image_path, "r") as array_src_ds:
+            if array_src_ds.width > 1000:
+                self._kwargs['io_strip_size'] = 2000
+                self._kwargs['tile_shape'] = (2000, 2000)
         self._logger = None
 
     def run(self):
@@ -446,6 +732,14 @@ class OrionAdapter(BenchAdapter):
 
         if not params["multi_bands"]:
             self._kwargs["num_canal_in"] = 1
+        
+        self._kwargs['mode_read'] = "IMAGE"
+        with rasterio.open(self._input_image_path, "r") as array_src_ds:
+            if array_src_ds.width > 1000:
+                self._kwargs['mode_read'] = "TUILE"
+                self._kwargs['largeur_imagette'] = 2000
+                self._kwargs['hauteur_imagette'] = 2000
+                #self._kwargs['tile_orion_auto'] = True
 
         # For Orion we use the BSQ input grid for the corresponding resolution
         self._grid_in_path = self._grid_in_path_dict["bsq"][params["resolution"]]
@@ -470,7 +764,6 @@ class OrionAdapter(BenchAdapter):
             slope=1.0,
             bias=0.0,
             no_data=0.0,
-            mode_read="IMAGE",
             # complex_image: bool = False,
             # num_canal_in = 1,
             # tile_orion_auto: bool = False,
@@ -506,71 +799,690 @@ ADAPTERS = [
     OrionAdapter(),
 ]
 
-
-@pytest.mark.benchmark(group="time:gridr.core.grid.grid_resampling.array_grid_resampling")
-@pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
-@pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
-@pytest.mark.parametrize("resolution", RESOLUTIONS)
-@pytest.mark.parametrize(
-    "input_data",
-    [
-        "input_data_001_mandrill_grid_f64",
-    ],
-    indirect=True,
-)
-@pytest.mark.parametrize(
-    "mask_out",
-    [
-        False,
-    ],
-)
-@pytest.mark.parametrize("multi_bands", [True, False])
-def test_grid_resampling(
-    benchmark,
-    request,
-    adapter,
-    method,
-    input_data,
-    resolution,
-    mask_out,
-    multi_bands,
-    tmp_path,
-):
-    """ """
-    adapter.check_support(
-        params={"method": method},
+if DO_TEST_001:
+    @pytest.mark.benchmark(group="time:gridr.core.grid.grid_resampling.array_grid_resampling")
+    @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
+    @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
+    @pytest.mark.parametrize("resolution", RESOLUTIONS)
+    @pytest.mark.parametrize(
+        "input_data",
+        [
+            "input_data_001_mandrill_grid_f64",
+        ],
+        indirect=True,
     )
-
-    def setup():
-        adapter.prepare(
-            benchmark,
-            request,
-            params={
-                "method": method,
-                "mask_out": mask_out,
-                "resolution": resolution,
-                "input_data": input_data,
-                "multi_bands": multi_bands,
-            },
-            work_dir=tmp_path,
+    @pytest.mark.parametrize(
+        "mask_out",
+        [
+            False,
+        ],
+    )
+    @pytest.mark.parametrize("multi_bands", [True, False])
+    def test_grid_resampling(
+        benchmark,
+        request,
+        adapter,
+        method,
+        input_data,
+        resolution,
+        mask_out,
+        multi_bands,
+        tmp_path,
+    ):
+        """ """
+        adapter.check_support(
+            params={"method": method},
         )
 
-    benchmark.pedantic(
-        adapter.run,
-        setup=setup,
-        warmup_rounds=NWARMUP,
-        rounds=NROUNDS,
-        iterations=NITERATIONS,
-    )
+        def setup():
+            adapter.prepare(
+                benchmark,
+                request,
+                params={
+                    "method": method,
+                    "mask_out": mask_out,
+                    "resolution": resolution,
+                    "input_data": input_data,
+                    "multi_bands": multi_bands,
+                },
+                work_dir=tmp_path,
+            )
 
-
-@pytest.mark.benchmark(group="time:orion_init_only")
-def test_orion_init_only(benchmark):
-    """ """
-    if USE_ORION:
         benchmark.pedantic(
-            grid_orion_init_only,
+            adapter.run,
+            setup=setup,
             warmup_rounds=NWARMUP,
             rounds=NROUNDS,
             iterations=NITERATIONS,
         )
+
+if DO_TEST_002:
+    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+    @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
+    @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
+    @pytest.mark.parametrize("resolution", ((50,50),))
+    @pytest.mark.parametrize(
+        "input_data",
+        [
+            "input_data_002_mandrill_grid_50_f64",
+        ],
+        indirect=True,
+    )
+    @pytest.mark.parametrize(
+        "mask_out",
+        [
+            False,
+        ],
+    )
+    @pytest.mark.parametrize("multi_bands", [True, False])
+    def test_grid_resampling_50(
+        benchmark,
+        request,
+        adapter,
+        method,
+        input_data,
+        resolution,
+        mask_out,
+        multi_bands,
+        tmp_path,
+    ):
+        """ """
+        adapter.check_support(
+            params={"method": method},
+        )
+
+        def setup():
+            adapter.prepare(
+                benchmark,
+                request,
+                params={
+                    "method": method,
+                    "mask_out": mask_out,
+                    "resolution": resolution,
+                    "input_data": input_data,
+                    "multi_bands": multi_bands,
+                },
+                work_dir=tmp_path,
+            )
+
+        benchmark.pedantic(
+            adapter.run,
+            setup=setup,
+            warmup_rounds=NWARMUP,
+            rounds=NROUNDS,
+            iterations=NITERATIONS,
+        )
+
+
+    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+    @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
+    @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
+    @pytest.mark.parametrize("resolution", ((100,100),))
+    @pytest.mark.parametrize(
+        "input_data",
+        [
+            "input_data_002_mandrill_grid_100_f64",
+        ],
+        indirect=True,
+    )
+    @pytest.mark.parametrize(
+        "mask_out",
+        [
+            False,
+        ],
+    )
+    @pytest.mark.parametrize("multi_bands", [True, False])
+    def test_grid_resampling_100(
+        benchmark,
+        request,
+        adapter,
+        method,
+        input_data,
+        resolution,
+        mask_out,
+        multi_bands,
+        tmp_path,
+    ):
+        """ """
+        adapter.check_support(
+            params={"method": method},
+        )
+
+        def setup():
+            adapter.prepare(
+                benchmark,
+                request,
+                params={
+                    "method": method,
+                    "mask_out": mask_out,
+                    "resolution": resolution,
+                    "input_data": input_data,
+                    "multi_bands": multi_bands,
+                },
+                work_dir=tmp_path,
+            )
+
+        benchmark.pedantic(
+            adapter.run,
+            setup=setup,
+            warmup_rounds=NWARMUP,
+            rounds=NROUNDS,
+            iterations=NITERATIONS,
+        )
+        
+
+    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+    @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
+    @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
+    @pytest.mark.parametrize("resolution", ((500,500),))
+    @pytest.mark.parametrize(
+        "input_data",
+        [
+            "input_data_002_mandrill_grid_500_f64",
+        ],
+        indirect=True,
+    )
+    @pytest.mark.parametrize(
+        "mask_out",
+        [
+            False,
+        ],
+    )
+    @pytest.mark.parametrize("multi_bands", [True, False])
+    def test_grid_resampling_500(
+        benchmark,
+        request,
+        adapter,
+        method,
+        input_data,
+        resolution,
+        mask_out,
+        multi_bands,
+        tmp_path,
+    ):
+        """ """
+        adapter.check_support(
+            params={"method": method},
+        )
+
+        def setup():
+            adapter.prepare(
+                benchmark,
+                request,
+                params={
+                    "method": method,
+                    "mask_out": mask_out,
+                    "resolution": resolution,
+                    "input_data": input_data,
+                    "multi_bands": multi_bands,
+                },
+                work_dir=tmp_path,
+            )
+
+        benchmark.pedantic(
+            adapter.run,
+            setup=setup,
+            warmup_rounds=NWARMUP,
+            rounds=NROUNDS,
+            iterations=NITERATIONS,
+        )
+
+
+
+if DO_TEST_003:
+    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+    @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
+    @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
+    @pytest.mark.parametrize("resolution", ((1,1),))
+    @pytest.mark.parametrize(
+        "input_data",
+        [
+            "input_data_003_12000_grid_1_f64",
+        ],
+        indirect=True,
+    )
+    @pytest.mark.parametrize(
+        "mask_out",
+        [
+            False,
+        ],
+    )
+    @pytest.mark.parametrize("multi_bands", [True, False])
+    def test_grid_resampling_003_12000_1(
+        benchmark,
+        request,
+        adapter,
+        method,
+        input_data,
+        resolution,
+        mask_out,
+        multi_bands,
+        tmp_path,
+    ):
+        """ """
+        adapter.check_support(
+            params={"method": method},
+        )
+
+        def setup():
+            adapter.prepare(
+                benchmark,
+                request,
+                params={
+                    "method": method,
+                    "mask_out": mask_out,
+                    "resolution": resolution,
+                    "input_data": input_data,
+                    "multi_bands": multi_bands,
+                },
+                work_dir=tmp_path,
+            )
+
+        benchmark.pedantic(
+            adapter.run,
+            setup=setup,
+            warmup_rounds=NWARMUP,
+            rounds=NROUNDS,
+            iterations=NITERATIONS,
+        )
+    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+    @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
+    @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
+    @pytest.mark.parametrize("resolution", ((50,50),))
+    @pytest.mark.parametrize(
+        "input_data",
+        [
+            "input_data_003_12000_grid_50_f64",
+        ],
+        indirect=True,
+    )
+    @pytest.mark.parametrize(
+        "mask_out",
+        [
+            False,
+        ],
+    )
+    @pytest.mark.parametrize("multi_bands", [True, False])
+    def test_grid_resampling_003_12000_50(
+        benchmark,
+        request,
+        adapter,
+        method,
+        input_data,
+        resolution,
+        mask_out,
+        multi_bands,
+        tmp_path,
+    ):
+        """ """
+        adapter.check_support(
+            params={"method": method},
+        )
+
+        def setup():
+            adapter.prepare(
+                benchmark,
+                request,
+                params={
+                    "method": method,
+                    "mask_out": mask_out,
+                    "resolution": resolution,
+                    "input_data": input_data,
+                    "multi_bands": multi_bands,
+                },
+                work_dir=tmp_path,
+            )
+
+        benchmark.pedantic(
+            adapter.run,
+            setup=setup,
+            warmup_rounds=NWARMUP,
+            rounds=NROUNDS,
+            iterations=NITERATIONS,
+        )
+    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+    @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
+    @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
+    @pytest.mark.parametrize("resolution", ((100,100),))
+    @pytest.mark.parametrize(
+        "input_data",
+        [
+            "input_data_003_12000_grid_100_f64",
+        ],
+        indirect=True,
+    )
+    @pytest.mark.parametrize(
+        "mask_out",
+        [
+            False,
+        ],
+    )
+    @pytest.mark.parametrize("multi_bands", [True, False])
+    def test_grid_resampling_003_12000_100(
+        benchmark,
+        request,
+        adapter,
+        method,
+        input_data,
+        resolution,
+        mask_out,
+        multi_bands,
+        tmp_path,
+    ):
+        """ """
+        adapter.check_support(
+            params={"method": method},
+        )
+
+        def setup():
+            adapter.prepare(
+                benchmark,
+                request,
+                params={
+                    "method": method,
+                    "mask_out": mask_out,
+                    "resolution": resolution,
+                    "input_data": input_data,
+                    "multi_bands": multi_bands,
+                },
+                work_dir=tmp_path,
+            )
+
+        benchmark.pedantic(
+            adapter.run,
+            setup=setup,
+            warmup_rounds=NWARMUP,
+            rounds=NROUNDS,
+            iterations=NITERATIONS,
+        )
+    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+    @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
+    @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
+    @pytest.mark.parametrize("resolution", ((200,200),))
+    @pytest.mark.parametrize(
+        "input_data",
+        [
+            "input_data_003_12000_grid_200_f64",
+        ],
+        indirect=True,
+    )
+    @pytest.mark.parametrize(
+        "mask_out",
+        [
+            False,
+        ],
+    )
+    @pytest.mark.parametrize("multi_bands", [True, False])
+    def test_grid_resampling_003_12000_200(
+        benchmark,
+        request,
+        adapter,
+        method,
+        input_data,
+        resolution,
+        mask_out,
+        multi_bands,
+        tmp_path,
+    ):
+        """ """
+        adapter.check_support(
+            params={"method": method},
+        )
+
+        def setup():
+            adapter.prepare(
+                benchmark,
+                request,
+                params={
+                    "method": method,
+                    "mask_out": mask_out,
+                    "resolution": resolution,
+                    "input_data": input_data,
+                    "multi_bands": multi_bands,
+                },
+                work_dir=tmp_path,
+            )
+
+        benchmark.pedantic(
+            adapter.run,
+            setup=setup,
+            warmup_rounds=NWARMUP,
+            rounds=NROUNDS,
+            iterations=NITERATIONS,
+        )
+
+
+if DO_TEST_004:
+    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+    @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
+    @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
+    @pytest.mark.parametrize("resolution", ((1,1),))
+    @pytest.mark.parametrize(
+        "input_data",
+        [
+            "input_data_004_4000_grid_1_f64",
+        ],
+        indirect=True,
+    )
+    @pytest.mark.parametrize(
+        "mask_out",
+        [
+            False,
+        ],
+    )
+    @pytest.mark.parametrize("multi_bands", [True, False])
+    def test_grid_resampling_004_4000_1(
+        benchmark,
+        request,
+        adapter,
+        method,
+        input_data,
+        resolution,
+        mask_out,
+        multi_bands,
+        tmp_path,
+    ):
+        """ """
+        adapter.check_support(
+            params={"method": method},
+        )
+
+        def setup():
+            adapter.prepare(
+                benchmark,
+                request,
+                params={
+                    "method": method,
+                    "mask_out": mask_out,
+                    "resolution": resolution,
+                    "input_data": input_data,
+                    "multi_bands": multi_bands,
+                },
+                work_dir=tmp_path,
+            )
+
+        benchmark.pedantic(
+            adapter.run,
+            setup=setup,
+            warmup_rounds=NWARMUP,
+            rounds=NROUNDS,
+            iterations=NITERATIONS,
+        )
+    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+    @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
+    @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
+    @pytest.mark.parametrize("resolution", ((50,50),))
+    @pytest.mark.parametrize(
+        "input_data",
+        [
+            "input_data_004_4000_grid_50_f64",
+        ],
+        indirect=True,
+    )
+    @pytest.mark.parametrize(
+        "mask_out",
+        [
+            False,
+        ],
+    )
+    @pytest.mark.parametrize("multi_bands", [True, False])
+    def test_grid_resampling_004_4000_50(
+        benchmark,
+        request,
+        adapter,
+        method,
+        input_data,
+        resolution,
+        mask_out,
+        multi_bands,
+        tmp_path,
+    ):
+        """ """
+        adapter.check_support(
+            params={"method": method},
+        )
+
+        def setup():
+            adapter.prepare(
+                benchmark,
+                request,
+                params={
+                    "method": method,
+                    "mask_out": mask_out,
+                    "resolution": resolution,
+                    "input_data": input_data,
+                    "multi_bands": multi_bands,
+                },
+                work_dir=tmp_path,
+            )
+
+        benchmark.pedantic(
+            adapter.run,
+            setup=setup,
+            warmup_rounds=NWARMUP,
+            rounds=NROUNDS,
+            iterations=NITERATIONS,
+        )
+    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+    @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
+    @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
+    @pytest.mark.parametrize("resolution", ((100,100),))
+    @pytest.mark.parametrize(
+        "input_data",
+        [
+            "input_data_004_4000_grid_100_f64",
+        ],
+        indirect=True,
+    )
+    @pytest.mark.parametrize(
+        "mask_out",
+        [
+            False,
+        ],
+    )
+    @pytest.mark.parametrize("multi_bands", [True, False])
+    def test_grid_resampling_004_4000_100(
+        benchmark,
+        request,
+        adapter,
+        method,
+        input_data,
+        resolution,
+        mask_out,
+        multi_bands,
+        tmp_path,
+    ):
+        """ """
+        adapter.check_support(
+            params={"method": method},
+        )
+
+        def setup():
+            adapter.prepare(
+                benchmark,
+                request,
+                params={
+                    "method": method,
+                    "mask_out": mask_out,
+                    "resolution": resolution,
+                    "input_data": input_data,
+                    "multi_bands": multi_bands,
+                },
+                work_dir=tmp_path,
+            )
+
+        benchmark.pedantic(
+            adapter.run,
+            setup=setup,
+            warmup_rounds=NWARMUP,
+            rounds=NROUNDS,
+            iterations=NITERATIONS,
+        )
+    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+    @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
+    @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
+    @pytest.mark.parametrize("resolution", ((200,200),))
+    @pytest.mark.parametrize(
+        "input_data",
+        [
+            "input_data_004_4000_grid_200_f64",
+        ],
+        indirect=True,
+    )
+    @pytest.mark.parametrize(
+        "mask_out",
+        [
+            False,
+        ],
+    )
+    @pytest.mark.parametrize("multi_bands", [True, False])
+    def test_grid_resampling_004_4000_200(
+        benchmark,
+        request,
+        adapter,
+        method,
+        input_data,
+        resolution,
+        mask_out,
+        multi_bands,
+        tmp_path,
+    ):
+        """ """
+        adapter.check_support(
+            params={"method": method},
+        )
+
+        def setup():
+            adapter.prepare(
+                benchmark,
+                request,
+                params={
+                    "method": method,
+                    "mask_out": mask_out,
+                    "resolution": resolution,
+                    "input_data": input_data,
+                    "multi_bands": multi_bands,
+                },
+                work_dir=tmp_path,
+            )
+
+        benchmark.pedantic(
+            adapter.run,
+            setup=setup,
+            warmup_rounds=NWARMUP,
+            rounds=NROUNDS,
+            iterations=NITERATIONS,
+        )
+
+
+if DO_TEST_INIT_ORION:
+    @pytest.mark.benchmark(group="time:orion_init_only")
+    def test_orion_init_only(benchmark):
+        """ """
+        if USE_ORION:
+            benchmark.pedantic(
+                grid_orion_init_only,
+                warmup_rounds=NWARMUP,
+                rounds=NROUNDS,
+                iterations=NITERATIONS,
+            )

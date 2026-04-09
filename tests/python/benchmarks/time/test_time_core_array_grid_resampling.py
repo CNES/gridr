@@ -47,6 +47,7 @@ NSIZES = [
     4000,
 ]
 
+DO_BENCH = False
 
 class BenchAdapter(Protocol):
     """Each tool implements that interface"""
@@ -201,27 +202,27 @@ class ScipyMapCoordinateAdapter(BenchAdapter):
 
 ADAPTERS = [GridrAdapter(), ScipyMapCoordinateAdapter()]
 
-
-@pytest.mark.benchmark(group="time:gridr.core.grid.grid_resampling.array_grid_resampling")
-@pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
-@pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
-@pytest.mark.parametrize("n", NSIZES)
-def test_grid_resampling(benchmark, adapter, method, n):
-    """ """
-    adapter.check_support(
-        params={"method": method},
-    )
-
-    def setup():
-        adapter.prepare(
-            n=n,
+if DO_BENCH:
+    @pytest.mark.benchmark(group="time:gridr.core.grid.grid_resampling.array_grid_resampling")
+    @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
+    @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
+    @pytest.mark.parametrize("n", NSIZES)
+    def test_grid_resampling(benchmark, adapter, method, n):
+        """ """
+        adapter.check_support(
             params={"method": method},
         )
 
-    benchmark.pedantic(
-        adapter.run,
-        setup=setup,
-        warmup_rounds=NWARMUP,
-        rounds=NROUNDS,
-        iterations=NITERATIONS,
-    )
+        def setup():
+            adapter.prepare(
+                n=n,
+                params={"method": method},
+            )
+
+        benchmark.pedantic(
+            adapter.run,
+            setup=setup,
+            warmup_rounds=NWARMUP,
+            rounds=NROUNDS,
+            iterations=NITERATIONS,
+        )
