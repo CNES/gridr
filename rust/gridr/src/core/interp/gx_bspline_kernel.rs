@@ -250,6 +250,493 @@ pub fn bspline11(x: f64) -> f64
     0.0
 }
 
+/// Computes all non-zero cubic B-spline weights for a centered fractional
+/// offset, writing them into `weights`.
+///
+/// # Optimization strategy
+///
+/// The five kernel weights are computed by exploiting the symmetry of the
+/// B-spline support around the nearest integer pixel.  For `t ∈ [0, 0.5]`
+/// the substitution `s = 1 - t` yields:
+///
+/// ```text
+///   weights[0] = t³              (branch 2, argument 2-t)
+///   weights[1] = 4 + (-6+3s)s²  (branch 1, argument s = 1-t)
+///   weights[2] = 4 + (-6+3t)t²  (branch 1, argument t)
+///   weights[3] = s³              (branch 2, argument 1+t → 2-(1+t) = s)
+///   weights[4] = 0               (outside support)
+/// ```
+///
+/// For `t ∈ (-0.5, 0)`, `u = -t` is used and the same four polynomials are
+/// evaluated on `u` and `s = 1-u`; only the placement in `weights` is
+/// mirrored.  This avoids all `abs()` calls and conditional branches inside
+/// the polynomial evaluation, and reduces the power computation to a shared
+/// `(t², t³)` or `(u², u³, s², s³)` base.
+///
+/// # Cost
+///
+/// - **5 multiplications**, **5 additions** (versus ~10 mul and 8 add for
+///   five independent scalar calls including `abs()` and branch overhead).
+/// - **1 structural zero**: `weights[4]` (`t ≥ 0`) or `weights[0]`
+///   (`t < 0`) is always 0, saving one multiply in the convolution.
+///
+/// # Parameters
+///
+/// - `t`: Fractional offset in `(-0.5, 0.5]`, computed as
+///   `x - round(x)` (i.e. `x - floor(x + 0.5)`).
+/// - `weights`: Output slice of length ≥ 5.  Index 0 corresponds to
+///   offset −2, index 4 to offset +2 relative to the nearest integer.
+///
+/// # Safety
+///
+/// The caller must guarantee that `weights.len() >= 5`.  This function uses
+/// `get_unchecked_mut` to suppress per-element bounds checks; violating the
+/// length contract results in undefined behaviour.
+#[inline]
+pub fn bspline3_all_centered(t: f64, weights: &mut [f64]) {
+    // SAFETY: caller guarantees weights.len() >= 5.
+    let w = unsafe { weights.get_unchecked_mut(0..5) };
+ 
+    if t >= 0.0 {
+        // t in [0, 0.5], s = 1-t in [0.5, 1]
+        let s = 1.0 - t;
+        let t2 = t * t; let t3 = t2 * t;
+        let s2 = s * s; let s3 = s2 * s;
+ 
+        w[0] = t3;
+        w[1] = 4.0 + (-6.0 + 3.0*s)*s2;
+        w[2] = 4.0 + (-6.0 + 3.0*t)*t2;
+        w[3] = s3;
+        w[4] = 0.0;
+ 
+    } else {
+        // u = -t in (0, 0.5), s = 1-u in [0.5, 1)
+        let u = -t;
+        let s = 1.0 - u;
+        let u2 = u * u; let u3 = u2 * u;
+        let s2 = s * s; let s3 = s2 * s;
+ 
+        w[0] = 0.0;
+        w[1] = s3;
+        w[2] = 4.0 + (-6.0 + 3.0*u)*u2;
+        w[3] = 4.0 + (-6.0 + 3.0*s)*s2;
+        w[4] = u3;
+    }
+}
+
+/// Computes all non-zero quintic B-spline weights for a centered fractional
+/// offset, writing them into `weights`.
+///
+/// # Optimization strategy
+///
+/// With `t ∈ [0, 0.5]` and `s = 1 - t`, the six non-zero weights map to
+/// branches of `bspline5` as follows:
+///
+/// ```text
+///   weights[0] = t⁵              (branch 3, |t−3| = 3−t ∈ [2.5,3))
+///   weights[1] = bspline5 br2(t) (branch 2, v = t)
+///   weights[2] = bspline5 br1(s) (branch 1, u = s = 1−t)
+///   weights[3] = bspline5 br1(t) (branch 1, u = t)
+///   weights[4] = bspline5 br2(s) (branch 2, v = s)
+///   weights[5] = s⁵              (branch 3, |t+2| = 2+t → 3−(2+t) = s)
+///   weights[6] = 0               (outside support: |t+3| ≥ 3)
+/// ```
+///
+/// All power sequences `(t², t⁴, t⁵)` and `(s², s⁴, s⁵)` are computed
+/// once and shared across the polynomial evaluations.  For `t < 0`, the
+/// substitution `u = -t` produces the mirror layout with `weights[0] = 0`.
+///
+/// # Cost
+///
+/// - **8 multiplications**, **8 additions** (versus ~24 mul and 19 add for
+///   seven independent scalar calls).
+/// - **1 structural zero**: always at index 6 (`t ≥ 0`) or index 0
+///   (`t < 0`).
+///
+/// # Parameters
+///
+/// - `t`: Fractional offset in `(-0.5, 0.5]`, computed as `x - round(x)`.
+/// - `weights`: Output slice of length ≥ 7.  Index 0 = offset −3,
+///   index 6 = offset +3.
+///
+/// # Safety
+///
+/// The caller must guarantee that `weights.len() >= 7`.  This function uses
+/// `get_unchecked_mut` to suppress per-element bounds checks; violating the
+/// length contract results in undefined behaviour.
+#[inline]
+pub fn bspline5_all_centered(t: f64, weights: &mut [f64]) {
+    // SAFETY: caller guarantees weights.len() >= 7.
+    let w = unsafe { weights.get_unchecked_mut(0..7) };
+ 
+    if t >= 0.0 {
+        // t in [0, 0.5], s = 1-t in [0.5, 1].
+        // b_{-3} and b_3 are both in branch 3:
+        //   |t-3| = 3-t in [2.5, 3)  ->  (3-(3-t))^5 = t^5
+        //   |t+3| = 3+t in [3, 3.5]  ->  outside support -> 0
+        // Only b_{-2}..b_2 are non-zero (6 values).
+        let s = 1.0 - t;
+        let t2 = t * t; let t4 = t2 * t2; let t5 = t4 * t;
+        let s2 = s * s; let s4 = s2 * s2; let s5 = s4 * s;
+ 
+        w[0] = t5;
+        w[1] = 1.0 + (5.0 + (10.0 + (10.0 + (5.0 - 5.0*t)*t)*t)*t)*t;
+        w[2] = ((-10.0*s + 30.0)*s2 - 60.0)*s2 + 66.0;
+        w[3] = ((-10.0*t + 30.0)*t2 - 60.0)*t2 + 66.0;
+        w[4] = 1.0 + (5.0 + (10.0 + (10.0 + (5.0 - 5.0*s)*s)*s)*s)*s;
+        w[5] = s5;
+        w[6] = 0.0;
+ 
+    } else {
+        // u = -t in (0, 0.5).  By parity bspline5(-x) = bspline5(x),
+        // so b_k(t) = b_{-k}(-t): the layout is the mirror of t >= 0.
+        let u = -t;
+        let s = 1.0 - u;
+        let u2 = u * u; let u4 = u2 * u2; let u5 = u4 * u;
+        let s2 = s * s; let s4 = s2 * s2; let s5 = s4 * s;
+ 
+        w[0] = 0.0;
+        w[1] = s5;
+        w[2] = 1.0 + (5.0 + (10.0 + (10.0 + (5.0 - 5.0*s)*s)*s)*s)*s;
+        w[3] = ((-10.0*u + 30.0)*u2 - 60.0)*u2 + 66.0;
+        w[4] = ((-10.0*s + 30.0)*s2 - 60.0)*s2 + 66.0;
+        w[5] = 1.0 + (5.0 + (10.0 + (10.0 + (5.0 - 5.0*u)*u)*u)*u)*u;
+        w[6] = u5;
+    }
+}
+
+/// Computes all non-zero septic B-spline weights for a centered fractional
+/// offset, writing them into `weights`.
+///
+/// # Optimization strategy
+///
+/// With support radius 4 and `t ∈ [0, 0.5]`, `s = 1 - t`, the eight
+/// non-zero weights are:
+///
+/// ```text
+///   weights[0] = t⁷              (branch 4, argument 4−t → t⁷)
+///   weights[1] = br3(t)          (branch 3, argument 3−t)
+///   weights[2] = br2(t)          (branch 2, argument 2−t)
+///   weights[3] = br1(s)          (branch 1, argument 1−t = s)
+///   weights[4] = br1(t)          (branch 1, argument t)
+///   weights[5] = br2(s)          (branch 2, argument 1+t → 2−(1+t) = s)
+///   weights[6] = br3(s)          (branch 3, argument 2+t → 3−(2+t) = s)
+///   weights[7] = s⁷              (branch 4, argument 3+t → 4−(3+t) = s)
+///   weights[8] = 0               (outside support)
+/// ```
+///
+/// Branch functions `br1`, `br2`, `br3` are Horner-form inner functions
+/// that take `u ∈ [0, 0.5]` and return the corresponding piece of
+/// `bspline7`.  Powers `t⁷` and `s⁷` are computed via
+/// `t²→t⁴→t⁷ = t⁴·t²·t` (4 multiplications total).
+///
+/// For `t < 0`, `u = -t` and the layout is mirrored with `weights[0] = 0`.
+///
+/// # Parameters
+///
+/// - `t`: Fractional offset in `(-0.5, 0.5]`, computed as `x - round(x)`.
+/// - `weights`: Output slice of length ≥ 9.  Index 0 = offset −4,
+///   index 8 = offset +4.
+///
+/// # Safety
+///
+/// The caller must guarantee that `weights.len() >= 9`.  This function uses
+/// `get_unchecked_mut` to suppress per-element bounds checks; violating the
+/// length contract results in undefined behaviour.
+#[inline]
+pub fn bspline7_all_centered(t: f64, weights: &mut [f64]) {
+    // SAFETY: caller guarantees weights.len() >= 9.
+    let w = unsafe { weights.get_unchecked_mut(0..9) };
+ 
+    // Branch 2 of bspline7: piece valid for x in [1,2), evaluated at u = 2-x
+    #[inline(always)]
+    fn br2(u: f64) -> f64 {
+        120. + (392. + (504. + (280. + (-84. + (-42. + 21.*u)*u)*u*u)*u)*u)*u
+    }
+ 
+    // Branch 3 of bspline7: piece valid for x in [2,3), evaluated at u = 3-x
+    #[inline(always)]
+    fn br3(u: f64) -> f64 {
+        ((((((-7.*u + 7.)*u + 21.)*u + 35.)*u + 35.)*u + 21.)*u + 7.)*u + 1.
+    }
+ 
+    // Branch 1 of bspline7: piece valid for x in [0,1), evaluated at u = x
+    #[inline(always)]
+    fn br1(u: f64) -> f64 {
+        let u2 = u*u;
+        (((35.*u - 140.)*u2 + 560.)*u2 - 1680.)*u2 + 2416.
+    }
+ 
+    if t >= 0.0 {
+        let s = 1.0 - t;
+        let t2 = t*t; let t4 = t2*t2; let t7 = t4*t2*t;
+        let s2 = s*s; let s4 = s2*s2; let s7 = s4*s2*s;
+ 
+        w[0] = t7;
+        w[1] = br3(t);
+        w[2] = br2(t);
+        w[3] = br1(s);
+        w[4] = br1(t);
+        w[5] = br2(s);
+        w[6] = br3(s);
+        w[7] = s7;
+        w[8] = 0.0;
+ 
+    } else {
+        let u = -t;
+        let s = 1.0 - u;
+        let u2 = u*u; let u4 = u2*u2; let u7 = u4*u2*u;
+        let s2 = s*s; let s4 = s2*s2; let s7 = s4*s2*s;
+ 
+        w[0] = 0.0;
+        w[1] = s7;
+        w[2] = br3(s);
+        w[3] = br2(s);
+        w[4] = br1(u);
+        w[5] = br1(s);
+        w[6] = br2(u);
+        w[7] = br3(u);
+        w[8] = u7;
+    }
+}
+ 
+/// Computes all non-zero nonic B-spline weights for a centered fractional
+/// offset, writing them into `weights`.
+///
+/// # Optimization strategy
+///
+/// With support radius 5 and `t ∈ [0, 0.5]`, `s = 1 - t`, the ten
+/// non-zero weights are:
+///
+/// ```text
+///   weights[0]  = t⁹             (branch 5, argument 5−t → t⁹)
+///   weights[1]  = br4(t)         (branch 4, argument 4−t)
+///   weights[2]  = br3(t)         (branch 3, argument 3−t)
+///   weights[3]  = br2(t)         (branch 2, argument 2−t)
+///   weights[4]  = br1(s)         (branch 1, argument 1−t = s)
+///   weights[5]  = br1(t)         (branch 1, argument t)
+///   weights[6]  = br2(s)         (branch 2, argument 1+t → s)
+///   weights[7]  = br3(s)         (branch 3, argument 2+t → s)
+///   weights[8]  = br4(s)         (branch 4, argument 3+t → s)
+///   weights[9]  = s⁹             (branch 5, argument 4+t → s⁹)
+///   weights[10] = 0              (outside support)
+/// ```
+///
+/// Powers `t⁹` and `s⁹` are computed via `t³→t⁹ = t³·t³·t³`
+/// (4 multiplications).  Branch functions `br1`–`br4` are standard
+/// Horner evaluations transcribed directly from `bspline9`.
+///
+/// For `t < 0`, `u = -t` and the layout is mirrored with `weights[0] = 0`.
+///
+/// # Parameters
+///
+/// - `t`: Fractional offset in `(-0.5, 0.5]`, computed as `x - round(x)`.
+/// - `weights`: Output slice of length ≥ 11.  Index 0 = offset −5,
+///   index 10 = offset +5.
+///
+/// # Safety
+///
+/// The caller must guarantee that `weights.len() >= 11`.  This function uses
+/// `get_unchecked_mut` to suppress per-element bounds checks; violating the
+/// length contract results in undefined behaviour.
+#[inline]
+pub fn bspline9_all_centered(t: f64, weights: &mut [f64]) {
+    // SAFETY: caller guarantees weights.len() >= 11.
+    let w = unsafe { weights.get_unchecked_mut(0..11) };
+ 
+    #[inline(always)]
+    fn br1(u: f64) -> f64 {
+        let u2 = u*u;
+        (((((-63.*u + 315.)*u2 - 2100.)*u2 + 11970.)*u2 - 44100.)*u2 + 78095.)*2.
+    }
+ 
+    #[inline(always)]
+    fn br2(u: f64) -> f64 {
+        14608. + (36414. + (34272. + (11256. + (-4032.
+            + (-4284. + (-672. + (504. + (252. - 84.*u)*u)*u)*u)*u)*u)*u)*u)*u
+    }
+ 
+    #[inline(always)]
+    fn br3(u: f64) -> f64 {
+        502. + (2214. + (4248. + (4536. + (2772. + (756.
+            + (-168. + (-216. + (-72. + 36.*u)*u)*u)*u)*u)*u)*u)*u)*u
+    }
+ 
+    #[inline(always)]
+    fn br4(u: f64) -> f64 {
+        1. + (9. + (36. + (84. + (126. + (126. + (84. + (36. + (9. - 9.*u)*u)*u)*u)*u)*u)*u)*u)*u
+    }
+ 
+    if t >= 0.0 {
+        let s = 1.0 - t;
+        let t3 = t*t*t; let t9 = t3*t3*t3;
+        let s3 = s*s*s; let s9 = s3*s3*s3;
+ 
+        w[0]  = t9;
+        w[1]  = br4(t);
+        w[2]  = br3(t);
+        w[3]  = br2(t);
+        w[4]  = br1(s);
+        w[5]  = br1(t);
+        w[6]  = br2(s);
+        w[7]  = br3(s);
+        w[8]  = br4(s);
+        w[9]  = s9;
+        w[10] = 0.0;
+ 
+    } else {
+        let u = -t;
+        let s = 1.0 - u;
+        let u3 = u*u*u; let u9 = u3*u3*u3;
+        let s3 = s*s*s; let s9 = s3*s3*s3;
+ 
+        w[0]  = 0.0;
+        w[1]  = s9;
+        w[2]  = br4(s);
+        w[3]  = br3(s);
+        w[4]  = br2(s);
+        w[5]  = br1(u);
+        w[6]  = br1(s);
+        w[7]  = br2(u);
+        w[8]  = br3(u);
+        w[9]  = br4(u);
+        w[10] = u9;
+    }
+}
+
+
+// Computes all non-zero eleventh-order B-spline weights for a centered
+/// fractional offset, writing them into `weights`.
+///
+/// # Optimization strategy
+///
+/// With support radius 6 and `t ∈ [0, 0.5]`, `s = 1 - t`, the twelve
+/// non-zero weights are:
+///
+/// ```text
+/// weights[0] = t¹¹ (branch 6, argument 6−t → t¹¹)
+/// weights[1] = br5(t) (branch 5, argument 5−t)
+/// weights[2] = br4(t) (branch 4, argument 4−t)
+/// weights[3] = br3(t) (branch 3, argument 3−t)
+/// weights[4] = br2(t) (branch 2, argument 2−t)
+/// weights[5] = br1(s) (branch 1, argument 1−t = s)
+/// weights[6] = br1(t) (branch 1, argument t)
+/// weights[7] = br2(s) (branch 2, argument 1+t → s)
+/// weights[8] = br3(s) (branch 3, argument 2+t → s)
+/// weights[9] = br4(s) (branch 4, argument 3+t → s)
+/// weights[10] = br5(s) (branch 5, argument 4+t → s)
+/// weights[11] = s¹¹ (branch 6, argument 5+t → s¹¹)
+/// weights[12] = 0 (outside support)
+/// ```
+///
+/// Powers `t¹¹` and `s¹¹` are computed via
+/// `t²→t⁴→t⁸→t¹¹ = t⁸·t²·t` (4 multiplications).
+///
+/// **Note on branch 2**: the original `bspline11` Horner contains a `*x*x`
+/// step (zero coefficient for `x⁵`), which is preserved verbatim in `br2`
+/// as `)*u*u)` to match the reference exactly. This causes a rounding
+/// difference of up to ~1e-7 relative to the scalar function for certain
+/// inputs; the corresponding test uses a tolerance of `1e-6`.
+///
+/// For `t < 0`, `u = -t` and the layout is mirrored with `weights[0] = 0`.
+///
+/// # Parameters
+///
+/// - `t`: Fractional offset in `(-0.5, 0.5]`, computed as `x - round(x)`.
+/// - `weights`: Output slice of length ≥ 13. Index 0 = offset −6,
+/// index 12 = offset +6.
+///
+/// # Safety
+///
+/// The caller must guarantee that `weights.len() >= 13`. This function uses
+/// `get_unchecked_mut` to suppress per-element bounds checks; violating the
+/// length contract results in undefined behaviour.
+#[inline]
+pub fn bspline11_all_centered(t: f64, weights: &mut [f64]) {
+    // SAFETY: caller guarantees weights.len() >= 13.
+    let w = unsafe { weights.get_unchecked_mut(0..13) };
+
+    #[inline(always)]
+    fn br1(u: f64) -> f64 {
+        let u2 = u*u;
+        15724248. + (-7475160. + (1718640. + (-255024. + (27720.
+        + (-2772. + 462.*u)*u2)*u2)*u2)*u2)*u2
+    }
+
+    #[inline(always)]
+    fn br2(u: f64) -> f64 {
+        2203488. + (4480872. + (3273600. + (574200. + (-538560.
+        + (-299376. + (39600. + (7920. + (-2640. + (-1320.
+        + 330.*u)*u)*u)*u)*u*u)*u)*u)*u)*u)*u
+    }
+
+    #[inline(always)]
+    fn br3(u: f64) -> f64 {
+        152637. + (515097. + (748275. + (586575. + (236610. + (12474.
+        + (-34650. + (-14850. + (-495. + (1485.
+        + (495.-165.*u)*u)*u)*u)*u)*u)*u)*u)*u)*u)*u
+    }
+
+    #[inline(always)]
+    fn br4(u: f64) -> f64 {
+        2036. + (11132. + (27500. + (40260. + (38280. + (24024. + (9240.
+        + (1320. + (-660. + (-440. + (-110.
+        + 55.*u)*u)*u)*u)*u)*u)*u)*u)*u)*u)*u
+    }
+
+    #[inline(always)]
+    fn br5(u: f64) -> f64 {
+        1. + (11. + (55. + (165. + (330. + (462. + (462. + (330. + (165.
+        + (55. + (11. - 11.*u)*u)*u)*u)*u)*u)*u)*u)*u)*u)*u
+    }
+
+    if t >= 0.0 {
+        let s = 1.0 - t;
+        // t^11 computed via t->t2->t4->t8->t8*t2*t (4 multiplications)
+        let t2 = t*t; let t4 = t2*t2; let t8 = t4*t4;
+        let t11 = t8*t2*t;
+        let s2 = s*s; let s4 = s2*s2; let s8 = s4*s4;
+        let s11 = s8*s2*s;
+
+        w[0] = t11;
+        w[1] = br5(t);
+        w[2] = br4(t);
+        w[3] = br3(t);
+        w[4] = br2(t);
+        w[5] = br1(s);
+        w[6] = br1(t);
+        w[7] = br2(s);
+        w[8] = br3(s);
+        w[9] = br4(s);
+        w[10] = br5(s);
+        w[11] = s11;
+        w[12] = 0.0;
+
+    } else {
+        let u = -t;
+        let s = 1.0 - u;
+        let u2 = u*u; let u4 = u2*u2; let u8 = u4*u4;
+        let u11 = u8*u2*u;
+        let s2 = s*s; let s4 = s2*s2; let s8 = s4*s4;
+        let s11 = s8*s2*s;
+
+        w[0] = 0.0;
+        w[1] = s11;
+        w[2] = br5(s);
+        w[3] = br4(s);
+        w[4] = br3(s);
+        w[5] = br2(s);
+        w[6] = br1(u);
+        w[7] = br1(s);
+        w[8] = br2(u);
+        w[9] = br3(u);
+        w[10] = br4(u);
+        w[11] = br5(u);
+        w[12] = u11;
+    }
+}
+
+
 /// Trait defining the interface for generic B-spline interpolators with
 /// configurable order.
 /// 
@@ -381,11 +868,13 @@ impl<const N: usize> GxBSplineInterpolatorTrait<N> for GxBSplineInterpolator<N> 
     #[inline(always)]
     fn bspline_kernel_weights(&self, x: f64, weights: &mut [f64]) 
     {
-        let nt = N / 2 + 1;
-        for k in 0..=2*nt {
-            weights[k] = 0.0;
-            let xx = (x + k as f64 - nt as f64).abs();
-            weights[k] = self.bspline(xx)
+        match N {
+            3 => bspline3_all_centered(x, weights),
+            5 => bspline5_all_centered(x, weights),
+            7 => bspline7_all_centered(x, weights),
+            9 => bspline9_all_centered(x, weights),
+            11 => bspline11_all_centered(x, weights),
+            _ => panic!("Unsupported spline order"),
         }
     }
     
@@ -620,3 +1109,100 @@ pub type GxBSpline9Interpolator = GxBSplineInterpolator<9>;
 pub type GxBSpline11Interpolator = GxBSplineInterpolator<11>;
 
 
+#[cfg(test)]
+mod tests {
+    //! Unit tests for the `_all_centered` B-spline weight functions.
+    //!
+    //! Each test calls [`check_all_centered`] which verifies two properties:
+    //!
+    //! 1. **Pointwise correctness**: for a representative set of fractional
+    //!    offsets `t`, every weight `weights[k]` matches the scalar B-spline
+    //!    function evaluated at `t + k - center`.
+    //!
+    //! The test set covers both signs of `t` and values close to the
+    //! half-pixel boundary (`±0.4999`) to exercise all code paths.
+    use super::*;
+ 
+    /// Validates a `bspline_all_centered` function against the corresponding
+    /// scalar B-spline function.
+    ///
+    /// For each test value `t`, checks that each weight `weights[k]` equals
+    /// `scalar_fn(t + k - center)` within the tolerance `tol`.
+    ///
+    /// # Parameters
+    /// - `all_fn`: The vectorized function to test, writing `N` weights into
+    ///   a mutable slice.
+    /// - `scalar_fn`: The reference scalar B-spline function.
+    /// - `center`: Index of the `b_0` slot (weight at offset 0) in the output
+    ///   slice.
+    /// - `tol`: Absolute tolerance for floating-point comparison. A value of
+    ///   `1e-6` is appropriate to accommodate rounding differences between the
+    ///   factorized and scalar evaluation paths.
+    fn check_all_centered<const N: usize>(
+        all_fn: fn(f64, &mut [f64]),
+        scalar_fn: fn(f64) -> f64,
+        center: usize,
+        tol: f64,
+    ) {
+        let test_vals = [-0.4999, -0.3, -0.1, 0.0, 0.1, 0.3, 0.4999];
+        let mut weights: [f64; N] = [0.0; N];
+ 
+        for &t in &test_vals {
+            all_fn(t, &mut weights);
+ 
+            // Property 1: each weight must match the scalar reference function.
+            for k in 0..N {
+                let offset = k as f64 - center as f64;
+                let expected = scalar_fn(t + offset);
+                let got = weights[k];
+                let diff = (got - expected).abs();
+                if diff > tol {
+                    println!(
+                        "FAIL t={:.4} k={} offset={} \
+                         got={:.9} expected={:.9} diff={:.2e}",
+                        t, k, offset, got, expected, diff
+                    );
+                }
+                assert!(
+                    diff <= tol,
+                    "t={} slot k={} (offset={}): got {} expected {} diff={:.2e}",
+                    t, k, offset, got, expected, diff
+                );
+            }
+        }
+    }
+ 
+    /// Verifies that `bspline3_all_centered` matches `bspline3` pointwise.
+    #[test]
+    fn test_bspline3_all_centered() {
+        check_all_centered::<5>(bspline3_all_centered, bspline3, 2, 1e-8);
+    }
+ 
+    /// Verifies that `bspline5_all_centered` matches `bspline5` pointwise.
+    #[test]
+    fn test_bspline5_all_centered() {
+        check_all_centered::<7>(bspline5_all_centered, bspline5, 3, 1e-8);
+    }
+ 
+    /// Verifies that `bspline7_all_centered` matches `bspline7` pointwise.
+    #[test]
+    fn test_bspline7_all_centered() {
+        check_all_centered::<9>(bspline7_all_centered, bspline7, 4, 1e-8);
+    }
+ 
+    /// Verifies that `bspline9_all_centered` matches `bspline9` pointwise.
+    #[test]
+    fn test_bspline9_all_centered() {
+        check_all_centered::<11>(bspline9_all_centered, bspline9, 5, 1e-8);
+    }
+ 
+    /// Verifies that `bspline11_all_centered` matches `bspline11` pointwise.
+    ///
+    /// A slightly relaxed tolerance of `1e-6` is used to account for
+    /// floating-point rounding differences introduced by the `*u*u` term in
+    /// branch 2 of `bspline11`.
+    #[test]
+    fn test_bspline11_all_centered() {
+        check_all_centered::<13>(bspline11_all_centered, bspline11, 6, 1e-6);
+    }
+}

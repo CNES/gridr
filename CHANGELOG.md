@@ -12,6 +12,11 @@
   - Added conditional logic to choose between the fast path using (`GridPointMesh`) and the regular interpolation path. The fast path is taken when oversampling factors equal to 1 for both dimensions.
   - Added a new test case `test_array1_grid_resampling_gridmesh_vs_gridpointmesh_idendity` to verify the correctness of the interpolation with both `GridMesh` and `GridPointMesh`.
   
+#### BSpline interpolators
+
+- **Performance improvement : bspline weights factorization** (`core.interp.gx_bspline_kernel.rs`)
+  - Added `bslpline{3,5,7,9,11}_all_centered` functions that compute all kernel wieghts in a single call for a centered fractional offset.
+  - Elimination of bounds checks in `bslpline{3,5,7,9,11}_all_centered` via a single `get_unchecked_mut` per call, the size contract is documented in `#Safety`.
 
 #### Benchmarking
 - **Benchmark framework**:
