@@ -51,6 +51,7 @@
   - Each convolution variants now provides two implementations: a safe version using pre-slicing and iterators to eliminate bounds checks in the inner loops while remaining fully safe, and an unsafe version using `get_unchecked` where all bounds checking is bypassed under the assumption that the caller guarantees index validity -- a precondition enforced by the bounds classification in `array1_interp2_separable_core`.
   - Clear separation between the public API (`GxArrayViewInterpolator`) and the new internal computation trait (`GxArrayViewInterpolatorCore`).
   - Removed the `cache` parameter from `GxArrayViewInterpolatorInputMaskStrategy::is_valid_weighted_window`.
+  - Added `start_row_idx` and `start_col_idx` parameters alongside the existing `start_idx` (flat index) parameter for all `GxArrayViewInterpolatorInputMaskStrategy::is_valid_{weighted_}window{_unsafe}` functions. This dual-parameter approach allows the implementation to choose whichever coordinate representation is more optimal, avoiding unnecessary index calculations when converting between 1D and 2D representations.
 
 - **GxArrayViewInterpolatorCore**:
   - Introduced the internal trait `GxArrayViewInterpolatorCore<KROWS, KCOLS>` providing default implementations for the four separable convolution variants and the unified dispatcher `array1_interp2_separable_core`.

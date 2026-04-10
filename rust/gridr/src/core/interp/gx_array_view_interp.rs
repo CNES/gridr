@@ -144,27 +144,49 @@ pub trait GxArrayViewInterpolatorInputMaskStrategy {
     /// Returns `1` if all points in the window are valid, `0` oterhwise.
     ///
     /// # Parameters
-    /// - `start_idx`: flat index of the top-left corner of the window in the
+    /// - `start_idx`: flat index of the top-left corner of the window
+    /// - `start_row_idx`: row index of the top-left corner of the window
+    /// - `start_col_idx`: column index of the top-left corner of the window
     ///
     /// # Const parameters
     /// - `H`: window's height.
     /// - `W`: widows's width.
+    ///
+    /// # Design Rationale
+    /// This function accepts both a 1D flat index and its corresponding 2D 
+    /// row/column indices for the window's top-left corner. This dual-parameter
+    /// approach allows the implementation to chosse whichever coordinate 
+    /// representation is more optimal, avoiding unnecessary index calculations
+    /// that would be required to convert between 1D and 2D representations.
     fn is_valid_window<const H: usize, const W: usize>(
         &self, 
         start_idx: usize,
+        start_row_idx: usize,
+        start_col_idx: usize,
     ) -> u8;
 
     /// Returns `1` if all points in the window are valid, `0` oterhwise.
     ///
     /// # Parameters
     /// - `start_idx`: flat index of the top-left corner of the window in the
+    /// - `start_row_idx`: row index of the top-left corner of the window
+    /// - `start_col_idx`: column index of the top-left corner of the window
     ///
     /// # Const parameters
     /// - `H`: window's height.
     /// - `W`: widows's width.
+    ///
+    /// # Design Rationale
+    /// This function accepts both a 1D flat index and its corresponding 2D 
+    /// row/column indices for the window's top-left corner. This dual-parameter
+    /// approach allows the implementation to chosse whichever coordinate 
+    /// representation is more optimal, avoiding unnecessary index calculations
+    /// that would be required to convert between 1D and 2D representations.
     unsafe fn is_valid_window_unsafe<const H: usize, const W: usize>(
         &self, 
         start_idx: usize,
+        start_row_idx: usize,
+        start_col_idx: usize,
     ) -> u8;
 
     /// Returns the number of valid points within the window
@@ -199,17 +221,24 @@ pub trait GxArrayViewInterpolatorInputMaskStrategy {
     /// # Parameters
     /// - `start_idx`: flat index of the top-left corner of the window in the
     ///   input array.
-    /// - `height`: number of rows in the window (`KROWS`).
-    /// - `width`: number of columns in the window (`KCOLS`).
+    /// - `start_row_idx`: row index of the top-left corner of the window
+    /// - `start_col_idx`: column index of the top-left corner of the window
     /// - `weights_row`: row-direction kernel weights (length `height`).
     /// - `weights_col`: column-direction kernel weights (length `width`).
     /// - `cache`: scratch buffer of length `height * width`; may be written
     ///   to by the implementation.
-    fn is_valid_weighted_window(
+    ///
+    /// # Design Rationale
+    /// This function accepts both a 1D flat index and its corresponding 2D 
+    /// row/column indices for the window's top-left corner. This dual-parameter
+    /// approach allows the implementation to chosse whichever coordinate 
+    /// representation is more optimal, avoiding unnecessary index calculations
+    /// that would be required to convert between 1D and 2D representations.
+    fn is_valid_weighted_window<const H: usize, const W: usize>(
         &self,
         start_idx: usize,
-        height: usize,
-        width: usize,
+        start_row_idx: usize,
+        start_col_idx: usize,
         weights_row: &[f64],
         weights_col: &[f64],
     ) -> u8;
@@ -220,17 +249,24 @@ pub trait GxArrayViewInterpolatorInputMaskStrategy {
     /// # Parameters
     /// - `start_idx`: flat index of the top-left corner of the window in the
     ///   input array.
-    /// - `height`: number of rows in the window (`KROWS`).
-    /// - `width`: number of columns in the window (`KCOLS`).
+    /// - `start_row_idx`: row index of the top-left corner of the window
+    /// - `start_col_idx`: column index of the top-left corner of the window
     /// - `weights_row`: row-direction kernel weights (length `height`).
     /// - `weights_col`: column-direction kernel weights (length `width`).
     /// - `cache`: scratch buffer of length `height * width`; may be written
     ///   to by the implementation.
-    unsafe fn is_valid_weighted_window_unsafe(
+    ///
+    /// # Design Rationale
+    /// This function accepts both a 1D flat index and its corresponding 2D 
+    /// row/column indices for the window's top-left corner. This dual-parameter
+    /// approach allows the implementation to chosse whichever coordinate 
+    /// representation is more optimal, avoiding unnecessary index calculations
+    /// that would be required to convert between 1D and 2D representations.
+    unsafe fn is_valid_weighted_window_unsafe<const H: usize, const W: usize>(
         &self,
         start_idx: usize,
-        height: usize,
-        width: usize,
+        start_row_idx: usize,
+        start_col_idx: usize,
         weights_row: &[f64],
         weights_col: &[f64],
     ) -> u8;
@@ -261,9 +297,11 @@ impl<T: GxArrayViewInterpolatorInputMaskStrategy>
     fn is_valid_window<const H: usize, const W: usize>(
         &self, 
         start_idx: usize,
+        start_row_idx: usize,
+        start_col_idx: usize,
     ) -> u8 {
         (*self).is_valid_window::<H, W>(
-            start_idx,
+            start_idx, start_row_idx, start_col_idx
         )
     }
     
@@ -271,9 +309,11 @@ impl<T: GxArrayViewInterpolatorInputMaskStrategy>
     unsafe fn is_valid_window_unsafe<const H: usize, const W: usize>(
         &self, 
         start_idx: usize,
+        start_row_idx: usize,
+        start_col_idx: usize,
     ) -> u8 {
         (*self).is_valid_window_unsafe::<H, W>(
-            start_idx,
+            start_idx, start_row_idx, start_col_idx
         )
     }
     
@@ -298,31 +338,31 @@ impl<T: GxArrayViewInterpolatorInputMaskStrategy>
     }
 
     #[inline(always)]
-    fn is_valid_weighted_window(
+    fn is_valid_weighted_window<const H: usize, const W: usize>(
         &self,
         start_idx: usize,
-        height: usize,
-        width: usize,
+        start_row_idx: usize,
+        start_col_idx: usize,
         weights_row: &[f64],
         weights_col: &[f64],
     ) -> u8 {
-        (*self).is_valid_weighted_window(
-            start_idx, height, width,
+        (*self).is_valid_weighted_window::<H, W>(
+            start_idx, start_row_idx, start_col_idx,
             weights_row, weights_col,
         )
     }
     
     #[inline(always)]
-    unsafe fn is_valid_weighted_window_unsafe(
+    unsafe fn is_valid_weighted_window_unsafe<const H: usize, const W: usize>(
         &self,
         start_idx: usize,
-        height: usize,
-        width: usize,
+        start_row_idx: usize,
+        start_col_idx: usize,
         weights_row: &[f64],
         weights_col: &[f64],
     ) -> u8 {
-        (*self).is_valid_weighted_window_unsafe(
-            start_idx, height, width,
+        (*self).is_valid_weighted_window_unsafe::<H, W>(
+            start_idx, start_row_idx, start_col_idx,
             weights_row, weights_col,
         )
     }
@@ -356,6 +396,8 @@ impl GxArrayViewInterpolatorInputMaskStrategy for NoInputMask {
     fn is_valid_window<const H: usize, const W: usize>(
         &self, 
         _start_idx: usize,
+        _start_row_idx: usize,
+        _start_col_idx: usize,
     ) -> u8 {
         1
     }
@@ -364,6 +406,8 @@ impl GxArrayViewInterpolatorInputMaskStrategy for NoInputMask {
     unsafe fn is_valid_window_unsafe<const H: usize, const W: usize>(
         &self, 
         _start_idx: usize,
+        _start_row_idx: usize,
+        _start_col_idx: usize,
     ) -> u8 {
         1
     }
@@ -385,11 +429,11 @@ impl GxArrayViewInterpolatorInputMaskStrategy for NoInputMask {
     }
     
     #[inline(always)]
-    fn is_valid_weighted_window(
+    fn is_valid_weighted_window<const H: usize, const W: usize>(
         &self,
         _start_idx: usize,
-        _height: usize,
-        _width: usize,
+        _start_row_idx: usize,
+        _start_col_idx: usize,
         _weights_row: &[f64],
         _weights_col: &[f64],
     ) -> u8 {
@@ -397,11 +441,11 @@ impl GxArrayViewInterpolatorInputMaskStrategy for NoInputMask {
     }
     
     #[inline(always)]
-    unsafe fn is_valid_weighted_window_unsafe(
+    unsafe fn is_valid_weighted_window_unsafe<const H: usize, const W: usize>(
         &self,
         _start_idx: usize,
-        _height: usize,
-        _width: usize,
+        _start_row_idx: usize,
+        _start_col_idx: usize,
         _weights_row: &[f64],
         _weights_col: &[f64],
     ) -> u8 {
@@ -444,6 +488,8 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
     fn is_valid_window<const H: usize, const W: usize>(
         &self,
         start_idx: usize,
+        _start_row_idx: usize,
+        _start_col_idx: usize,
     ) -> u8 {
         let ncol = self.mask.ncol;
         let mut row_base = start_idx;
@@ -461,6 +507,8 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
     unsafe fn is_valid_window_unsafe<const H: usize, const W: usize>(
         &self,
         start_idx: usize,
+        _start_row_idx: usize,
+        _start_col_idx: usize,
     ) -> u8 {
         let ncol = self.mask.ncol;
         let data = &self.mask.data;
@@ -521,28 +569,28 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
     /// For active rows, the inner loop uses a pre-sliced row and iterator to
     /// eliminate bounds checks.
     #[inline(always)]
-    fn is_valid_weighted_window(
+    fn is_valid_weighted_window<const H: usize, const W: usize>(
         &self,
         start_idx: usize,
-        height: usize,
-        width: usize,
+        _start_row_idx: usize,
+        _start_col_idx: usize,
         weights_row: &[f64],
         weights_col: &[f64],
     ) -> u8 {
         let ncol = self.mask.ncol;
-        let wr = &weights_row[..height];
-        let wc = &weights_col[..width];
-        let height_m1 = height - 1;
-        let width_m1 = width - 1;
+        let wr = &weights_row[..H];
+        let wc = &weights_col[..W];
+        let height_m1 = H - 1;
+        let width_m1 = W - 1;
         let mut row_base = start_idx;
 
-        for irow in 0..height {
+        for irow in 0..H {
             if wr[height_m1 - irow] == 0.0 {
                 row_base += ncol;
                 continue;
             }
 
-            let row_slice = &self.mask.data[row_base..row_base + width];
+            let row_slice = &self.mask.data[row_base..row_base + W];
 
             for (icol, &mask_val) in row_slice.iter().enumerate() {
                 if wc[width_m1 - icol] == 0.0 {
@@ -559,28 +607,28 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
     }
 
     #[inline(always)]
-    unsafe fn is_valid_weighted_window_unsafe(
+    unsafe fn is_valid_weighted_window_unsafe<const H: usize, const W: usize>(
         &self,
         start_idx: usize,
-        height: usize,
-        width: usize,
+        _start_row_idx: usize,
+        _start_col_idx: usize,
         weights_row: &[f64],
         weights_col: &[f64],
     ) -> u8 {
         let ncol = self.mask.ncol;
         let data = &self.mask.data;
-        let height_m1 = height - 1;
-        let width_m1 = width - 1;
+        let height_m1 = H - 1;
+        let width_m1 = W - 1;
         let mut row_base = start_idx;
 
         // SAFETY: the caller guarantees all indices are within bounds.
-        // Weight slices have length >= height and >= width respectively.
-        for irow in 0..height {
+        // Weight slices have length >= H and >= W respectively.
+        for irow in 0..H {
             if *weights_row.get_unchecked(height_m1 - irow) == 0.0 {
                 row_base += ncol;
                 continue;
             }
-            for icol in 0..width {
+            for icol in 0..W {
                 if *weights_col.get_unchecked(width_m1 - icol) == 0.0 {
                     continue;
                 }
@@ -598,6 +646,44 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
         true
     }
 }
+
+/// Binary input mask backed by a `u8` array, where `1` = valid, `0` = invalid
+/// with a safe box zone definition in order to allegiate the validity test.
+///
+/// Points whose mask value is `0` are excluded from interpolation; the output
+/// is set to the caller-supplied `nodata` value instead.
+///
+/// Points that lie within the safe box zone use a fast-path for windowed
+/// validity tests.
+/*
+pub struct BinaryInputMaskWithSafeRegion<'a> {
+    /// Inner BinaryInputMask
+    pub inner: BinaryInputMask<'a>,
+    /// Inclusive minimal row index
+    pub safe_row_min: usize,
+    /// Inclusive maximal row index
+    pub safe_row_max: usize,
+    /// Inclusive minimal col index
+    pub safe_col_min: usize,
+    /// Inclusive maximal col index
+    pub safe_col_max: usize,
+}
+
+impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
+
+
+    #[inline(always)]
+    fn is_valid(&self, idx: usize) -> u8 {
+        self.inner.is_valid(idx)
+    }
+
+    #[inline(always)]
+    unsafe fn is_valid_unsafe(&self, idx: usize) -> u8 {
+        // SAFETY: caller guarantees idx is within mask bounds.
+        self.inner.is_valid_unsafe(idx)
+    }
+
+}*/
 
 /// Convenience enum wrapping the two supported input mask strategies.
 pub enum InputMaskStrategy<'a> {
@@ -1933,9 +2019,8 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
 
         if count == KROWS * KCOLS
             || (count > 0
-                && context.input_mask().is_valid_weighted_window(
-                    flat_base, KROWS, KCOLS,
-                    weights_row, weights_col,
+                && context.input_mask().is_valid_weighted_window::<KROWS, KCOLS>(
+                    flat_base, row_start, col_start, weights_row, weights_col,
                 ) == 1)
         {
             // Convolution with iterator-based inner loop.
@@ -2307,9 +2392,8 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
 
         if count == KROWS * KCOLS
             || (count > 0
-                && context.input_mask().is_valid_weighted_window_unsafe(
-                    flat_base, KROWS, KCOLS,
-                    weights_row, weights_col,
+                && context.input_mask().is_valid_weighted_window_unsafe::<KROWS, KCOLS>(
+                    flat_base, row_start, col_start, weights_row, weights_col,
                 ) == 1)
         {
             // SAFETY: the interior path guarantees all stencil indices
