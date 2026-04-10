@@ -899,6 +899,17 @@ def basic_grid_resampling_chain(
     else:
         logger.debug("Grid mask : no input grid mask")
 
+    # Check that optional input array mask has the same shape as the source 
+    # array
+    if array_src_mask_ds is not None:
+        src_shape = (array_src_ds.width, array_src_ds.height)
+        mask_shape = (array_src_mask_ds.width, array_src_mask_ds.height)
+        if src_shape != mask_shape:
+            raise ValueError(
+                f"The shape of 'array_src_mask_ds' {src_shape}"
+                f"does not match the shape of 'array_src_ds' {mask_shape}"
+            )
+
     # Cut in strip chunks
     # io_strip_size is computed for the output grid but it can either be piloted
     # by setting a target size for the read buffer.
@@ -1006,7 +1017,7 @@ def basic_grid_resampling_chain(
     #        shape=(array_src_ds.height, array_src_ds.width),
     #        ndim=array_src_ds.count,
     #        dtype=np.dtype(array_src_ds.dtypes[array_src_bands[0]]))
-
+    
     # Determine the write buffer shape
     # The computation is performed using the chunk_windows.
     # - nrow x ncol : from max full res grid strip size
