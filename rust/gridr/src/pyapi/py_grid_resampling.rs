@@ -54,6 +54,7 @@ use super::interp::py_interp::AnyInterpolator;
 /// - `nodata_out`: Value to use for nodata pixels in the output array
 /// - `array_in_origin`: Optional tuple `(row_bias, col_bias)` for input array coordinate origin
 /// - `array_in_mask`: Optional bound immutable reference to input validity mask
+/// - `array_in_mask_safe_window`: Optional window specifying a safe region (i.e. all valid) within `array_in_mask`
 /// - `grid_mask`: Optional bound immutable reference to grid validity mask
 /// - `grid_mask_valid_value`: Valid value in grid mask indicating valid nodes (required if grid_mask provided)
 /// - `grid_nodata`: Optional nodata value for grid validation (mutually exclusive with grid_mask)
@@ -109,6 +110,7 @@ use super::interp::py_interp::AnyInterpolator;
 ///     nodata_out=-9999.0,
 ///     array_in_origin=None,
 ///     array_in_mask=None,
+///     array_in_mask_safe_win=None,
 ///     grid_mask=None,
 ///     grid_mask_valid_value=None,
 ///     grid_nodata=None,
@@ -131,6 +133,7 @@ fn py_array1_grid_resampling<T, V, W>(
     nodata_out: V,
     array_in_origin: Option<(f64, f64)>,
     array_in_mask: Option<&Bound<'_, PyArray1<u8>>>,
+    array_in_mask_safe_win: Option<PyArrayWindow2>,
     //grid_origin: (W, W),
     grid_mask: Option<&Bound<'_, PyArray1<u8>>>,
     grid_mask_valid_value: Option<u8>,
@@ -188,7 +191,7 @@ where
             let arc_r_interp = arc_interp.read().unwrap();
             py_array1_grid_resampling_w_interp(
                 &*arc_r_interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution,
-                array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, 
+                array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, array_in_mask_safe_win,
                 grid_mask, grid_mask_valid_value, grid_nodata, array_out_mask, grid_win, out_win, check_boundaries,
             )
         },
@@ -196,7 +199,7 @@ where
             let arc_r_interp = arc_interp.read().unwrap();
             py_array1_grid_resampling_w_interp(
                 &*arc_r_interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution,
-                array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, 
+                array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, array_in_mask_safe_win,
                 grid_mask, grid_mask_valid_value, grid_nodata, array_out_mask, grid_win, out_win, check_boundaries,
             )
         },
@@ -204,7 +207,7 @@ where
             let arc_r_interp = arc_interp.read().unwrap();
             py_array1_grid_resampling_w_interp(
                 &*arc_r_interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution,
-                array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, 
+                array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, array_in_mask_safe_win,
                 grid_mask, grid_mask_valid_value, grid_nodata, array_out_mask, grid_win, out_win, check_boundaries,
             )
         },
@@ -212,7 +215,7 @@ where
             let arc_r_interp = arc_interp.read().unwrap();
             py_array1_grid_resampling_w_interp(
                 &*arc_r_interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution,
-                array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, 
+                array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, array_in_mask_safe_win,
                 grid_mask, grid_mask_valid_value, grid_nodata, array_out_mask, grid_win, out_win, check_boundaries,
             )
         },
@@ -220,7 +223,7 @@ where
             let arc_r_interp = arc_interp.read().unwrap();
             py_array1_grid_resampling_w_interp(
                 &*arc_r_interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution,
-                array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, 
+                array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, array_in_mask_safe_win,
                 grid_mask, grid_mask_valid_value, grid_nodata, array_out_mask, grid_win, out_win, check_boundaries,
             )
         },
@@ -228,7 +231,7 @@ where
             let arc_r_interp = arc_interp.read().unwrap();
             py_array1_grid_resampling_w_interp(
                 &*arc_r_interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution,
-                array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, 
+                array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, array_in_mask_safe_win,
                 grid_mask, grid_mask_valid_value, grid_nodata, array_out_mask, grid_win, out_win, check_boundaries,
             )
         },
@@ -236,7 +239,7 @@ where
             let arc_r_interp = arc_interp.read().unwrap();
             py_array1_grid_resampling_w_interp(
                 &*arc_r_interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution,
-                array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, 
+                array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, array_in_mask_safe_win,
                 grid_mask, grid_mask_valid_value, grid_nodata, array_out_mask, grid_win, out_win, check_boundaries,
             )
         },
@@ -244,7 +247,7 @@ where
             let arc_r_interp = arc_interp.read().unwrap();
             py_array1_grid_resampling_w_interp(
                 &*arc_r_interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution,
-                array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, 
+                array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, array_in_mask_safe_win,
                 grid_mask, grid_mask_valid_value, grid_nodata, array_out_mask, grid_win, out_win, check_boundaries,
             )
         },
@@ -305,6 +308,7 @@ where
 /// - `nodata_out`: Value to use for nodata pixels in the output array
 /// - `array_in_origin`: Optional tuple `(row_bias, col_bias)` for input array coordinate origin
 /// - `array_in_mask`: Optional bound immutable reference to input validity mask
+/// - `array_in_mask_safe_window`: Optional window specifying a safe region (i.e. all valid) within `array_in_mask`
 /// - `grid_mask`: Optional bound immutable reference to grid validity mask
 /// - `grid_mask_valid_value`: Valid value in grid mask indicating valid nodes (required if grid_mask provided)
 /// - `grid_nodata`: Optional nodata value for grid validation (mutually exclusive with grid_mask)
@@ -361,6 +365,7 @@ where
 ///     nodata_out=-9999.0,
 ///     array_in_origin=None,
 ///     array_in_mask=None,
+///     array_in_mask_safe_win=None,
 ///     grid_mask=None,
 ///     grid_mask_valid_value=None,
 ///     grid_nodata=None,
@@ -384,6 +389,7 @@ fn py_array1_grid_resampling_w_interp<T, V, W, I>(
     nodata_out: V,
     array_in_origin: Option<(f64, f64)>,
     array_in_mask: Option<&Bound<'_, PyArray1<u8>>>,
+    array_in_mask_safe_win: Option<PyArrayWindow2>,
     //grid_origin: (W, W),
     grid_mask: Option<&Bound<'_, PyArray1<u8>>>,
     grid_mask_valid_value: Option<u8>,
@@ -449,6 +455,9 @@ where
         }
     };
     
+    // Manage optional input validity mask safe region
+    let mask_in_safe_win = array_in_mask_safe_win.map(GxArrayWindow::from);
+    
     // Prepare optional output validity mask to pass to the `array1_grid_resampling`
     // method.
     let mut mask_out_array_view: Option<GxArrayViewMut<u8>> = None;
@@ -508,6 +517,7 @@ where
                     &mut array_out_arrayview, //ima_out
                     nodata_out, //nodata_val_out
                     mask_in_array_view.as_ref(), //ima_mask_in
+                    mask_in_safe_win.as_ref(), // ima_mask_in_safe_win
                     mask_out_array_view.as_mut(), //ima_mask_out
                     rs_grid_win.as_ref(), //grid_win
                     rs_out_win.as_ref(), //out_win
@@ -538,6 +548,7 @@ where
                     &mut array_out_arrayview, //ima_out
                     nodata_out, //nodata_val_out
                     mask_in_array_view.as_ref(), //ima_mask_in
+                    mask_in_safe_win.as_ref(), // ima_mask_in_safe_win
                     mask_out_array_view.as_mut(), //ima_mask_out
                     rs_grid_win.as_ref(), //grid_win
                     rs_out_win.as_ref(), //out_win
@@ -567,6 +578,7 @@ where
                     &mut array_out_arrayview, //ima_out
                     nodata_out, //nodata_val_out
                     mask_in_array_view.as_ref(), //ima_mask_in
+                    mask_in_safe_win.as_ref(), // ima_mask_in_safe_win
                     mask_out_array_view.as_mut(), //ima_mask_out
                     rs_grid_win.as_ref(), //grid_win
                     rs_out_win.as_ref(), //out_win
@@ -584,7 +596,7 @@ where
 
 /// This function calls the generic [`py_array1_grid_resampling`] with `T = f64`, `V = f64` and `W = f64`.
 #[pyfunction]
-#[pyo3(signature = (interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution, array_out, array_out_shape, nodata_out, array_in_origin=None, array_in_mask=None, grid_mask=None, grid_mask_valid_value=None, grid_nodata=None, array_out_mask=None, grid_win=None, out_win=None, check_boundaries=true))]
+#[pyo3(signature = (interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution, array_out, array_out_shape, nodata_out, array_in_origin=None, array_in_mask=None, array_in_mask_safe_win=None, grid_mask=None, grid_mask_valid_value=None, grid_nodata=None, array_out_mask=None, grid_win=None, out_win=None, check_boundaries=true))]
 #[allow(clippy::too_many_arguments)]
 pub fn py_array1_grid_resampling_f64(
     interp: AnyInterpolator,
@@ -599,6 +611,7 @@ pub fn py_array1_grid_resampling_f64(
     nodata_out: f64,
     array_in_origin: Option<(f64, f64)>,
     array_in_mask: Option<&Bound<'_, PyArray1<u8>>>,
+    array_in_mask_safe_win: Option<PyArrayWindow2>,
     //grid_origin: (W, W),
     grid_mask: Option<&Bound<'_, PyArray1<u8>>>,
     grid_mask_valid_value: Option<u8>,
@@ -624,6 +637,7 @@ pub fn py_array1_grid_resampling_f64(
             nodata_out, //: f64,
             array_in_origin, //: Option<(f64, f64)>,
             array_in_mask, //: Option<&Bound<'_, PyArray1<u8>>>,
+            array_in_mask_safe_win, //: Option<PyArrayWindow2>,
             //grid_origin: (W, W),
             grid_mask, //: Option<&Bound<'_, PyArray1<u8>>>,
             grid_mask_valid_value, //: Option<u8>,

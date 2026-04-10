@@ -8,15 +8,22 @@
 
 - **Performance improvement : fast path for full resolution grid** (`core.gx_resampling_grid.rs`)
   - Introduced a new structure `GridPointMesh` optimized for complete degenerated GridMesh reduced to one node only
-  - Added `validate_point method` to GridMeshValidator trait for validating grid points when using a `GridPointMesh`
+  - Added `validate_point` method to GridMeshValidator trait for validating grid points when using a `GridPointMesh`
   - Added conditional logic to choose between the fast path using (`GridPointMesh`) and the regular interpolation path. The fast path is taken when oversampling factors equal to 1 for both dimensions.
   - Added a new test case `test_array1_grid_resampling_gridmesh_vs_gridpointmesh_idendity` to verify the correctness of the interpolation with both `GridMesh` and `GridPointMesh`.
-  
+
 #### BSpline interpolators
 
 - **Performance improvement : bspline weights factorization** (`core.interp.gx_bspline_kernel.rs`)
   - Added `bslpline{3,5,7,9,11}_all_centered` functions that compute all kernel wieghts in a single call for a centered fractional offset.
   - Elimination of bounds checks in `bslpline{3,5,7,9,11}_all_centered` via a single `get_unchecked_mut` per call, the size contract is documented in `#Safety`.
+
+#### Masking Strategy
+
+- **BinaryInputMaskWithSafeWindow** (`core.interp.gx_array_view_interp.rs`)
+  - Added `BinaryInputMaskWithSafeWindow` a new input image mask strategy implementation. This strategy allows the caller to provide the definition of a safe window (i.e. mask is all valid within the safe region).
+  - Added the `in_mask_safe_win` parameter to the Rust `core.gx_grid_resampling::array1_grid_resampling` function
+  - Added the `array_in_mask_safe_win` parameter to the corresponding Python bindings. 
 
 #### Benchmarking
 - **Benchmark framework**:
@@ -66,6 +73,12 @@
 
 - **Rust module `core.gx_grid_resampling.rs`**
   - Renamed `validate` method to `validate_mesh` in the `GridMeshValidator` trait and its implementations.
+  - Splitted the monolithic `match (ima_mask_in, ima_mask_out, check_boundaries)`block into a chain of three small generic helper functions, each resolving one interpolation context component independently.
+
+///
+/// Rather than enumerating all 2×2×2 = 8 combinations in a single `match` block,
+/// the function uses a **successive dispatch** approach: each component is resolved
+/// independently via a small helper function that forwards to the next level.
 
 #### Mask Validation
 
