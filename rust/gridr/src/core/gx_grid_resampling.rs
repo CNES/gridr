@@ -1688,6 +1688,7 @@ mod gx_grid_resampling_test {
                 &mut array_out_highres, //ima_out: &mut GxArrayViewMut<'_, V>,
                 0., //nodata_val_out: V,
                 None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
+                None, //ima_mask_in_safe_win: Option<&GxArrayWindow>,
                 None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
                 None, //grid_win: Option<&GxArrayWindow>,
                 None, //out_win: Option<&GxArrayWindow>,
@@ -1706,6 +1707,7 @@ mod gx_grid_resampling_test {
                 &mut array_out_lowres, //ima_out: &mut GxArrayViewMut<'_, V>,
                 0., //nodata_val_out: V,
                 None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
+                None, //ima_mask_in_safe_win: Option<&GxArrayWindow>
                 None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
                 None, //grid_win: Option<&GxArrayWindow>,
                 None, //out_win: Option<&GxArrayWindow>,
@@ -1772,6 +1774,7 @@ mod gx_grid_resampling_test {
                 &mut array_out, //ima_out: &mut GxArrayViewMut<'_, V>,
                 0., //nodata_val_out: V,
                 None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
+                None, //ima_mask_in_safe_win: Option<&GxArrayWindow>
                 None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
                 None, //grid_win: Option<&GxArrayWindow>,
                 None, //out_win: Option<&GxArrayWindow>,
@@ -1860,6 +1863,7 @@ mod gx_grid_resampling_test {
                 &mut array_out, //ima_out: &mut GxArrayViewMut<'_, V>,
                 nodata_val_out, //nodata_val_out: V,
                 None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
+                None, //ima_mask_in_safe_win: Option<&GxArrayWindow>
                 None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
                 None, //grid_win: Option<&GxArrayWindow>,
                 None, //out_win: Option<&GxArrayWindow>,
@@ -1978,6 +1982,7 @@ mod gx_grid_resampling_test {
                 &mut array_out, //ima_out: &mut GxArrayViewMut<'_, V>,
                 nodata_val_out, //nodata_val_out: V,
                 None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
+                None, //ima_mask_in_safe_win: Option<&GxArrayWindow>
                 None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
                 None, //grid_win: Option<&GxArrayWindow>,
                 None, //out_win: Option<&GxArrayWindow>,
@@ -2073,6 +2078,7 @@ mod gx_grid_resampling_test {
                 &mut array_out, //ima_out: &mut GxArrayViewMut<'_, V>,
                 0., //nodata_val_out: V,
                 None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
+                None, //ima_mask_in_safe_win: Option<&GxArrayWindow>
                 None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
                 None, //grid_win: Option<&GxArrayWindow>,
                 None, //out_win: Option<&GxArrayWindow>,
@@ -2138,6 +2144,7 @@ mod gx_grid_resampling_test {
                 &mut array_out, //ima_out: &mut GxArrayViewMut<'_, V>,
                 0., //nodata_val_out: V,
                 None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
+                None, //ima_mask_in_safe_win: Option<&GxArrayWindow>
                 None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>,
                 None, //grid_win: Option<&GxArrayWindow>,
                 None, //out_win: Option<&GxArrayWindow>,
@@ -2220,6 +2227,7 @@ mod gx_grid_resampling_test {
                 &mut array_out_full, //ima_out: &mut GxArrayViewMut<'_, V>,
                 0., //nodata_val_out: V,
                 None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
+                None, //ima_mask_in_safe_win: Option<&GxArrayWindow>
                 None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
                 None, //grid_win: Option<&GxArrayWindow>,
                 None, //out_win: Option<&GxArrayWindow>,
@@ -2239,6 +2247,7 @@ mod gx_grid_resampling_test {
                 &mut array_out_win, //ima_out: &mut GxArrayViewMut<'_, V>,
                 0., //nodata_val_out: V,
                 None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
+                None, //ima_mask_in_safe_win: Option<&GxArrayWindow>
                 None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
                 Some(&window), //grid_win: Option<&GxArrayWindow>,
                 None, //out_win: Option<&GxArrayWindow>,
@@ -2319,6 +2328,7 @@ mod gx_grid_resampling_test {
                 &mut array_out_win, //ima_out: &mut GxArrayViewMut<'_, V>,
                 0., //nodata_val_out: V,
                 None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
+                None, //ima_mask_in_safe_win: Option<&GxArrayWindow>
                 None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
                 Some(&window), //grid_win: Option<&GxArrayWindow>,
                 None, //out_win: Option<&GxArrayWindow>,
@@ -2406,6 +2416,7 @@ mod gx_grid_resampling_test {
                 &mut array_out_full_larger, //ima_out: &mut GxArrayViewMut<'_, V>,
                 0., //nodata_val_out: V,
                 None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
+                None, //ima_mask_in_safe_win: Option<&GxArrayWindow>
                 None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
                 Some(&window), //grid_win: Option<&GxArrayWindow>,
                 Some(&out_window), //out_win: Option<&GxArrayWindow>,
@@ -2425,6 +2436,7 @@ mod gx_grid_resampling_test {
                 &mut array_out_win, //ima_out: &mut GxArrayViewMut<'_, V>,
                 0., //nodata_val_out: V,
                 None, //ima_mask_in: Option<&GxArrayView<'_, U>>,
+                None, //ima_mask_in_safe_win: Option<&GxArrayWindow>
                 None, //ima_mask_out: &mut Option<&mut GxArrayViewMut<'_, i8>>, 
                 Some(&window), //grid_win: Option<&GxArrayWindow>,
                 None, //out_win: Option<&GxArrayWindow>,
