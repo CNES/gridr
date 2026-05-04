@@ -25,6 +25,31 @@
   - Added the `in_mask_safe_win` parameter to the Rust `core.gx_grid_resampling::array1_grid_resampling` function
   - Added the `array_in_mask_safe_win` parameter to the corresponding Python bindings. 
 
+#### Python Mask Strategy (`grid_resampling.py`)
+
+- **Unified mask strategy resolution**
+  - Added `ResamplingMaskStrategy` named tuple encapsulating all mask preparation decisions for the Rust interpolation core.
+  - Added `resolve_mask_strategy` to determine the optimal mask strategy from the input configuration. Shared between standalone and chain code paths to guarantee consistent behaviour for identical inputs.
+  - Added `check_mask_strategy` as a safety guard validating the internal consistency of a `ResamplingMaskStrategy` before execution.
+  - Added `apply_mask_strategy` to build the final mask buffer from the resolved strategy.
+  - Added `trust_padding` and `array_in_mask_safe_win` parameters to `array_grid_resampling`. Accordinlgy changed tests to use both `False` and `True` values for `trust_padding`. Please note this multiplicates the number of tests.
+
+- **Standalone preprocessing extraction**
+  - Extracted `standalone_preprocessing` from `array_grid_resampling`, encapsulating source extent computation, data padding, mask preparation, and B-spline prefiltering in a standalone-testable function.
+
+#### Chain Mask Strategy (`grid_resampling_chain.py`)
+
+- **Unified mask strategy in chain IO path**
+  - Added ``apply_mask_strategy_chain``, the chain-specific counterpart of ``apply_mask_strategy``, operating on the pre-allocated marged buffer rather than allocating a new padded one.
+  - The chain now uses ``resolve_mask_strategy`` to guarantee consistent mask decisions with the standalone path for identical inputs.
+  - Added ``trust_padding`` parameter to ``basic_grid_resampling_array`` and ``basic_grid_resampling_chain``; must be explicitly set when ``boundary_condition`` is not ``None``. Accordinlgy changed tests to use both `False` and `True` values for `trust_padding`. Please note this multiplicates the number of tests.
+
+#### Misc
+
+- **Complementary Window Indices** (`array_window.py`)
+  - Added ``complementary_window_indices`` method in order to compute the complementary indices of a window.
+  - Added comprehensive set of tests for ``complementary_window_indices``.
+
 #### Benchmarking
 - **Benchmark framework**:
   - Added pytest-benchmark based framework for CPU time benchmarking
@@ -75,11 +100,6 @@
   - Renamed `validate` method to `validate_mesh` in the `GridMeshValidator` trait and its implementations.
   - Splitted the monolithic `match (ima_mask_in, ima_mask_out, check_boundaries)`block into a chain of three small generic helper functions, each resolving one interpolation context component independently.
 
-///
-/// Rather than enumerating all 2×2×2 = 8 combinations in a single `match` block,
-/// the function uses a **successive dispatch** approach: each component is resolved
-/// independently via a small helper function that forwards to the next level.
-
 #### Mask Validation
 
 - **`GxArrayViewInterpolatorInputMaskStrategy`** (`core.interp.gx_array_view_interp.rs`)
@@ -91,6 +111,11 @@
   - Each mask strategy method (`is_valid`, `is_valid_window`, `count_valid_window` and `is_valid_weighted_window`) now provides two implementations: a safe version using pre-sliced rows and iterators to eliminate bounds checks in the inner loops, and an unsafe version using `get_unchecked` for both mask data and weight accesses. Please note that this change does really affect only `BinaryInputMask`. `NoInputMask` remains unchanged as all its methods are compile-time constants with no data access.
 
 ### Fixed
+
+#### Grid Resampling
+
+- **Chain Grid Resampling (`grid_resampling_chain.py`)**
+  - Added a test to `grid_resampling_chain.py` that verifies the input mask (if provided) shares the same width and height as the input source array. This prevents mismatched dimensions that could cause indexing errors.
 
 #### Makefile
 - **Optimized Makefile**:
@@ -108,9 +133,6 @@
 - **Core Grid Resampling (`grid_resampling.py`)** 
   - Fixed an UnboundLocalError in `calculate_source_extent()` when grid metrics could not be computed - the variable was referenced before assignment in that code path.
   - Added the `test_grid_resampling_standalone_no_idendity_1_1_full_invalid_grid()` in `test_grid_resampling.py` to cover the previous mentioned path.
-
-- **Chain Grid Resampling (`grid_resampling_chain.py`)**
-  - Added a test to `grid_resampling_chain.py` that verifies the input mask (if provided) shares the same width and height as the input source array. This prevents mismatched dimensions that could cause indexing errors.
 
 ## [0.5.1] - 2026-01-29
 

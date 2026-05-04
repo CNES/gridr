@@ -291,8 +291,9 @@ class GridrAdapter(Protocol):
             self._kwargs["grid_mask_in_band"] = inputs["grid_mask_in_band"]
         else:
             self._grid_mask_in_path = None
-        
+
         self._boundary_condition = params["boundary_condition"]
+        self._trust_padding = params["trust_padding"]
 
         # self._grid_mask_flag = inputs["grid_mask_flag"]
         # self._grid_mask_in_masked_value = inputs["grid_mask_in_masked_value"]
@@ -363,6 +364,7 @@ class GridrAdapter(Protocol):
                 # array_src_bands=1,
                 array_out_ds=array_out_ds,
                 boundary_condition=self._boundary_condition,
+                trust_padding=self._trust_padding,
                 nodata_out=0,
                 win=None,
                 mask_out_ds=mask_out_ds,
@@ -440,7 +442,18 @@ class GridrAdapter(Protocol):
 @pytest.mark.parametrize("grid_mask_in", [False, True], ids=["gmi0", "gmi1"])
 @pytest.mark.parametrize("mask_out", [False, True], ids=["mo0", "mo1"])
 @pytest.mark.parametrize("multi_bands", [True, False], ids=["mul1", "mul0"])
-@pytest.mark.parametrize("boundary_condition", [None, "reflect",],)
+@pytest.mark.parametrize(
+    "boundary_condition",
+    [
+        None,
+        "reflect",
+    ],
+)
+@pytest.mark.parametrize(
+    "trust_padding",
+    [True, False],
+    ids=["trust1", "trust0"],
+)
 def test_grid_resampling(
     ndarrays_regression,
     request,
@@ -453,6 +466,7 @@ def test_grid_resampling(
     grid_mask_in,
     mask_in,
     boundary_condition,
+    trust_padding,
     tmp_path,
 ):
     """ """
@@ -467,6 +481,7 @@ def test_grid_resampling(
             "mask_in": mask_in,
             "grid_mask_in": grid_mask_in,
             "boundary_condition": boundary_condition,
+            "trust_padding": trust_padding,
         },
         work_dir=tmp_path,
     )

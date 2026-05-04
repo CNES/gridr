@@ -23,7 +23,7 @@ Grid resampling
 # pylint: disable=C0413
 import logging
 import sys
-from typing import Any, NoReturn, Optional, Tuple, Union
+from typing import Any, NamedTuple, NoReturn, Optional, Tuple, Union
 
 import numpy as np
 
@@ -44,6 +44,7 @@ from gridr.core.interp.interpolator import (
 )
 from gridr.core.utils.array_pad import pad_inplace
 from gridr.core.utils.array_utils import ArrayProfile
+from gridr.core.utils.array_window import window_indices
 
 PY311 = sys.version_info >= (3, 11)
 
@@ -105,6 +106,11 @@ def calculate_source_extent(
     1. Compute grid metrics from valid grid coordinates
     2. Apply interpolation margins to determine the required source extent
     3. Adjust for boundary conditions and compute necessary padding
+
+    Warning : the padding does not guarantee that all the grid target
+    coordinates lie within the final array. It only guarantee that target points
+    that exist in the source image domain will have a sufficient neighborhood to
+    perform interpolation.
 
     Parameters
     ----------
@@ -171,6 +177,10 @@ def calculate_source_extent(
         Padding required if the marged window extends outside the source array.
         Format: ``[[top_pad, bottom_pad], [left_pad, right_pad]]``.
 
+    grid_metrics : Union[PyGeometryBoundsF64, None]
+        A structure containing the computed boundaries (`PyGeometryBoundsF64`)
+        or `None` if no valid boundaries can be computed (e.g., empty grid).
+
     Notes
     -----
     - If no valid grid points are found, returns None for all outputs
@@ -199,6 +209,11 @@ def calculate_source_extent(
     # (top, bottom, left, right)
     margin = np.asarray(interp.total_margins()).reshape((2, 2))
     DEBUG(f"Required margins for interpolator {interp.shortname()} : {margin}")
+
+    # TODO? : Add an extra margin for bspline to ensure consistency with no mask
+    # all a full valid mask
+    # if is_bspline(interp):
+    #    margin += 1
 
     # Compute explicit grid target window if it is not defined
     if win is None:
@@ -273,7 +288,7 @@ def calculate_source_extent(
             logger_msg_prefix=logger_msg_prefix,
         )
 
-    return array_src_win_read, array_src_win_marged, pad
+    return array_src_win_read, array_src_win_marged, pad, grid_metrics
 
 
 def get_array_padded_shape(
@@ -467,6 +482,782 @@ def source_extent_pad(
     return array_padded
 
 
+class ResamplingMaskStrategy(NamedTuple):
+    """Result of mask strategy resolution."""
+
+    mask_kind: Optional[str]
+    """One of ``'none'``, ``'safe_region'`` or ``'binary'``."""
+
+    safe_region: Optional[np.ndarray]
+    """The safe window [[row_min, row_max], [col_min, col_max]] (inclusives
+    boundaries) or None."""
+
+    needs_mask_alloc: bool
+    """Whether a mask buffer must be allocated (only when no user mask is
+    provided)."""
+
+    pad_fill: Optional[Any]
+
+    boundary_condition: Optional[str]
+
+
+def _create_safe_region(
+    pad: np.ndarray,
+    trust_padding: bool,
+    array_in_shape: Tuple[int, ...],
+) -> np.ndarray:
+    """Compute the safe region window within the padded array.
+
+    The safe region is the rectangular zone where all data is considered
+    valid and no mask check is required during interpolation.
+
+    When padding is applied:
+
+    - ``trust_padding=True``: the safe region covers the entire padded
+      array (original data + extrapolated padding).
+    - ``trust_padding=False``: only the original (non-padded) data zone
+      is considered safe.
+
+    When no padding is applied, the safe region always covers the full
+    array regardless of ``trust_padding``.
+
+    Coordinates are expressed in the post-padded array reference frame.
+
+    Parameters
+    ----------
+    pad : np.ndarray, shape (2, 2)
+        Padding amounts ``[[top, bottom], [left, right]]``.
+
+    trust_padding : bool
+        If ``True``, the padded zone is considered valid (e.g. filled
+        by a boundary condition that produces exploitable values).
+        If ``False``, only the original data zone is safe.
+        Ignored when no padding is applied.
+
+    array_in_shape : tuple of int
+        Shape of the **original** (pre-padded) input array, as
+        ``(nvar, nrow, ncol)`` or ``(nrow, ncol)``.
+
+    Returns
+    -------
+    safe_region : np.ndarray, shape (2, 2)
+        Window in the padded array with inclusive boundaries:
+        ``[[row_start, row_end], [col_start, col_end]]``.
+    """
+    pad = np.asarray(pad)
+    has_pad = np.any(pad != 0)
+    sr_start_row, sr_start_col = 0, 0
+    sr_nrow, sr_ncol = None, None
+    if len(array_in_shape) == 3:
+        _, sr_nrow, sr_ncol = array_in_shape
+    elif len(array_in_shape) == 2:
+        sr_nrow, sr_ncol = array_in_shape
+
+    if has_pad:
+        if trust_padding:
+            # The full padded array can be considered safe
+            sr_nrow += max(0, pad[0][0]) + max(0, pad[0][1])
+            sr_ncol += max(0, pad[1][0]) + max(0, pad[1][1])
+        else:
+            # Only the original pre-paddded array can be considered safe
+            sr_start_row = max(0, pad[0][0])
+            sr_start_col = max(0, pad[1][0])
+
+    sr = np.array(
+        [
+            [sr_start_row, sr_start_row + sr_nrow - 1],
+            [sr_start_col, sr_start_col + sr_ncol - 1],
+        ]
+    )
+    return sr
+
+
+def resolve_mask_strategy(
+    interp: Any,
+    pad: np.ndarray,
+    array_in_mask: Optional[np.ndarray],
+    boundary_condition: Optional[str],
+    trust_padding: bool = True,
+    array_in_shape: Optional[Tuple[int, ...]] = None,
+    array_in_mask_safe_win: Optional[np.ndarray] = None,
+) -> ResamplingMaskStrategy:
+    """Determine how to prepare the input mask before passing it to the
+    Rust interpolation core.
+
+    Based on the input configuration (padding, boundary condition, mask
+    content, interpolator type), this function decides whether a mask
+    buffer must be allocated, how to fill the padded zone, and whether
+    a safe region can be identified to optimize mask checks.
+
+    This function must be called from both the standalone and IO code
+    paths to guarantee consistent behaviour. Its output drives
+    ``apply_mask_strategy`` which builds the actual mask buffer.
+
+    Decision tree
+    -------------
+    ::
+
+        mask has real invalids?
+        |
+        +-- yes
+        |   +-- safe_win provided?
+        |   |   +-- yes -> safe_region (shifted by pad)
+        |   |   +-- no  -> binary
+        |   |
+        |   +-- pad > 0?
+        |       +-- yes + BC + trust -> pad_fill=VALID, BC propagated
+        |       +-- yes + otherwise  -> pad_fill=INVALID
+        |       +-- no               -> pad_fill=None
+        |
+        +-- no (mask is None or full-valid)
+            |
+            +-- pad = 0?
+            |   +-- bspline -> safe_region (full array, alloc mask)
+            |   +-- other   -> none
+            |
+            +-- pad > 0
+                |
+                +-- BC + trust?
+                |   +-- bspline -> safe_region (full padded, alloc if no mask)
+                |   +-- other   -> none
+                |
+                +-- otherwise (not trusted)
+                    +-----------> safe_region (data zone only, alloc if no mask)
+
+    Parameters
+    ----------
+    interp : Interpolator
+        The interpolator instance. Used to determine whether B-spline
+        prefiltering applies.
+
+    pad : np.ndarray, shape (2, 2)
+        Padding amounts ``[[top, bottom], [left, right]]``.
+
+    array_in_mask : np.ndarray or None
+        Optional input mask (uint8, 2D). If provided and not
+        full-valid, the strategy accounts for scattered invalids.
+        A full-valid mask is treated as no mask.
+
+    boundary_condition : str or None
+        Boundary condition used to fill the padded zone (``'edge'``,
+        ``'reflect'``, ``'symmetric'``, ``'wrap'``).
+        ``None`` means the padded zone contains zeros (invalid data).
+
+    trust_padding : bool, default True
+        If ``True`` and a boundary condition was applied, the
+        extrapolated padding data is considered numerically valid.
+        When ``False``, the padded zone is treated as suspect
+        regardless of the boundary condition.
+
+    array_in_shape : tuple of int
+        Shape of the **original** (pre-padded) input array, as
+        ``(nvar, nrow, ncol)`` or ``(nrow, ncol)``.  Required
+        whenever the strategy may be ``'safe_region'``.
+
+    array_in_mask_safe_win : np.ndarray, shape (2, 2), optional
+        Caller-provided safe region within the input mask, as
+        ``[[row_start, row_end], [col_start, col_end]]`` with
+        inclusive boundaries, in pre-padded coordinates.
+        When provided with a mask that has real invalids, promotes
+        the strategy from ``'binary'`` to ``'safe_region'``.
+        The region is automatically shifted to account for padding.
+        Ignored when no real invalids are present in the mask.
+
+    Returns
+    -------
+    ResamplingMaskStrategy
+        Named tuple with fields:
+
+        - ``mask_kind``: ``'none'``, ``'safe_region'``, or
+          ``'binary'``.
+        - ``safe_region``: window array (inclusive boundaries in
+          post-padded coordinates) or ``None``.
+        - ``needs_mask_alloc``: whether a structural mask buffer
+          must be allocated.
+        - ``pad_fill``: fill value for the padded zone in the mask
+          (``Validity.VALID``, ``Validity.INVALID``, or ``None``).
+        - ``boundary_condition``: boundary condition to apply when
+          padding the mask, or ``None``.
+    """
+    pad = np.asarray(pad)
+    has_pad = np.any(pad != 0)
+    bspline = is_bspline(interp)
+
+    if array_in_mask_safe_win is not None:
+        array_in_mask_safe_win = np.asarray(array_in_mask_safe_win)
+
+    has_real_in_mask = array_in_mask is not None and not array_in_mask.all()
+
+    # ------------------------------------------------------------------
+    # Input mask provided
+    # ------------------------------------------------------------------
+    if has_real_in_mask:
+        mask_kind = "binary"
+        safe_region = None
+
+        if array_in_mask_safe_win is not None:
+            mask_kind = "safe_region"
+            safe_region = np.copy(array_in_mask_safe_win)
+
+            # shift the safe region definition
+            if has_pad:
+                safe_region[0, :] += max(0, pad[0][0])
+                safe_region[1, :] += max(0, pad[1][0])
+
+        pad_fill = None
+        if has_pad:
+            if trust_padding and boundary_condition is not None:
+                pad_fill = Validity.VALID
+            else:
+                pad_fill = Validity.INVALID
+        bc_valid = has_pad and trust_padding
+        return ResamplingMaskStrategy(
+            mask_kind=mask_kind,
+            safe_region=safe_region,
+            needs_mask_alloc=False,
+            pad_fill=pad_fill,
+            boundary_condition=boundary_condition if bc_valid else None,
+        )
+
+    # ------------------------------------------------------------------
+    # No input mask from here or all valid => do not consider
+    # ------------------------------------------------------------------
+    if not has_pad:
+        # No padding - no mask (or all valid)
+        if bspline:
+            # BSpline prefiltering make boundary data invalid by nature
+            # Here we force mask creation
+            sr = _create_safe_region(pad, True, array_in_shape)
+            mask_alloc = array_in_mask is None
+            return ResamplingMaskStrategy(
+                mask_kind="safe_region",
+                safe_region=sr,
+                needs_mask_alloc=mask_alloc,
+                pad_fill=Validity.INVALID if mask_alloc else None,  # outside of safe region
+                boundary_condition=None,  # no pad => INVALID by convention
+            )
+        else:
+            return ResamplingMaskStrategy(
+                mask_kind="none",
+                safe_region=None,
+                needs_mask_alloc=False,
+                pad_fill=None,
+                boundary_condition=None,
+            )
+
+    # ------------------------------------------------------------------
+    # has_pad is True from here - input mask is all valid
+    # ------------------------------------------------------------------
+    if boundary_condition is not None and trust_padding:
+        if bspline:
+            # Safe region = all
+            sr = _create_safe_region(pad, trust_padding, array_in_shape)
+            bc = boundary_condition
+            if array_in_mask is None:
+                bc = None
+            return ResamplingMaskStrategy(
+                mask_kind="safe_region",
+                safe_region=sr,
+                needs_mask_alloc=array_in_mask is None,
+                pad_fill=Validity.VALID,  # optimal for safe region all
+                boundary_condition=bc,  # only used if array_i_mask is not None
+            )
+        else:
+            return ResamplingMaskStrategy(
+                mask_kind="none",
+                safe_region=None,
+                needs_mask_alloc=False,
+                pad_fill=None,
+                boundary_condition=None,
+            )
+    else:
+        # Padding is applied but not trusted => safe_region
+        sr = _create_safe_region(pad, trust_padding, array_in_shape)
+        return ResamplingMaskStrategy(
+            mask_kind="safe_region",
+            safe_region=sr,
+            needs_mask_alloc=array_in_mask is None,
+            pad_fill=Validity.INVALID,
+            boundary_condition=None,
+        )
+
+
+def check_mask_strategy(pad, strategy):
+    """Validate the internal consistency of a ``ResamplingMaskStrategy``.
+
+    Acts as a safety guard between ``resolve_mask_strategy`` (which
+    builds the strategy) and ``apply_mask_strategy`` (which executes
+    it).  Catches any combination of fields that would lead to
+    incorrect mask construction or silent data corruption.
+
+    The validation enforces four groups of invariants:
+
+    1. **mask_kind constraints** -- each kind imposes requirements on
+       the other fields:
+
+       - ``'none'``: all other fields must be neutral (``None`` /
+         ``False``).
+       - ``'safe_region'``: ``safe_region`` must be set;
+         ``needs_mask_alloc`` and ``boundary_condition`` are mutually
+         exclusive (cannot allocate a new mask *and* pad an existing
+         one).
+       - ``'binary'``: ``needs_mask_alloc`` must be ``False`` (the
+         caller provides the mask).
+
+    2. **safe_region coherence** -- ``safe_region`` is not ``None``
+       iff ``mask_kind == 'safe_region'``.
+
+    3. **Padding constraints** -- when no padding is applied,
+       ``pad_fill`` and ``boundary_condition`` must be ``None``
+       (nothing to fill).  When padding is applied and a mask is
+       needed, ``pad_fill`` must be ``Validity.VALID`` or
+       ``Validity.INVALID``.
+
+    4. **Allocation constraints** -- ``needs_mask_alloc`` requires
+       ``mask_kind == 'safe_region'`` and a concrete ``pad_fill``
+       value.
+
+    Parameters
+    ----------
+    pad : np.ndarray, shape (2, 2)
+        Padding amounts ``[[top, bottom], [left, right]]``.
+
+    strategy : ResamplingMaskStrategy
+        The strategy to validate.
+
+    Raises
+    ------
+    ValueError
+        If any invariant is violated, with a message identifying the
+        incompatible fields.
+
+    See Also
+    --------
+    resolve_mask_strategy : Builds the strategy.
+    apply_mask_strategy : Executes the strategy (calls this first).
+    """
+    pad = np.asarray(pad)
+    has_pad = np.any(pad != 0)
+
+    # ------------------------------------------------------------------
+    # 1. mask_kind constraints
+    # ------------------------------------------------------------------
+    if strategy.mask_kind == "none":
+        if strategy.pad_fill is not None:
+            raise ValueError(
+                f"'mask_kind'='none' is incompatible with " f"'pad_fill'={strategy.pad_fill!r}"
+            )
+        if strategy.boundary_condition is not None:
+            raise ValueError(
+                f"'mask_kind'='none' is incompatible with "
+                f"'boundary_condition'={strategy.boundary_condition!r}"
+            )
+        if strategy.needs_mask_alloc:
+            raise ValueError("'mask_kind'='none' is incompatible with " "'needs_mask_alloc'=True")
+        if strategy.safe_region is not None:
+            raise ValueError("'mask_kind'='none' is incompatible with " "'safe_region' != None")
+
+    # ------------------------------------------------------------------
+    # 2. safe_region coherence
+    # ------------------------------------------------------------------
+    if strategy.safe_region is not None and strategy.mask_kind != "safe_region":
+        raise ValueError(
+            f"'safe_region' != None is incompatible with " f"'mask_kind'={strategy.mask_kind!r}"
+        )
+    if strategy.mask_kind == "safe_region" and strategy.safe_region is None:
+        raise ValueError("'mask_kind'='safe_region' requires " "'safe_region' != None")
+    if strategy.mask_kind == "safe_region":
+        if strategy.needs_mask_alloc and strategy.boundary_condition is not None:
+            raise ValueError(
+                "'mask_kind'='safe_region' with 'needs_mask_alloc'=True "
+                "is incompatible with "
+                f"'boundary_condition'={strategy.boundary_condition!r} "
+                "(cannot allocate and pad simultaneously)"
+            )
+
+    # ------------------------------------------------------------------
+    # 3. Padding constraints
+    # ------------------------------------------------------------------
+    if not has_pad:
+        if strategy.pad_fill is not None and not strategy.needs_mask_alloc:
+            raise ValueError(
+                f"'pad_fill'={strategy.pad_fill!r} requires padding or " "'needs_mask_alloc'=True"
+            )
+        if strategy.boundary_condition is not None:
+            raise ValueError(
+                f"'boundary_condition'={strategy.boundary_condition!r} "
+                "is incompatible with no padding"
+            )
+    else:
+        if strategy.mask_kind != "none" and strategy.pad_fill not in (
+            Validity.VALID,
+            Validity.INVALID,
+        ):
+            raise ValueError(
+                f"'pad_fill'={strategy.pad_fill!r} must be VALID or INVALID "
+                f"when padding is applied and 'mask_kind'={strategy.mask_kind!r}"
+            )
+
+    # ------------------------------------------------------------------
+    # 4. Allocation constraints
+    # ------------------------------------------------------------------
+    if strategy.needs_mask_alloc:
+        if strategy.mask_kind in ("binary", "none"):
+            raise ValueError(
+                f"'needs_mask_alloc'=True is incompatible with "
+                f"'mask_kind'={strategy.mask_kind!r}"
+            )
+        if strategy.pad_fill not in (Validity.VALID, Validity.INVALID):
+            raise ValueError(
+                f"'needs_mask_alloc'=True requires "
+                f"'pad_fill' to be VALID or INVALID, got {strategy.pad_fill!r}"
+            )
+
+
+def apply_mask_strategy(
+    array_in_mask: Optional[np.ndarray],
+    pad: np.ndarray,
+    array_in_shape: Tuple[int, ...],
+    strategy: ResamplingMaskStrategy,
+) -> Optional[np.ndarray]:
+    """Build the final mask buffer ready to pass to the Rust core.
+
+    Executes the strategy produced by ``resolve_mask_strategy``,
+    performing validation, optional allocation, and optional padding.
+
+    Behaviour per ``mask_kind``:
+
+    - ``'none'``: returns ``None`` -- no mask is passed to Rust.
+    - ``'binary'``: pads ``array_in_mask`` with ``strategy.pad_fill``
+      (and ``strategy.boundary_condition`` if set) when padding is
+      present; otherwise returns it as-is.
+    - ``'safe_region'``:
+
+      - ``needs_mask_alloc=True``: allocates a new buffer filled with
+        ``strategy.pad_fill``, then marks the safe region as
+        ``Validity.VALID``.
+      - ``needs_mask_alloc=False``: pads ``array_in_mask`` with
+        ``strategy.pad_fill`` when padding is present; otherwise
+        returns it as-is.
+
+    Parameters
+    ----------
+    array_in_mask : np.ndarray or None
+        The original (pre-padded) input mask, or ``None``.  Required
+        when ``strategy.mask_kind`` is not ``'none'`` and
+        ``strategy.needs_mask_alloc`` is ``False``.
+
+    pad : np.ndarray, shape (2, 2)
+        Padding amounts ``[[top, bottom], [left, right]]``.
+
+    array_in_shape : tuple of int
+        Shape of the **original** (pre-padded) input array, as
+        ``(nvar, nrow, ncol)`` or ``(nrow, ncol)``.  Used to compute
+        the padded mask shape when ``needs_mask_alloc`` is ``True``.
+
+    strategy : ResamplingMaskStrategy
+        Strategy produced by ``resolve_mask_strategy``.  Validated by
+        ``check_mask_strategy`` before execution.
+
+    Returns
+    -------
+    np.ndarray or None
+        The final mask buffer (uint8, 2D, C-contiguous) to pass to the
+        Rust interpolation core, or ``None`` when no mask is needed.
+
+    Raises
+    ------
+    ValueError
+        If ``strategy`` is internally inconsistent (via
+        ``check_mask_strategy``), or if a required ``array_in_mask``
+        is missing.
+
+    See Also
+    --------
+    resolve_mask_strategy : Builds the strategy.
+    check_mask_strategy : Validates the strategy.
+    """
+    pad = np.asarray(pad)
+    has_pad = np.any(pad != 0)
+    final_mask = None
+
+    # First check strategy consistency
+    check_mask_strategy(pad, strategy)
+
+    if strategy.mask_kind == "binary":
+        if array_in_mask is None:
+            raise ValueError("'strategy.mask_kind' = 'binary' requires a mask")
+        final_mask = array_in_mask
+        if has_pad:
+            final_mask = source_extent_pad(
+                array_src=array_in_mask,
+                pad=pad,
+                boundary_condition=strategy.boundary_condition,
+                fill=strategy.pad_fill,
+            )
+    elif strategy.mask_kind == "safe_region":
+        if strategy.needs_mask_alloc:
+            mask_profile = ArrayProfile(
+                shape=array_in_shape,
+                ndim=len(array_in_shape),
+                dtype=np.uint8,
+            )
+            mask_profile.make_2d()
+
+            mask_padded_shape, _ = get_array_padded_shape(mask_profile, pad)
+            # Create a full invalid mask
+            final_mask = np.full(mask_padded_shape, strategy.pad_fill, dtype=np.uint8, order="C")
+            # Make valid the safe region
+            if strategy.pad_fill != Validity.VALID:
+                final_mask[window_indices(strategy.safe_region)] = Validity.VALID
+
+        else:
+            if array_in_mask is None:
+                raise ValueError("'strategy.mask_kind' = 'safe_region' must return a mask")
+            # safe_region : we dont need alloc if an existing array_in_mask
+            # has been passed
+            # if no pad : the mask is already OK
+            # if pad : apply padding
+            final_mask = array_in_mask
+            if has_pad:
+                final_mask = source_extent_pad(
+                    array_src=array_in_mask,
+                    pad=pad,
+                    boundary_condition=strategy.boundary_condition,
+                    fill=strategy.pad_fill,
+                )
+    return final_mask
+
+
+def standalone_preprocessing(
+    interp: Any,
+    array_in: np.ndarray,
+    array_in_shape: Tuple[int, ...],
+    array_in_origin: Optional[Tuple[float, float]],
+    grid_row: np.ndarray,
+    grid_col: np.ndarray,
+    grid_resolution: Tuple[int, int],
+    grid_nodata: Optional[float],
+    grid_mask: Optional[np.ndarray],
+    grid_mask_valid_value: Optional[int],
+    win: Optional[np.ndarray],
+    array_in_mask: Optional[np.ndarray],
+    array_in_mask_safe_win: Optional[np.ndarray],
+    boundary_condition: Optional[str],
+    trust_padding: Optional[bool],
+    check_boundaries: bool,
+    logger_msg_prefix: Optional[str],
+    logger: Optional[logging.Logger],
+) -> Tuple[np.ndarray, Tuple[int, ...], Optional[Tuple[float, float]], Optional[np.ndarray], bool]:
+    """Perform all preprocessing steps required before the Rust resampling
+    call in standalone mode.
+
+    This function is the single entry point for standalone preprocessing.
+    It sequentially handles source extent computation, data padding, mask
+    preparation, and B-spline prefiltering.
+
+    Processing steps
+    ----------------
+    1. Validate that ``array_in_origin`` is zero (shifting is not
+       supported in standalone mode).
+    2. Initialize the interpolator (required for B-spline).
+    3. Compute the minimal source read window and required padding via
+       ``calculate_source_extent``.
+    4. Pad ``array_in`` if needed, update ``array_in_shape`` and
+       ``array_in_origin`` accordingly.
+    5. Prepare the mask (resolve and apply the mask strategy)
+    6. If the interpolator is a B-spline, run prefiltering in place on
+       ``array_in`` and ``array_in_mask``.
+
+    Parameters
+    ----------
+    interp : Interpolator
+        Initialised interpolator instance.
+
+    array_in : np.ndarray
+        Source data array (2D or 3D, C-contiguous).
+
+    array_in_shape : tuple of int
+        Shape of ``array_in`` as ``(nvar, nrow, ncol)`` (always 3D).
+
+    array_in_origin : tuple of float or None
+        Must be ``None`` or ``(0.0, 0.0)`` in standalone mode.
+
+    grid_row : np.ndarray
+        Row coordinates of the target grid.
+
+    grid_col : np.ndarray
+        Column coordinates of the target grid.
+
+    grid_resolution : tuple of int
+        Oversampling factor ``(row_resolution, col_resolution)``.
+
+    grid_nodata : float or None
+        NoData value in the grid coordinate arrays.
+
+    grid_mask : np.ndarray or None
+        Optional validity mask for the grid.
+
+    grid_mask_valid_value : int or None
+        Value in ``grid_mask`` designating valid cells.
+
+    win : np.ndarray or None
+        Target sub-window within the full-resolution grid.
+
+    array_in_mask : np.ndarray or None
+        Optional input validity mask for ``array_in`` (uint8, 2D).
+
+    array_in_mask_safe_win : np.ndarray or None
+        Caller-provided safe region within ``array_in_mask``, in
+        pre-padded coordinates.  Forwarded to ``prepare_mask``.
+
+    boundary_condition : str or None
+        Boundary condition for padding (``'edge'``, ``'reflect'``,
+        ``'symmetric'``, ``'wrap'``, or ``None`` for zero-fill).
+
+    trust_padding : bool or None
+        Whether extrapolated padding values are considered valid.
+        Forwarded to ``prepare_mask``.
+
+    check_boundaries : bool
+        Passed through unchanged to the return value.
+
+    logger_msg_prefix : str or None
+        Prefix for log messages.
+
+    logger : logging.Logger or None
+        Logger instance.
+
+    Returns
+    -------
+    array_in : np.ndarray
+        Padded (and prefiltered if B-spline) data array.
+
+    array_in_shape : tuple of int
+        Updated shape of the padded ``array_in`` as
+        ``(nvar, nrow, ncol)``.
+
+    array_in_origin : tuple of float or None
+        Updated coordinate origin accounting for padding offset.
+
+    array_in_mask : np.ndarray or None
+        Final mask buffer ready to pass to the Rust core, or ``None``
+        when no mask is needed.
+
+    safe_region : np.ndarray or None
+        Safe region window within the padded array
+        (``[[row_start, row_end], [col_start, col_end]]``, inclusive),
+        or ``None`` if unavailable.
+
+    check_boundaries : bool
+        Passed through from input unchanged.
+
+    Raises
+    ------
+    ValueError
+        If ``array_in_origin`` is non-zero in standalone mode.
+
+    See Also
+    --------
+    resolve_mask_strategy : Builds the strategy.
+    apply_mask_strategy : Executes the strategy.
+    calculate_source_extent : Source window and padding computation.
+    """
+    # Validate array_in_origin for standalone mode
+    if array_in_origin is not None and np.any(np.asarray(array_in_origin) != 0.0):
+        raise ValueError("Shifting the array origin is not available for standalone mode")
+
+    # Initialize the interpolator - required for B-spline for instance
+    interp.initialize()
+
+    # Compute required source extent in order to compute resampling from the grid
+    (
+        _,
+        array_src_win_marged,
+        pad,
+        grid_metrics,
+    ) = calculate_source_extent(
+        interp=interp,
+        array_in=array_in,
+        grid_row=grid_row,
+        grid_col=grid_col,
+        grid_resolution=grid_resolution,
+        grid_nodata=grid_nodata,
+        grid_mask=grid_mask,
+        grid_mask_valid_value=grid_mask_valid_value,
+        win=win,
+        safecheck_src_boundaries=STANDALONE_SAFECHECK_SOURCE_BOUNDARIES,
+        logger_msg_prefix=logger_msg_prefix,
+        logger=logger,
+    )
+
+    array_in_shape_0 = array_in_shape
+
+    # Apply padding to data if needed
+    if np.any(pad != 0):
+        array_padded_fill = 0 if boundary_condition is None else None
+        array_in = source_extent_pad(
+            array_src=array_in,
+            pad=pad,
+            boundary_condition=boundary_condition,
+            fill=array_padded_fill,
+        )
+        # Update array padded shape to match its real shape
+        array_in_shape = array_in.shape
+        if array_in.ndim == 2:
+            array_in_shape = (array_in_shape_0[0],) + array_in_shape
+        # Account for the implied shift in coordinates due to padding
+        array_in_origin = (pad[0][0], pad[1][0])
+
+    # Manage and prepare mask
+    # Note : we must pass the original shape not the padded one
+    # The method updates the safe region if required
+    strategy = resolve_mask_strategy(
+        interp=interp,
+        pad=pad,
+        boundary_condition=boundary_condition,
+        array_in_mask=array_in_mask,
+        trust_padding=trust_padding,
+        array_in_shape=array_in_shape_0,
+        array_in_mask_safe_win=array_in_mask_safe_win,
+    )
+
+    array_in_mask = apply_mask_strategy(
+        array_in_mask=array_in_mask, pad=pad, array_in_shape=array_in_shape_0, strategy=strategy
+    )
+
+    check_boundaries = check_boundaries  # or strategy.check_boundaries
+    safe_region = strategy.safe_region
+
+    # Note : If we want to apply low-pass filtering for antialiasing this is
+    # the right place. But first we would have to integrate the required
+    # margin for antialiasing into the total margins requirement.
+
+    # Manage interpolator preprocessings
+    if is_bspline(interp):
+        # Prefiltering is performed in-place on the available data.
+
+        # TODO : pass safe-region if any
+        array_bspline_prefiltering(
+            array_in=array_in,
+            array_in_mask=array_in_mask,
+            interp=interp,
+        )
+        # Update safe region after prefiltering
+        # NOTE : cf previous TODO => use safe-region in preprocessing
+        # For now we consider that there is no safe region after preprocessing
+        safe_region = None
+
+    return (
+        array_in,
+        array_in_shape,
+        array_in_origin,
+        array_in_mask,
+        safe_region,
+        check_boundaries,
+    )
+
+
 def array_grid_resampling(
     interp: InterpolatorIdentifier,
     array_in: np.ndarray,
@@ -479,6 +1270,7 @@ def array_grid_resampling(
     array_in_origin: Optional[Tuple[float, float]] = (0.0, 0.0),
     win: Optional[np.ndarray] = None,
     array_in_mask: Optional[np.ndarray] = None,
+    array_in_mask_safe_win: Optional[np.ndarray] = None,
     grid_mask: Optional[np.ndarray] = None,
     grid_mask_valid_value: Optional[int] = 1,
     grid_nodata: Optional[float] = None,
@@ -486,7 +1278,8 @@ def array_grid_resampling(
     check_boundaries: bool = True,
     interp_kwargs: Optional[dict] = None,
     standalone: Optional[bool] = True,
-    boundary_condition: Optional[bool] = None,
+    boundary_condition: Optional[str] = None,
+    trust_padding: Optional[bool] = True,
     logger_msg_prefix: Optional[str] = None,
     logger: Optional[logging.Logger] = None,
 ) -> Tuple[Union[np.ndarray, NoReturn], Union[np.ndarray, NoReturn]]:
@@ -628,6 +1421,17 @@ def array_grid_resampling(
         are valid for resampling. If not provided, the entire input array is
         considered valid.
 
+    array_in_mask_safe_win : Optional[np.ndarray], shape (2, 2), default None
+        Known all-valid sub-region within ``array_in_mask``, expressed
+        as ``[[row_start, row_end], [col_start, col_end]]`` with
+        inclusive boundaries in the **original** (pre-padded) array
+        coordinate system.  When provided, promotes the mask strategy
+        from ``'binary'`` to ``'safe_region'``, allowing the Rust core
+        to skip per-pixel mask checks for stencils that fall entirely
+        within this zone.  Only meaningful when ``array_in_mask`` is
+        also provided and has real invalids.  Ignored in integrated mode
+        (``standalone=False``).
+
     grid_mask : Optional[np.ndarray], default None
         An optional integer mask array for the grid. Grid cells corresponding to
         `grid_mask_valid_value` are considered **valid**; all other values
@@ -684,12 +1488,32 @@ def array_grid_resampling(
         - `'wrap'`: Wrap around to the opposite edge (circular/periodic boundary).
         - `'reflect'`: Mirror reflection without repeating the edge values.
         - `'symmetric'`: Mirror reflection with edge values repeated.
-        - `None`: No padding is applied. If insufficient data is available for
+        - `None`: Zero padding is applied. If insufficient data is available for
           interpolation, those regions will be marked as invalid in the mask.
 
-        The boundary condition applies to both `array_in` and `array_in_mask`
-        (if provided). For masks, the boundary values are extrapolated according
-        to the same rule, or marked as invalid if `boundary_condition=None`.
+        The boundary condition applies to ``array_in``. For the mask, the
+        behaviour depends on ``trust_padding``:
+
+        - If ``trust_padding=True`` and a boundary condition is set, the
+          padded mask zone is marked as ``Validity.VALID`` — the
+          extrapolated data is considered exploitable.
+        - If ``trust_padding=False`` or ``boundary_condition=None``, the
+          padded mask zone is marked as ``Validity.INVALID`` regardless of
+          how ``array_in`` was padded.
+
+    When ``array_in_mask`` is provided and contains real invalids, it
+    is padded using the same boundary condition as ``array_in``, with
+    the fill value determined by ``trust_padding`` as above.
+
+    trust_padding : bool, default True
+        Controls how the padded zone is marked in the mask when padding
+        is applied in standalone mode.  If ``True`` and a
+        ``boundary_condition`` is set, the padded zone is considered
+        valid (``Validity.VALID``) and no mask check is enforced there.
+        If ``False``, the padded zone is always marked as
+        ``Validity.INVALID`` regardless of the boundary condition,
+        ensuring conservative behaviour.
+        Ignored when ``standalone=False``.
 
     logger_msg_prefix : Optional[str], default=None
         A prefix to add to all log messages generated by this function.
@@ -805,6 +1629,7 @@ def array_grid_resampling(
     assert grid_row.flags.c_contiguous is True
     assert grid_col.flags.c_contiguous is True
 
+    # Get consistent 3d shape for input array
     array_in_shape = array_in.shape
     if len(array_in_shape) == 2:
         array_in_shape = (1,) + array_in_shape
@@ -826,22 +1651,20 @@ def array_grid_resampling(
     interp_kwargs = interp_kwargs if interp_kwargs is not None else {}
     interp = get_interpolator(interp, **interp_kwargs)
 
+    # Execute standalone preprocessing if needed
     if standalone:
-        if array_in_origin is not None and np.any(np.asarray(array_in_origin) != 0.0):
-            raise ValueError("Shifting the array origin is not available for standalone mode")
-
-        # Initialize the interpolator - required for B-spline for instance
-        interp.initialize()
-
-        # Compute require source extent in order to compute resampling from the
-        # grid.
         (
-            _,
-            array_src_win_marged,
-            pad,
-        ) = calculate_source_extent(
+            array_in,
+            array_in_shape,
+            array_in_origin,
+            array_in_mask,
+            array_in_mask_safe_region,
+            check_boundaries,
+        ) = standalone_preprocessing(
             interp=interp,
             array_in=array_in,
+            array_in_shape=array_in_shape,
+            array_in_origin=array_in_origin,
             grid_row=grid_row,
             grid_col=grid_col,
             grid_resolution=grid_resolution,
@@ -849,138 +1672,16 @@ def array_grid_resampling(
             grid_mask=grid_mask,
             grid_mask_valid_value=grid_mask_valid_value,
             win=win,
-            safecheck_src_boundaries=STANDALONE_SAFECHECK_SOURCE_BOUNDARIES,
+            array_in_mask=array_in_mask,
+            array_in_mask_safe_win=array_in_mask_safe_win,
+            boundary_condition=boundary_condition,
+            trust_padding=trust_padding,
+            check_boundaries=check_boundaries,
             logger_msg_prefix=logger_msg_prefix,
             logger=logger,
         )
 
-        # Check if input array is sufficient
-        if np.any(pad != 0):
-            # TODO : not optimal if there is no padding required at an edge,
-            # we may not need all input data from the input array.
-            # The source_extent_pad method does only perfom padding and do not
-            # consider cropping.
-            array_padded_fill = None
-            mask_padded_fill = None
-            mask_padded = None
-
-            if boundary_condition is None:
-                array_padded_fill = 0
-                mask_padded_fill = Validity.INVALID
-
-            array_padded = source_extent_pad(
-                array_src=array_in,
-                pad=pad,
-                boundary_condition=boundary_condition,
-                fill=array_padded_fill,
-            )
-
-            # # Manage input mask if any is given
-            # if array_in_mask is not None:
-            # mask_padded = source_extent_pad(
-            # array_src=array_in_mask,
-            # pad=pad,
-            # boundary_condition=boundary_condition,
-            # fill=mask_padded_fill,
-            # )
-            # elif boundary_condition is None:
-            # # Mask handling:
-            # # - A default mask must be created if:
-            # #   * No mask is provided AND
-            # #   * No boundary condition is specified
-            # # - No mask creation is needed if:
-            # #   * A boundary condition is provided and applied to the input array
-            # #   * In this case, all points are considered valid by default
-            # mask_profile = ArrayProfile(
-            # shape=(array_in_shape[1], array_in_shape[2]),
-            # ndim=2,
-            # dtype=np.uint8,
-            # )
-            # (mask_padded_shape, mask_source_window) = get_array_padded_shape(mask_profile, pad)
-
-            # # Allocate buffer for padded mask and fill it with INVALID value
-            # mask_padded = np.full(
-            # mask_padded_shape, Validity.INVALID, dtype=np.uint8, order="C"
-            # )
-
-            # # Mark original region as VALID
-            # mask_padded[mask_source_window] = Validity.VALID
-
-            # Mask handling:
-            # 1. If a mask is provided if must be padded considering boundary condition
-            # 2. Otherwise :
-            #   2.1 A default mask must be created if:
-            #    - No boundary condition is specified in order to mark domain extension as invalid.
-            #    - A boundary condition is specified and the interpolator is a BSpline (validity
-            #      for domain extension has to be set)
-            #   2.2 No mask creation is needed if:
-            #     - A boundary condition is provided and interpolator is not BSpline : in this case,
-            #      all points are considered valid by default
-            if array_in_mask is not None:
-                mask_padded = source_extent_pad(
-                    array_src=array_in_mask,
-                    pad=pad,
-                    boundary_condition=boundary_condition,
-                    fill=mask_padded_fill,
-                )
-            elif boundary_condition is None or is_bspline(interp):
-                mask_profile = ArrayProfile(
-                    shape=(array_in_shape[1], array_in_shape[2]),
-                    ndim=2,
-                    dtype=np.uint8,
-                )
-                (mask_padded_shape, mask_source_window) = get_array_padded_shape(mask_profile, pad)
-
-                if boundary_condition is None:
-                    # Allocate buffer for padded mask and fill it with INVALID value
-                    mask_padded = np.full(
-                        mask_padded_shape, Validity.INVALID, dtype=np.uint8, order="C"
-                    )
-
-                    # Mark original region as VALID
-                    mask_padded[mask_source_window] = Validity.VALID
-                else:
-                    # Interpolator is BSpline
-                    # Here we allocate a full valid mask.
-                    # TODO - Computing Improvement : we can still have mask as
-                    # None and create the appropriate mask ater bspline
-                    # prefiltering
-                    mask_padded = np.full(
-                        mask_padded_shape, Validity.VALID, dtype=np.uint8, order="C"
-                    )
-
-            # substitute array_in with array_padded
-            array_in = array_padded
-
-            # Update array padded shape to match the effective shape
-            array_padded_shape = array_padded.shape
-            if array_padded.ndim == 2:
-                array_padded_shape = tuple(np.insert(array_padded_shape, 0, array_in_shape[0]))
-            array_in_shape = array_padded_shape
-
-            # subsitute array_in_mask with mask_padded
-            array_in_mask = mask_padded
-
-            # We've applied padding to `array_in` and optional associated mask,
-            # so we must account for the implied shift in coordinates.
-            # Note: Standalone mode is incompatible with `array_in_origin` as
-            # input, but we can use it here for the coming core Rust function
-            # call.
-            array_in_origin = (pad[0][0], pad[1][0])
-
-        # Note : If we want to apply low-pass filtering for antialiasing this is
-        # the right place. But first we would have to integrate the required
-        # margin for antialiasing into the total margins requirement.
-
-        # Manage interpolator preprocessings
-        if is_bspline(interp):
-            # Prefiltering is performed in-place on the available data.
-            array_bspline_prefiltering(
-                array_in=array_in,  # thats the previously read buffer
-                array_in_mask=array_in_mask,
-                interp=interp,  # The interpolator
-            )
-
+    # Flatten data to pass to Rust function
     array_in = array_in.reshape(-1)
     grid_row = grid_row.reshape(-1)
     grid_col = grid_col.reshape(-1)
@@ -1035,6 +1736,8 @@ def array_grid_resampling(
     if array_in_mask is not None:
         # reshape
         array_in_mask = array_in_mask.reshape(-1)
+
+    # TODO : USE array_in_mask_safe_win
 
     # Manage optional output mask
     if array_out_mask is not None:

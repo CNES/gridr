@@ -163,6 +163,7 @@ class TestGridResamplingChain:
         grid_shift,
         grid_resolution,
         boundary_condition,
+        trust_padding,
         window,
         array_in_geometry_origin,
         array_in_geometry_pair,
@@ -281,6 +282,7 @@ class TestGridResamplingChain:
                     interp=interp,
                     nodata_out=0,
                     boundary_condition=boundary_condition,
+                    trust_padding=trust_padding,
                     win=window,
                     grid_shift=grid_shift,
                     mask_out_ds=array_mask_out_ds,
@@ -350,7 +352,7 @@ class TestGridResamplingChain:
                         grid_mask=grid_mask_in_ds.read(1) if grid_mask_in_ds else None,
                         grid_mask_valid_value=UNMASKED_VALUE,
                         grid_nodata=None,
-                    )               
+                    )
                 array_out_validate, mask_out_validate = array_grid_resampling(
                     interp=interp,
                     array_in=np.asarray(
@@ -372,6 +374,7 @@ class TestGridResamplingChain:
                     check_boundaries=True,
                     standalone=True,
                     boundary_condition=boundary_condition,
+                    trust_padding=trust_padding,
                 )
 
             with (
@@ -476,6 +479,13 @@ class TestGridResamplingChain:
         ],
     )
     @pytest.mark.parametrize(
+        "trust_padding",
+        [
+            True,
+            False,
+        ],
+    )
+    @pytest.mark.parametrize(
         "grid_shift",
         [
             None,
@@ -485,11 +495,15 @@ class TestGridResamplingChain:
         "array_in_geometry_origin, array_in_geometry_pair",
         [
             (None, None),
-            #(
-            #    (0.5, 0.5), (None, shapely.geometry.Polygon(
-            #            [(-100, -100), (-101, -100), (-101, -101), (-100, -101)]
-            #        ),),
-            #),
+            (
+                (0.5, 0.5),
+                (
+                    None,
+                    shapely.geometry.Polygon(
+                        [(-100, -100), (-101, -100), (-101, -101), (-100, -101)]
+                    ),
+                ),
+            ),
             (
                 (0.5, 0.5),
                 (
@@ -502,12 +516,7 @@ class TestGridResamplingChain:
         ],
     )
     @pytest.mark.parametrize("array_out_dtype", [np.dtype("float64")])
-    @pytest.mark.parametrize("mask_out", 
-        [
-            True,
-            False
-        ]
-    )
+    @pytest.mark.parametrize("mask_out", [True, False])
     @pytest.mark.parametrize(
         "io_strip_size, io_strip_size_target, tile_shape",
         [
@@ -539,6 +548,7 @@ class TestGridResamplingChain:
         grid_shift,
         grid_resolution,
         boundary_condition,
+        trust_padding,
         window,
         array_in_geometry_origin,
         array_in_geometry_pair,
@@ -568,6 +578,7 @@ class TestGridResamplingChain:
             grid_shift=grid_shift,
             grid_resolution=grid_resolution,
             boundary_condition=boundary_condition,
+            trust_padding=trust_padding,
             window=window,
             array_in_geometry_origin=array_in_geometry_origin,
             array_in_geometry_pair=array_in_geometry_pair,
@@ -696,6 +707,7 @@ class TestGridResamplingChain:
             grid_shift=grid_shift,
             grid_resolution=grid_resolution,
             boundary_condition=None,
+            trust_padding=False,
             window=window,
             array_in_geometry_origin=array_in_geometry_origin,
             array_in_geometry_pair=array_in_geometry_pair,
@@ -825,6 +837,7 @@ class TestGridResamplingChain:
             grid_shift=grid_shift,
             grid_resolution=grid_resolution,
             boundary_condition=None,
+            trust_padding=False,
             window=window,
             array_in_geometry_origin=array_in_geometry_origin,
             array_in_geometry_pair=array_in_geometry_pair,
@@ -865,7 +878,13 @@ class TestGridResamplingChain:
         "boundary_condition",
         [
             None,
-        #    "reflect",
+            #    "reflect",
+        ],
+    )
+    @pytest.mark.parametrize(
+        "trust_padding",
+        [
+            False,
         ],
     )
     @pytest.mark.parametrize(
@@ -932,6 +951,7 @@ class TestGridResamplingChain:
         grid_shift,
         grid_resolution,
         boundary_condition,
+        trust_padding,
         window,
         array_in_geometry_origin,
         array_in_geometry_pair,
@@ -961,6 +981,7 @@ class TestGridResamplingChain:
             grid_shift=grid_shift,
             grid_resolution=grid_resolution,
             boundary_condition=boundary_condition,
+            trust_padding=trust_padding,
             window=window,
             array_in_geometry_origin=array_in_geometry_origin,
             array_in_geometry_pair=array_in_geometry_pair,
@@ -970,7 +991,7 @@ class TestGridResamplingChain:
             io_strip_size_target=io_strip_size_target,
             tile_shape=tile_shape,
         )
-        
+
     def _generic_test_grid_resampling_chain_boundary_condition(
         self,
         request,
@@ -989,10 +1010,10 @@ class TestGridResamplingChain:
 
         grid_dtype = np.float64
         array_in_dtype = np.float64
-        array_in_mask_validity_pair=(1,0)
-        array_in_mask_type=np.uint8
+        array_in_mask_validity_pair = (1, 0)
+        # array_in_mask_type = np.uint8
         array_out_dtype = np.float64
-        
+
         output_dir = tempfile.mkdtemp(suffix=test_id, prefix=None, dir=None)
         array_in_path = Path(output_dir) / "array_in.tif"
         grid_in_path = Path(output_dir) / "grid_in.tif"
@@ -1000,7 +1021,7 @@ class TestGridResamplingChain:
         grid_mask_in_path = None
         array_mask_in_path = None
         array_mask_out_path = None
-        
+
         array_in_path_bis = Path(output_dir) / "array_in_bis.tif"
         grid_in_path_bis = Path(output_dir) / "grid_in_bis.tif"
         array_out_path_bis = Path(output_dir) / "array_out_bis.tif"
@@ -1008,7 +1029,6 @@ class TestGridResamplingChain:
         array_mask_in_path_bis = None
         array_mask_out_path_bis = None
 
-        
         if isinstance(interp, str):
             if interp_kwargs is None:
                 interp_kwargs = {}
@@ -1022,20 +1042,21 @@ class TestGridResamplingChain:
 
         do_mask = False
         mask_out = True
-        
-        
+
         array_in = mandrill[0]
-        grid = np.asarray(create_grid(
-            nrow=array_in.shape[0]-1,
-            ncol=array_in.shape[1]-1,
-            origin_pos=(0, 0),
-            origin_node=(0, 0.1),
-            v_row_y=1,
-            v_row_x=0,
-            v_col_y=0,
-            v_col_x=1,
-            grid_dtype=np.float64,
-        ))
+        grid = np.asarray(
+            create_grid(
+                nrow=array_in.shape[0] - 1,
+                ncol=array_in.shape[1] - 1,
+                origin_pos=(0, 0),
+                origin_node=(0, 0.1),
+                v_row_y=1,
+                v_row_x=0,
+                v_col_y=0,
+                v_col_x=1,
+                grid_dtype=np.float64,
+            )
+        )
         mask = None
         if do_mask:
             mask = np.ones(array_in.shape, dtype=np.uint8)
@@ -1047,13 +1068,10 @@ class TestGridResamplingChain:
         grid_bis = np.copy(grid)
         grid_bis[0] += margins[0]
         grid_bis[1] += margins[2]
-        mask_bis = None
-        if do_mask:
-            mask_bis = np.pad(
-                mask, np.asarray(margins).reshape((2, 2)), mode=boundary_condition
-            )
-        
-    
+        # mask_bis = None
+        # if do_mask:
+        #    mask_bis = np.pad(mask, np.asarray(margins).reshape((2, 2)), mode=boundary_condition)
+
         try:
             # Write input array
             write_array(array_in, array_in_dtype, array_in_path)
@@ -1062,26 +1080,26 @@ class TestGridResamplingChain:
             # Write input grid
             write_array(grid, grid_dtype, grid_in_path)
             write_array(grid_bis, grid_dtype, grid_in_path_bis)
-            
+
             # # Create a grid mask if True
             # if grid_mask:
-                # grid_mask_in_path = Path(output_dir) / "grid_mask_in.tif"
-                # grid_mask_array = np.ones(grid_row.shape, dtype=np.uint8) * UNMASKED_VALUE
-                # grid_mask_array[
-                    # grid_row.shape[0] // 8 : grid_row.shape[0] // 8 + 3,
-                    # grid_row.shape[1] // 10 : grid_row.shape[1] // 10 + 2,
-                # ] = MASKED_VALUE
-                # write_array(grid_mask_array, np.uint8, grid_mask_in_path)
+            # grid_mask_in_path = Path(output_dir) / "grid_mask_in.tif"
+            # grid_mask_array = np.ones(grid_row.shape, dtype=np.uint8) * UNMASKED_VALUE
+            # grid_mask_array[
+            # grid_row.shape[0] // 8 : grid_row.shape[0] // 8 + 3,
+            # grid_row.shape[1] // 10 : grid_row.shape[1] // 10 + 2,
+            # ] = MASKED_VALUE
+            # write_array(grid_mask_array, np.uint8, grid_mask_in_path)
 
             # # Create array mask
             # if array_in_mask_positions is not None:
-                # array_mask_in_path = Path(output_dir) / "array_mask_in.tif"
-                # array_mask = np.full(
-                    # shape2(array_in), array_in_mask_validity_pair[0], dtype=array_in_mask_type
-                # )
-                # for pos in array_in_mask_positions:
-                    # array_mask[pos[0], pos[1]] = array_in_mask_validity_pair[1]
-                # write_array(array_mask, array_in_mask_type, array_mask_in_path)
+            # array_mask_in_path = Path(output_dir) / "array_mask_in.tif"
+            # array_mask = np.full(
+            # shape2(array_in), array_in_mask_validity_pair[0], dtype=array_in_mask_type
+            # )
+            # for pos in array_in_mask_positions:
+            # array_mask[pos[0], pos[1]] = array_in_mask_validity_pair[1]
+            # write_array(array_mask, array_in_mask_type, array_mask_in_path)
 
             # compute window and output shape
             full_output_shape = grid_full_resolution_shape(
@@ -1116,8 +1134,7 @@ class TestGridResamplingChain:
                     "nbits": 1,
                 }
 
-            array_out_validate, mask_out_validate = None, None
-            # F = 1
+            # array_out_validate, mask_out_validate = None, None
             with (
                 rasterio.open(grid_in_path, "r") as grid_in_ds,
                 rasterio.open(array_in_path, "r") as array_in_ds,
@@ -1127,7 +1144,6 @@ class TestGridResamplingChain:
                 safe_raster_open(
                     array_mask_out_path, "w", **mask_out_open_kwargs
                 ) as array_mask_out_ds,
-                
                 rasterio.open(grid_in_path_bis, "r") as grid_in_ds_bis,
                 rasterio.open(array_in_path_bis, "r") as array_in_ds_bis,
                 rasterio.open(array_out_path_bis, "w", **array_out_open_kwargs) as array_out_ds_bis,
@@ -1152,6 +1168,7 @@ class TestGridResamplingChain:
                     interp=interp,
                     nodata_out=nodata_out,
                     boundary_condition=boundary_condition,
+                    trust_padding=True,
                     win=window,
                     grid_shift=None,
                     mask_out_ds=array_mask_out_ds,
@@ -1166,7 +1183,6 @@ class TestGridResamplingChain:
                     io_strip_size_target=io_strip_size_target,
                     tile_shape=tile_shape,
                 )
-
 
                 basic_grid_resampling_chain(
                     grid_ds=grid_in_ds_bis,
@@ -1183,6 +1199,7 @@ class TestGridResamplingChain:
                     interp=interp,
                     nodata_out=nodata_out,
                     boundary_condition=None,
+                    trust_padding=True,
                     win=window,
                     grid_shift=None,
                     mask_out_ds=array_mask_out_ds_bis,
@@ -1197,7 +1214,7 @@ class TestGridResamplingChain:
                     io_strip_size_target=io_strip_size_target,
                     tile_shape=tile_shape,
                 )
-            
+
             with (
                 rasterio.open(array_out_path, "r") as array_out_ds,
                 safe_raster_open(array_mask_out_path, "r") as array_mask_out_ds,
@@ -1214,7 +1231,7 @@ class TestGridResamplingChain:
                     "from the image computed with the corresponding core method",
                 )
 
-                #if mask_out:
+                # if mask_out:
                 #    np.testing.assert_array_equal(
                 #        np.squeeze(array_mask_out_ds.read()),
                 #        mask_out_validate,
@@ -1233,7 +1250,7 @@ class TestGridResamplingChain:
                 os.unlink(array_mask_in_path)
             if array_mask_out_path:
                 os.unlink(array_mask_out_path)
-                
+
             os.unlink(array_in_path_bis)
             os.unlink(grid_in_path_bis)
             os.unlink(array_out_path_bis)
@@ -1243,7 +1260,7 @@ class TestGridResamplingChain:
                 os.unlink(array_mask_in_path_bis)
             if array_mask_out_path_bis:
                 os.unlink(array_mask_out_path_bis)
-                
+
             os.rmdir(output_dir)
 
     @pytest.mark.parametrize(
@@ -1252,7 +1269,7 @@ class TestGridResamplingChain:
             ("cubic", None),
             ("linear", None),
             ("nearest", None),
-            ( "bspline3", {"epsilon":1e-6, "mask_influence_threshold":0.01}),
+            ("bspline3", {"epsilon": 1e-6, "mask_influence_threshold": 0.01}),
         ],
     )
     @pytest.mark.parametrize(

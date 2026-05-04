@@ -18,8 +18,40 @@
 # limitations under the License.
 #
 """
-Module for a Grid Resampling Chain
-# @doc
+Chain module for grid-based raster resampling with I/O management.
+
+This module provides the high-level resampling pipeline that wraps the
+core ``array_grid_resampling`` function with rasterio-based I/O,
+tiled/strip processing, memory management via shared memory arrays, and
+unified mask strategy resolution.
+
+Main entry point
+----------------
+``basic_grid_resampling_chain``
+    Full pipeline from rasterio datasets to output dataset.  Handles
+    strip/tile decomposition, shared memory allocation, and parallel
+    processing.
+
+Mask strategy
+-------------
+The mask preparation follows the same decision logic as the core module
+via ``resolve_mask_strategy`` (imported from ``grid_resampling``),
+ensuring consistent behaviour between the standalone and chain code
+paths for identical inputs.  The chain-specific execution is handled
+by ``apply_mask_strategy_chain``, which operates on a pre-allocated
+buffer sized to the full marged window rather than allocating a new
+padded buffer.
+
+The ``trust_padding`` parameter controls whether extrapolated data in
+the padded zone is considered valid.  It must be explicitly set when
+``boundary_condition`` is not ``None``.
+
+Memory model
+------------
+Source data and output buffers are managed via ``SharedMemoryArray``
+to support multi-process parallelism.  Buffers are registered in a
+list and released in a ``finally`` block to prevent memory leaks even
+on error.
 """
 import logging
 from functools import partial
@@ -31,15 +63,28 @@ import rasterio
 from gridr.core.grid.grid_commons import grid_full_resolution_shape, grid_resolution_window_safe
 from gridr.core.grid.grid_mask import Validity, build_mask
 from gridr.core.grid.grid_rasterize import GeometryType, GridRasterizeAlg
-from gridr.core.grid.grid_resampling import array_grid_resampling, calculate_source_extent
+from gridr.core.grid.grid_resampling import (
+    ResamplingMaskStrategy,
+    array_grid_resampling,
+    calculate_source_extent,
+    check_mask_strategy,
+    get_array_padded_shape,
+    resolve_mask_strategy,
+)
 from gridr.core.grid.grid_utils import array_shift_grid_coordinates
 from gridr.core.interp.bspline_prefiltering import array_bspline_prefiltering
-from gridr.core.interp.interpolator import Interpolator, InterpolatorIdentifier, get_interpolator, is_bspline
+from gridr.core.interp.interpolator import (
+    Interpolator,
+    InterpolatorIdentifier,
+    get_interpolator,
+    is_bspline,
+)
 from gridr.core.utils import chunks
 from gridr.core.utils.array_pad import pad_inplace
 from gridr.core.utils.array_utils import ArrayProfile, array_convert, array_replace
 from gridr.core.utils.array_window import (
     as_rio_window,
+    complementary_window_indices,
     window_check,
     window_from_chunk,
     window_from_indices,
@@ -74,6 +119,169 @@ required.
 SAFECHECK_SOURCE_BOUNDARIES = True
 
 
+def apply_mask_strategy_chain(
+    array_in_mask: Optional[np.ndarray],
+    array_in_indices: Tuple[slice, slice],
+    pad: np.ndarray,
+    array_in_shape: Tuple[int, ...],
+    strategy: ResamplingMaskStrategy,
+) -> Optional[np.ndarray]:
+    """Build the final mask buffer for the chain IO path.
+
+    Chain-specific counterpart of ``apply_mask_strategy`` from the core
+    module.  Both functions share the same strategy resolution
+    (``resolve_mask_strategy``) but differ in execution:
+
+    - The **core** path allocates a new padded buffer via
+      ``source_extent_pad``.
+    - The **chain** path reuses a pre-allocated buffer sized to the full
+      marged window (``array_src_win_marged``), where only the data zone
+      (``array_in_indices``) has been written by the raster read.
+
+    This function reproduces the two-step logic of ``source_extent_pad``
+    on the existing buffer:
+
+    1. Fill the padded zone with ``strategy.pad_fill`` (skipped when
+       the buffer is already initialised to ``Validity.INVALID`` and
+       ``strategy.pad_fill == Validity.INVALID``).
+    2. Overwrite the padded zone with extrapolated values via
+       ``pad_inplace`` if ``strategy.boundary_condition`` is set.
+
+    Entry hypotheses
+    ----------------
+    - ``array_in_mask``, when not ``None``, **must** have been allocated
+      with ``np.full(..., Validity.INVALID)`` so that the padded zone
+      is already set to ``Validity.INVALID``.  Step 1 then only needs
+      to run when ``strategy.pad_fill == Validity.VALID`` (upward
+      correction), avoiding a redundant write in the common case.
+    - The data zone ``array_in_mask[array_in_indices]`` has already been
+      written with the raster read data before this function is called.
+    - ``array_in_indices`` identifies exactly the non-padded data zone,
+      i.e. ``window_from_indices(array_in_indices)`` is the complement
+      of the padded border.
+    - ``array_in_shape`` is the shape of the original (non-padded) source
+      window.  It is only used when ``strategy.needs_mask_alloc`` is
+      ``True`` (no raster mask dataset, no geometry mask).
+    - ``pad`` is the same padding array used to compute
+      ``array_src_win_marged`` and ``array_in_indices``.
+
+    Parameters
+    ----------
+    array_in_mask : np.ndarray or None
+        Pre-allocated mask buffer of shape ``(nrow_marged, ncol_marged)``,
+        dtype ``uint8``, C-contiguous, initialised with
+        ``np.full(..., Validity.INVALID)``.  The data zone at
+        ``array_in_indices`` has already been written.
+        ``None`` when no raster mask dataset and no geometry mask were
+        provided (``strategy.needs_mask_alloc`` must be ``True`` in
+        that case).
+
+    array_in_indices : tuple of slice
+        Index tuple ``(row_slice, col_slice)`` identifying the data zone
+        within ``array_in_mask``, i.e. the zone read from the raster
+        excluding padding.
+
+    pad : np.ndarray, shape (2, 2)
+        Padding amounts ``[[top, bottom], [left, right]]``.
+
+    array_in_shape : tuple of int
+        Shape of the original (non-padded) source window as
+        ``(nrow, ncol)``.  Required only when
+        ``strategy.needs_mask_alloc`` is ``True`` to compute the padded
+        mask shape via ``get_array_padded_shape``.
+
+    strategy : ResamplingMaskStrategy
+        Strategy produced by ``resolve_mask_strategy``.  Validated by
+        ``check_mask_strategy`` before execution.
+
+    Returns
+    -------
+    np.ndarray or None
+        The final mask buffer (uint8, 2D, C-contiguous) ready to pass
+        to ``array_grid_resampling``, or ``None`` when no mask is needed
+        (``strategy.mask_kind == 'none'``).
+
+    Raises
+    ------
+    ValueError
+        If ``strategy`` is internally inconsistent (via
+        ``check_mask_strategy``), or if ``array_in_mask`` is ``None``
+        when the strategy requires an existing mask buffer.
+
+    See Also
+    --------
+    resolve_mask_strategy : Builds the strategy.
+    check_mask_strategy : Validates the strategy.
+    apply_mask_strategy : Core-path equivalent using ``source_extent_pad``.
+    """
+    pad = np.asarray(pad)
+    has_pad = np.any(pad != 0)
+
+    check_mask_strategy(pad, strategy)
+
+    if strategy.mask_kind == "none":
+        return None
+
+    if strategy.needs_mask_alloc:
+        # No mask buffer exists yet (no raster mask, no geometry).
+        # Allocate a structural mask from scratch.
+        mask_profile = ArrayProfile(
+            shape=array_in_shape,
+            ndim=len(array_in_shape),
+            dtype=np.uint8,
+        )
+        mask_profile.make_2d()
+        mask_padded_shape, _ = get_array_padded_shape(mask_profile, pad)
+        final_mask = np.full(
+            mask_padded_shape,
+            strategy.pad_fill,
+            dtype=np.uint8,
+            order="C",
+        )
+        # Mark the safe region as valid when the rest is invalid.
+        if strategy.pad_fill != Validity.VALID:
+            final_mask[window_indices(strategy.safe_region)] = Validity.VALID
+        return final_mask
+
+    # binary or safe_region with an existing mask buffer.
+    if array_in_mask is None:
+        raise ValueError(
+            f"'strategy.mask_kind'={strategy.mask_kind!r} requires a mask "
+            "but array_in_mask is None"
+        )
+
+    final_mask = array_in_mask
+
+    if has_pad:
+        # Reproduce source_extent_pad two-step logic on the existing buffer.
+
+        # Step 1: fill the padded zone with strategy.pad_fill.
+        # The buffer is already initialised to Validity.INVALID (np.full),
+        # so this step only runs when pad_fill == Validity.VALID to avoid
+        # a redundant write in the common case.
+        if strategy.pad_fill == Validity.VALID:
+            pad_area = complementary_window_indices(
+                win=window_from_indices(array_in_indices, final_mask.shape, None),
+                shape=final_mask.shape,
+                axes=None,
+            )
+            for pad_indices in pad_area:
+                final_mask[pad_indices] = Validity.VALID
+
+        # Step 2: overwrite padded zone with extrapolated values if a
+        # boundary condition is available.
+        if strategy.boundary_condition is not None:
+            pad_inplace(
+                array=final_mask,
+                src_win=array_in_indices,
+                pad_width=pad,
+                mode=strategy.boundary_condition,
+                strict_size=True,
+            )
+
+    return final_mask
+
+
 def basic_grid_resampling_array(
     interp: Interpolator,
     grid_arr: np.ndarray,
@@ -95,6 +303,7 @@ def basic_grid_resampling_array(
     out_win: np.ndarray,
     nodata_out: Optional[Union[int, float]],
     boundary_condition: Optional[str],
+    trust_padding: bool,
     sma_out_mask_buffer: Optional[SharedMemoryArray],
     logger_msg_prefix: str,
     logger: logging.Logger,
@@ -210,13 +419,25 @@ def basic_grid_resampling_array(
         NoData value to fill the output if the grid metrics are invalid or if
         no valid data points can be found.
 
-    boundary_condition: str or None
-        Optional padding mode when required data for interpolation lies outside
-        the source dataset domain. Available values are a subset of the
-        `numpy.pad` method modes: 'edge', 'reflect', 'symmetric',
-        or 'wrap'.
+    boundary_condition : str or None, default None
+        Optional padding mode when required data for interpolation lies
+        outside the source dataset domain. Available values are a subset
+        of the ``numpy.pad`` method modes: ``'edge'``, ``'reflect'``,
+        ``'symmetric'``, or ``'wrap'``.
         Uses a GridR-specific in-place padding implementation instead of
-        `numpy.pad` to avoid unnecessary memory allocation.
+        ``numpy.pad`` to avoid unnecessary memory allocation.
+        For the mask, the padded zone fill value is determined by
+        ``trust_padding``: ``Validity.VALID`` if trusted, ``Validity.INVALID``
+        otherwise. If a boundary condition is set and ``trust_padding`` is
+        ``True``, the mask is padded using the same boundary condition.
+
+    trust_padding : bool, default True
+        Controls how the padded zone is marked in the mask when padding
+        is applied.  If ``True`` and a ``boundary_condition`` is set,
+        the padded mask zone is considered valid (``Validity.VALID``).
+        If ``False``, the padded zone is always marked as
+        ``Validity.INVALID`` regardless of the boundary condition.
+        See ``resolve_mask_strategy`` for the full decision tree.
 
     sma_out_mask_buffer : SharedMemoryArray or numpy.ndarray or None, optional
         Optional output array (or shared memory buffer) where output mask
@@ -292,7 +513,12 @@ def basic_grid_resampling_array(
             grid_mask_arr = grid_mask_arr.view(np.uint8)
 
     # Compute source boundaries from all valid coordinates
-    array_src_win_read, array_src_win_marged, pad = calculate_source_extent(
+    (
+        array_src_win_read,
+        array_src_win_marged,
+        pad,
+        grid_metrics,
+    ) = calculate_source_extent(
         interp=interp,
         array_in=array_src_profile_2d,
         grid_row=grid_arr[0],
@@ -378,21 +604,9 @@ def basic_grid_resampling_array(
         # condition, the marged border strips will remain at zero.
         array_src_read_buffer = np.zeros(array_src_read_buffer_shape, dtype=np.float64, order="C")
 
-        # Manage the mask assuming here the same shape as image
-        # Default value to 0 in order to init as not valid
-        # Here we init in all cases (array_src_mask_ds given or not)
-        array_src_mask_read_buffer_shape = window_shape(array_src_win_marged)
-        array_src_mask_read_buffer = np.full(
-            array_src_mask_read_buffer_shape,
-            Validity.INVALID,
-            dtype=array_src_mask_dtype,
-            order="C",
-        )
-
         # Read the source array.
         # - Due to "virtual" margins we have to compute the correct indices in
-        #   the tile_read_buffer that will hold the
-        # read array for each band.
+        #   the tile_read_buffer that will hold the read array for each band.
         DEBUG("Reading tiles...")
 
         def get_read_buffer_indices(b, p, s):
@@ -444,9 +658,22 @@ def basic_grid_resampling_array(
                     strict_size=True,
                 )
 
+        array_src_mask_read_buffer = None
+        array_src_mask_read_buffer_shape = window_shape(array_src_win_marged)
+        indices = get_mask_read_buffer_indices(pad, array_src_win_read_shape)
+
         # Manage raster mask
         if array_src_mask_ds:
-            indices = get_mask_read_buffer_indices(pad, array_src_win_read_shape)
+            # Manage the mask assuming here the same shape as image
+            # Default value to 0 in order to init as not valid
+            # Here we init in all cases (array_src_mask_ds given or not)
+            # array_src_mask_read_buffer_shape = window_shape(array_src_win_marged)
+            array_src_mask_read_buffer = np.full(
+                array_src_mask_read_buffer_shape,
+                Validity.INVALID,
+                dtype=array_src_mask_dtype,
+                order="C",
+            )
 
             DEBUG(
                 f"Reading source window for source mask "
@@ -484,35 +711,6 @@ def basic_grid_resampling_array(
                 f"- target indices : {indices} [DONE]"
             )
 
-            # Boundary conditions
-            if boundary_condition is not None and np.any(pad != 0):
-                pad_inplace(
-                    array=array_src_mask_read_buffer,
-                    src_win=indices,
-                    pad_width=pad,
-                    mode=boundary_condition,
-                    strict_size=True,
-                )
-
-        else:
-            # TODO : should we activate this code only if there is pad ?
-
-            # The mask was not given but we can still fill the mask buffer
-            # to be valid on indices where we can read data VS virtual margins.
-            indices = get_mask_read_buffer_indices(pad, array_src_win_read_shape)
-
-            array_src_mask_read_buffer[indices] = Validity.VALID
-            
-            # We also have to pad the mask if boundary condition is not None
-            if boundary_condition is not None and np.any(pad != 0):
-                pad_inplace(
-                    array=array_src_mask_read_buffer,
-                    src_win=indices,
-                    pad_width=pad,
-                    mode=boundary_condition,
-                    strict_size=True,
-                )
-
         # The grid stores absolute source coordinates. However, when operating
         # on a localized sub-region of the raster, we must compensate for the
         # relative shift of its origin.
@@ -533,6 +731,15 @@ def basic_grid_resampling_array(
 
         # Manage geometry mask
         if array_src_geometry_pair is not None:
+
+            if array_src_mask_read_buffer is None:
+                array_src_mask_read_buffer = np.full(
+                    array_src_mask_read_buffer_shape,
+                    Validity.INVALID,
+                    dtype=array_src_mask_dtype,
+                    order="C",
+                )
+                array_src_mask_read_buffer[indices] = Validity.VALID
 
             # We have to define the rasterization mesh so that is will be
             # aligned with the current raster mask.
@@ -577,7 +784,7 @@ def basic_grid_resampling_array(
             # In that case we cant pass the out with the current code as
             # it will result in a overwrite of the buffer.
             geom_mask = build_mask(
-                shape=array_src_mask_read_buffer.shape,
+                shape=array_src_mask_read_buffer_shape,
                 resolution=(1, 1),
                 out=None,
                 geometry_origin=cgeometry_origin,
@@ -591,14 +798,53 @@ def basic_grid_resampling_array(
                 init_out=False,
             )
 
-            array_src_mask_read_buffer &= geom_mask
+            if array_src_mask_ds is not None:
+                array_src_mask_read_buffer[indices] &= geom_mask[indices]
+            else:
+                array_src_mask_read_buffer[indices] = geom_mask[indices]
+
+        # Resolve mask strategy
+        # Pre-scan mask : not null or all-valid
+        array_in_resolve = (
+            array_src_mask_read_buffer[indices] if array_src_mask_read_buffer is not None else None
+        )
+
+        mask_strategy = resolve_mask_strategy(
+            interp=interp,
+            pad=pad,
+            array_in_mask=array_in_resolve,
+            boundary_condition=boundary_condition,
+            trust_padding=trust_padding,
+            array_in_shape=array_src_win_read_shape,
+            array_in_mask_safe_win=None,
+        )
+
+        array_in_mask = apply_mask_strategy_chain(
+            array_in_mask=array_src_mask_read_buffer,
+            array_in_indices=indices,
+            pad=pad,
+            array_in_shape=array_src_win_read_shape,
+            strategy=mask_strategy,
+        )
+
+        safe_region = mask_strategy.safe_region
 
         # TODO/TOCHECK We may reset the sma_w_array_buffer.array if the cslices
         # is limited (not the case for now)
 
-        array_in_mask = array_src_mask_read_buffer
         # array_out_mask
         array_out_mask = sma_out_mask_buffer.array if sma_out_mask_buffer is not None else None
+
+        # For performance we go with check_boundaries is False by default.
+        # This activate a rust code branch where no explicit tests are performed
+        # on boundaries. Please note, the rust code will Panic if out of bounds
+        # index are used.
+        # check_boundaries = check_boundaries or mask_strategy.check_boundaries
+        check_boundaries = True
+
+        # Note : Safety measure but may not be required
+        if np.any(pad != 0):
+            check_boundaries = True
 
         # In case of a B-Spline interpolator, call B-Spline prefiltering first
         # Please note the previously margin must integrate the domain extension
@@ -613,16 +859,7 @@ def basic_grid_resampling_array(
                 array_in_mask=array_in_mask,
                 interp=interp,  # The interpolator
             )
-
-        # For performance we go with check_boundaries is False by default.
-        # This activate a rust code branch where no explicit tests are performed
-        # on boundaries. Please note, the rust code will Panic if out of bounds
-        # index are used.
-        check_boundaries = False
-
-        # Note : Safety measure but may not be required
-        if np.any(pad != 0):
-            check_boundaries = True
+            safe_region = None
 
         # Call the resampling method - this method returns a tuple containing
         # the output array and the output mask.
@@ -639,12 +876,14 @@ def basic_grid_resampling_array(
             array_in_origin=array_src_origin,
             win=oversampled_grid_win,  # the production window
             array_in_mask=array_in_mask,  # the input mask optionnaly prefiltered,
+            array_in_mask_safe_win=safe_region,
             grid_mask=grid_mask_arr,  # TO CHECK: Optional[np.ndarray] = None,
             grid_mask_valid_value=grid_mask_in_unmasked_value,  #: Optional[int] = 1,
             grid_nodata=None,  # TODO : manage grid_nodata input
             array_out_mask=array_out_mask,  # output mask buffer,
             check_boundaries=check_boundaries,
             standalone=False,  # We are not in standalone mode
+            trust_padding=trust_padding,  # should not be used with standalone = False
         )
 
     if full_nodata:
@@ -672,6 +911,7 @@ def basic_grid_resampling_chain(
     grid_col_ds: Union[rasterio.io.DatasetReader, None] = None,
     interp_kwargs: Optional[dict] = None,
     boundary_condition: Optional[str] = None,
+    trust_padding: Optional[bool] = False,
     win: Optional[np.ndarray] = None,
     grid_shift: Optional[Union[Tuple[int, int], Tuple[float, float]]] = None,
     array_src_mask_ds: Optional[rasterio.io.DatasetReader] = None,
@@ -747,13 +987,29 @@ def basic_grid_resampling_chain(
         interpolator passed through the `interp` is either of type `str` or
         `PyInterpolatorType`.
 
-    boundary_condition: str, default None
-        Optional padding mode when required data for interpolation lies outside
-        the source dataset domain. Available values are a subset of the
-        `numpy.pad` method modes: 'edge', 'reflect', 'symmetric',
-        or 'wrap'.
+    boundary_condition : str or None, default None
+        Optional padding mode when required data for interpolation lies
+        outside the source dataset domain. Available values are a subset
+        of the ``numpy.pad`` method modes: ``'edge'``, ``'reflect'``,
+        ``'symmetric'``, or ``'wrap'``.
         Uses a GridR-specific in-place padding implementation instead of
-        `numpy.pad` to avoid unnecessary memory allocation.
+        ``numpy.pad`` to avoid unnecessary memory allocation.
+        For the mask, the padded zone fill value is determined by
+        ``trust_padding``: ``Validity.VALID`` if trusted, ``Validity.INVALID``
+        otherwise. If a boundary condition is set and ``trust_padding`` is
+        ``True``, the mask is padded using the same boundary condition.
+
+    trust_padding : bool or None, default False
+        Controls how the padded zone is marked in the mask when padding
+        is applied.  If ``True`` and a ``boundary_condition`` is set, the
+        padded mask zone is considered valid. If ``False``, the padded zone
+        is always marked as``Validity.INVALID`` regardless of the boundary
+        condition.
+        Forwarded to ``basic_grid_resampling_array``.
+        Must be explicitly set to ``True`` or ``False`` when
+        ``boundary_condition`` is not ``None`` -- passing ``None`` in that
+        case raises a ``ValueError``.  Ignored when ``boundary_condition``
+        is ``None``.
 
     win : numpy.ndarray, optional
         Optional output window of the `grid_ds` to process, defined as
@@ -869,6 +1125,12 @@ def basic_grid_resampling_chain(
     if logger is None:
         logger = logging.getLogger(__name__)
 
+    if boundary_condition is not None and trust_padding is None:
+        raise ValueError(
+            "'trust_padding' must be explicitly set when "
+            "'boundary_condition' is not None, got None"
+        )
+
     # Init a list to register SharedMemoryArray buffers
     sma_buffer_name_list = []
     register_sma = partial(create_and_register_sma, register=sma_buffer_name_list)
@@ -899,7 +1161,7 @@ def basic_grid_resampling_chain(
     else:
         logger.debug("Grid mask : no input grid mask")
 
-    # Check that optional input array mask has the same shape as the source 
+    # Check that optional input array mask has the same shape as the source
     # array
     if array_src_mask_ds is not None:
         src_shape = (array_src_ds.width, array_src_ds.height)
@@ -1013,11 +1275,6 @@ def basic_grid_resampling_chain(
     except TypeError:
         array_src_bands = [array_src_bands]
 
-    # array_src_profile = ArrayProfile(
-    #        shape=(array_src_ds.height, array_src_ds.width),
-    #        ndim=array_src_ds.count,
-    #        dtype=np.dtype(array_src_ds.dtypes[array_src_bands[0]]))
-    
     # Determine the write buffer shape
     # The computation is performed using the chunk_windows.
     # - nrow x ncol : from max full res grid strip size
@@ -1260,6 +1517,7 @@ def basic_grid_resampling_chain(
                         out_win=ctile_win,
                         nodata_out=nodata_out,
                         boundary_condition=boundary_condition,
+                        trust_padding=trust_padding,
                         sma_out_mask_buffer=sma_w_mask_buffer,
                         logger_msg_prefix=f"Chunk {chunk_idx} - tile {ctile} - ",
                         logger=logger,
@@ -1290,6 +1548,7 @@ def basic_grid_resampling_chain(
                     out_win=cslices_as_win,
                     nodata_out=nodata_out,
                     boundary_condition=boundary_condition,
+                    trust_padding=trust_padding,
                     sma_out_mask_buffer=sma_w_mask_buffer,
                     logger_msg_prefix=f"Chunk {chunk_idx} - ",
                     logger=logger,

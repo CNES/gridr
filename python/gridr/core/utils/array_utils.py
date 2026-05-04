@@ -565,3 +565,19 @@ class ArrayProfile(object):
             shape = (ds.height, ds.width)
             ndim = 2
         return cls(shape=shape, ndim=ndim, dtype=np.dtype(ds.profile["dtype"]))
+
+    def make_2d(self):
+        """
+        Converts the profile to 2D format by removing the first dimension.
+
+        Transforms the profile into 2D by modifying the object attributes
+        in-place. The method is neutral if the current profile is already 2d.
+
+        Returns
+        -------
+        None
+        """
+        if self.ndim == 3:
+            self.ndim = 2
+            self.shape = (self.shape[1], self.shape[2])
+            self.size = np.prod(self.shape)

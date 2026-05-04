@@ -18,6 +18,7 @@ import rasterio
 
 from gridr.core.utils.array_window import (
     as_rio_window,
+    complementary_window_indices,
     window_apply,
     window_check,
     window_extend,
@@ -70,6 +71,21 @@ WIN_00_07, AXES_00_07, WIN_ARRAY_00_07, NOCHECK_EXPECT_00_07 = (
     ARRAY_00[1:3, 0:7],
 )
 
+# --- Helper ---
+
+
+def assert_complement_covers(arr_shape, win, axes=None):
+    """Assert that window + complement covers the full array without overlap."""
+    inside = window_indices(win, axes=axes)
+    comp = complementary_window_indices(win, arr_shape, axes=axes)
+
+    mask = np.zeros(arr_shape, dtype=int)
+    mask[inside] += 1
+    for s in comp:
+        mask[s] += 1
+
+    np.testing.assert_array_equal(mask, np.ones(arr_shape, dtype=int))
+
 
 class TestArrayWindow:
     """Class for test"""
@@ -84,7 +100,7 @@ class TestArrayWindow:
         ],
     )
     def test_window_indices(self, data, expected):
-        """Test window_apply method"""
+        """Test window_indices method"""
         win, reset_origin, axes = data
         try:
             indices = window_indices(win, reset_origin, axes)
@@ -101,6 +117,105 @@ class TestArrayWindow:
                 pass
 
             assert indices == expected
+
+    # --- complementary_window_indices ---
+
+    @pytest.mark.parametrize(
+        "shape, win, axes, expected_regions",
+        [
+            # --- 2D ---
+            # centre : 4 regions
+            ((5, 6), [[1, 3], [2, 4]], None, 4),
+            # top-left corner
+            ((4, 5), [[0, 1], [0, 2]], None, 2),
+            # botom-right corner
+            ((4, 5), [[2, 3], [3, 4]], None, 2),
+            # full width
+            ((5, 4), [[1, 3], [0, 3]], None, 2),
+            # full height
+            ((4, 6), [[0, 3], [2, 4]], None, 2),
+            # window = entire array
+            ((3, 4), [[0, 2], [0, 3]], None, 0),
+            # single element at center
+            ((3, 3), [[1, 1], [1, 1]], None, 4),
+            # single full row
+            ((5, 4), [[2, 2], [0, 3]], None, 2),
+            # top edge, not touching sides
+            ((4, 6), [[0, 1], [2, 4]], None, 3),
+            # 1x1 array
+            ((1, 1), [[0, 0], [0, 0]], None, 0),
+            # --- 3D ---
+            # centre : 6 regions
+            ((5, 6, 7), [[1, 3], [2, 4], [1, 5]], None, 6),
+            # corner
+            ((4, 5, 6), [[0, 1], [0, 2], [0, 3]], None, 3),
+            # entire array
+            ((3, 4, 5), [[0, 2], [0, 3], [0, 4]], None, 0),
+            # single element
+            ((3, 3, 3), [[1, 1], [1, 1], [1, 1]], None, 6),
+            # full slab on 2 axes
+            ((4, 5, 6), [[1, 2], [0, 4], [0, 5]], None, 2),
+            # --- with axes ---
+            # 3D, single axis
+            ((4, 5, 6), [[1, 2], [1, 3], [2, 4]], 0, 2),
+            # 3D, two axes
+            ((4, 5, 6), [[1, 2], [1, 3], [2, 4]], (0, 2), 4),
+            # 2D, rows only
+            ((5, 4), [[1, 3], [1, 2]], 0, 2),
+            # 2D, columns only
+            ((5, 4), [[1, 3], [1, 2]], 1, 2),
+        ],
+    )
+    def test_complementary_window_indices_coverage_and_region_count(
+        self, shape, win, axes, expected_regions
+    ):
+        win = np.array(win)
+        comp = complementary_window_indices(win, shape, axes=axes)
+        assert len(comp) == expected_regions
+        assert_complement_covers(shape, win, axes=axes)
+
+    # --- complementary_window_indices : free axes remain unconstrained ---
+
+    @pytest.mark.parametrize(
+        "axes, free_axes",
+        [
+            (0, [1, 2]),
+            ((0, 2), [1]),
+            (1, [0, 2]),
+        ],
+    )
+    def test_complementary_window_indices_free_axes_unconstrained(self, axes, free_axes):
+        shape = (4, 5, 6)
+        win = np.array([[1, 2], [1, 3], [2, 4]])
+        comp = complementary_window_indices(win, shape, axes=axes)
+        for s in comp:
+            for ax in free_axes:
+                assert s[ax] == slice(None)
+
+    # --- complementary_window_indices : sum and element count integrity ---
+
+    @pytest.mark.parametrize(
+        "shape, win",
+        [
+            ((4, 5, 3), [[1, 2], [1, 3], [0, 1]]),
+            ((5, 6), [[1, 3], [2, 4]]),
+            ((3, 3, 3), [[1, 1], [1, 1], [1, 1]]),
+        ],
+    )
+    def test_complementary_window_indices_sum_and_count(self, shape, win):
+        win = np.array(win)
+        arr = np.arange(np.prod(shape)).reshape(shape)
+
+        inside = window_indices(win)
+        comp = complementary_window_indices(win, shape)
+
+        inside_sum = arr[inside].sum()
+        comp_sum = sum(arr[s].sum() for s in comp)
+        assert inside_sum + comp_sum == arr.sum()
+
+        inside_count = arr[inside].size
+        comp_count = sum(arr[s].size for s in comp)
+        assert inside_count + comp_count == arr.size
 
     @pytest.mark.parametrize(
         "data, expected",

@@ -47,7 +47,7 @@ follows Python's standard slicing, where the `start_index` is inclusive but the
 for its expected input/output convention to avoid off-by-one errors.
 
 """
-from typing import Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 from rasterio.windows import Window
@@ -245,7 +245,7 @@ def window_indices(
 
     if axes is None:
         axes = range(win.shape[0])
-        axes = np.atleast_1d(axes)  # pylint: disable=R0204
+    axes = np.atleast_1d(axes)  # pylint: disable=R0204
 
     if reset_origin:
         win = win - np.vstack(win[:, 0])
@@ -257,6 +257,58 @@ def window_indices(
         )
     )
     return indices
+
+
+def complementary_window_indices(
+    win: np.ndarray,
+    shape: Tuple[int, ...],
+    axes: Optional[Union[int, Tuple[int, ...], np.ndarray]] = None,
+) -> List[Tuple[slice]]:
+    """Get slicing indices for the complement of a window in an array.
+
+    Parameters
+    ----------
+    win : numpy.ndarray
+        The input window, same convention as `window_indices`: 2D array where
+        each row is (inclusive_first, inclusive_last) for that dimension.
+
+    shape : tuple of int
+        The full N-dimensional shape of the target array.
+
+    axes : int or tuple of int or numpy.ndarray, optional
+        Specifies the axes (dimensions) of the array on which to apply the
+        window constraints. If `None`, the window is applied to all dimensions
+        defined by `win.shape[0]`. Defaults to `None`.
+
+    Returns
+    -------
+    list of tuple of slice
+        A list of `slice` tuples, each selecting one complementary region.
+        Region that would be empty are omitted.
+    """
+    inside = window_indices(win, axes=axes)
+    base = [slice(None)] * len(shape)
+
+    resolved_axes = np.atleast_1d(axes) if axes is not None else np.arange(np.asarray(win).shape[0])
+
+    slices = []
+    for ax in resolved_axes:
+        lo = inside[ax].start or 0
+        hi = inside[ax].stop or shape[ax]
+
+        if lo > 0:
+            s = base.copy()
+            s[ax] = slice(0, lo)
+            slices.append(tuple(s))
+
+        if hi < shape[ax]:
+            s = base.copy()
+            s[ax] = slice(hi, shape[ax])
+            slices.append(tuple(s))
+
+        base[ax] = inside[ax]
+
+    return slices
 
 
 def window_from_indices(
