@@ -1173,7 +1173,7 @@ def standalone_preprocessing(
     # Compute required source extent in order to compute resampling from the grid
     (
         _,
-        array_src_win_marged,
+        _, 
         pad,
         grid_metrics,
     ) = calculate_source_extent(
@@ -1192,8 +1192,15 @@ def standalone_preprocessing(
     )
 
     array_in_shape_0 = array_in_shape
-
+    if grid_metrics is None:
+        raise ValueError(
+            "Cannot compute grid metrics. Please check your grid !"
+        )
+    
     # Apply padding to data if needed
+    # Note : pad can be None for a full out of domain grid
+    if pad is None:
+        pad = np.array([[0, 0], [0, 0]])
     if np.any(pad != 0):
         array_padded_fill = 0 if boundary_condition is None else None
         array_in = source_extent_pad(
