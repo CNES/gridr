@@ -77,6 +77,7 @@ fn _libgridr(m: &Bound<'_, PyModule>) -> PyResult<()> {
     
     // Add from py_bspline_prefiltering
     m.add_function(wrap_pyfunction!(py_bspline_prefiltering::py_array1_bspline_prefiltering_f64,m)?)?;
+    m.add_function(wrap_pyfunction!(py_bspline_prefiltering::py_array1_bspline_prefiltering_mask_safe_win_f64,m)?)?;
     m.add_function(wrap_pyfunction!(py_bspline_prefiltering::py_compute_2d_truncation_index,m)?)?;
     m.add_function(wrap_pyfunction!(py_bspline_prefiltering::py_compute_2d_domain_extension,m)?)?;
     

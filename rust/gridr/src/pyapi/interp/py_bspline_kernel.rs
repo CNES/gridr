@@ -100,9 +100,17 @@ use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 use numpy::{PyArray1, PyArrayMethods};
 
-use crate::core::gx_array::GxArrayViewMut;
-use crate::core::interp::gx_bspline_kernel::{GxBSplineInterpolator, GxBSplineInterpolatorTrait, GxBSplineInterpolatorArgs};
+use crate::core::gx_array::{
+    GxArrayView,
+    GxArrayViewMut,
+};
+use crate::core::interp::gx_bspline_kernel::{
+    GxBSplineInterpolator,
+    GxBSplineInterpolatorTrait,
+    GxBSplineInterpolatorArgs
+};
 use crate::core::interp::gx_array_view_interp::GxArrayViewInterpolator;
+use crate::pyapi::py_array::PyArrayWindow2;
 
 // Implements BSpline classes
 
@@ -313,6 +321,47 @@ macro_rules! impl_pybspline {
                     &mut array_in_arrayview,
                     mask_in_array_view.as_mut(),
                 ).map_err(|e| PyValueError::new_err(e.to_string()))
+            }
+
+            /// Computes the safe-valid window after B-spline prefiltering with mask propagation.
+            /// Returns the eroded safe-valid window, or None if the margin is too large.
+            ///
+            /// # Arguments
+            /// * `array_in_mask` - Input mask array
+            /// * `array_in_mask_shape` - Shape of the mask array as (y, z)
+            /// * `array_in_mask_safe_win` - Safe-valid window as a `PyArrayWindow2`
+            /// * `mask_influence_threshold` - Residual influence threshold for invalid pixel propagation
+            ///
+            /// # Returns
+            /// * `Ok(Some(PyArrayWindow2))` if a valid eroded window exists
+            /// * `Ok(None)` if the margin is too large for the input dimensions
+            /// * `PyErr` if the computation fails
+            #[pyo3(signature = (array_in_mask, array_in_mask_shape, array_in_mask_safe_win))]
+            #[allow(clippy::too_many_arguments)]
+            fn array1_bspline_prefiltering_ext_mask_safe_win(
+                &self,
+                array_in_mask: &Bound<'_, PyArray1<u8>>,
+                array_in_mask_shape: (usize, usize),
+                array_in_mask_safe_win: PyArrayWindow2,
+            ) -> Result<Option<PyArrayWindow2>, PyErr>
+            {
+                // Create a safe read-only array view over the mask
+                let array_in_mask_view = array_in_mask.readonly();
+                let array_in_mask_slice = array_in_mask_view.as_slice().expect("Failed to get slice");
+                let mask_array_view = GxArrayView::new(
+                    array_in_mask_slice, 1, array_in_mask_shape.0, array_in_mask_shape.1
+                );
+
+                let guard = self.inner.read().unwrap(); // Read lock
+                let result = guard.array1_bspline_prefiltering_ext_mask_safe_win(
+                    &mask_array_view,
+                    &array_in_mask_safe_win.into(),
+                ).map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+                // Convert the optional GxArrayWindow back to a PyArrayWindow2
+                Ok(result.map(|w| PyArrayWindow2::new(
+                    w.start_row, w.end_row, w.start_col, w.end_col
+                )))
             }
         }
     };

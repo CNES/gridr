@@ -44,8 +44,13 @@
 //!
 //! Briand, T., & Monasse, P. (2018). Theory and Practice of Image B-Spline Interpolation.
 //! *Image Processing On Line*, 8, 99-141. https://doi.org/10.5201/ipol.2018.221
-use crate::core::gx_array::GxArrayViewMut;
+use crate::core::gx_array::{
+    GxArrayView,
+    GxArrayViewMut,
+    GxArrayWindow,
+};
 use crate::core::gx_errors::GxError;
+use std::cmp::{max, min};
 use transpose;
 
 
@@ -694,7 +699,7 @@ pub fn array1_bspline_prefiltering_ext_gene<'a>(
         trunc_idx: Option<&'a [usize]>,
         ima_in: &mut GxArrayViewMut<'_, f64>,
         ima_mask_in: Option<&'a mut GxArrayViewMut<'a, u8>>,
-        mask_influence_treshold: Option<f64>,
+        mask_influence_threshold: Option<f64>,
 ) -> Result<(), GxError>
 {
     // Retrieve the number of poles
@@ -760,8 +765,8 @@ pub fn array1_bspline_prefiltering_ext_gene<'a>(
     match ima_mask_in {
         Some(mask_view) => {
                 // Compute the influence radius of an element
-                let influence_treshold = mask_influence_treshold.expect("Error : missing optional parameter `influence_threshold`");
-                let influence_radius = compute_prefiltering_influence_radius(n, influence_treshold);
+                let influence_threshold = mask_influence_threshold.expect("Error : missing optional parameter `influence_threshold`");
+                let influence_radius = compute_prefiltering_influence_radius(n, influence_threshold);
                 
                 // Propagate the zeros
                 propagate_zeros_influence(&mut mask_view.data, mask_view.ncol, mask_view.nrow, influence_radius);
@@ -827,6 +832,139 @@ pub fn array1_bspline_prefiltering_ext_gene<'a>(
     Ok(())
 }
 
+/// Compute the safe-valid window after B-spline prefiltering with mask propagation
+///
+/// This is the **companion function** to [`array1_bspline_prefiltering_ext_gene`] when
+/// the caller maintains a *safe-valid window* alongside the validity mask. Instead of
+/// running the actual prefiltering, this function predicts how the safe-valid window
+/// shrinks once the prefiltering has been applied, *without* materially modifying the
+/// mask or the image.
+///
+/// A *safe-valid window* is a sub-region of the input mask that is guaranteed to
+/// contain only valid pixels. Propagating it through a stage that invalidates pixels
+/// near borders and around invalid neighbours requires eroding the window by the
+/// worst-case influence radius of that stage.
+///
+/// # Window Shrinkage
+///
+/// Two effects contribute to the erosion of the safe window during prefiltering:
+///
+/// 1. **Influence radius propagation:** as documented in
+///    [`array1_bspline_prefiltering_ext_gene`], an invalid pixel contaminates its
+///    neighbourhood up to a Manhattan distance of $d = \lceil \ln(s) / \ln(|z_k|) \rceil$,
+///    where $s$ is the residual influence threshold and $z_k$ is the dominant pole.
+///    The safe window must therefore be eroded by `influence_radius` pixels on each
+///    side to exclude any region that could be reached by invalid contamination.
+///
+/// 2. **Domain extension invalidation:** the recursive prefilter relies on extended
+///    boundary samples (the first/last `l0 - n/2` rows and columns) that are only
+///    valid for prefiltering, not for the subsequent interpolation. These elements
+///    are unconditionally invalidated by [`array1_bspline_prefiltering_ext_gene`],
+///    so the safe window must also exclude them.
+///
+/// The final erosion margin is the maximum of these two contributions:
+///
+/// $$\text{margin} = \max(\text{influence\_radius},\ L_0 + N/2)$$
+///
+/// where $L_0$ is the domain extension width and $N$ is the B-spline order.
+///
+/// # Return Value
+///
+/// Returns `Some(window)` with the shrunk safe-valid window when the erosion still
+/// yields a non-empty region inside the input mask, or `None` when the requested
+/// margin is too large for the input dimensions or for the original safe window.
+/// A `None` result means the caller cannot rely on a safe-valid window after
+/// prefiltering and must fall back to per-pixel validity checks.
+///
+/// # Prerequisites
+///
+/// This function assumes the same boundary extension contract as
+/// [`array1_bspline_prefiltering_ext_gene`]: the input mask `ima_mask_in` is the
+/// extended mask, and `ima_mask_in_safe_win` is expressed in the coordinate frame
+/// of that extended mask.
+///
+/// # Parameters
+///
+/// - `n`: B-spline order (must be odd: 3, 5, 7, 9, or 11)
+/// - `epsilon`: Precision parameter for the truncation index calculation. Defines the
+///   acceptable error when approximating the infinite sums. Smaller values require
+///   larger margins for prefiltering, and therefore shrink the safe window more.
+/// - `trunc_idx`: Optional buffer holding the $N(i, \epsilon)$ truncation indices.
+///   If not provided, computed internally via `compute_2d_truncation_index`.
+/// - `ima_mask_in`: Input mask array (flattened 2D view). Not modified; only its
+///   dimensions are used to bound-check the eroded window.
+/// - `ima_mask_in_safe_win`: Safe-valid window inside `ima_mask_in` (in extended
+///   coordinates).
+/// - `mask_influence_threshold`: Residual influence threshold $s$ used to compute
+///   the radius of the propagation of masked data. Determines the acceptable
+///   relative contamination from invalid pixels.
+///
+/// # Returns
+///
+/// - `Some(GxArrayWindow)`: the eroded safe-valid window, when it remains non-empty
+///   and fits inside the input mask.
+/// - `None`: when the erosion margin is too large for either the input mask
+///   dimensions or the original safe window.
+///
+/// # Panics
+///
+/// - If `n` is not odd (even orders are not supported)
+/// - If `n / 2 == 0` (invalid B-spline order)
+pub fn array1_bspline_prefiltering_ext_gene_mask_safe_win<'a>(
+        n: usize,
+        epsilon: f64,
+        trunc_idx: Option<&'a [usize]>,
+        ima_mask_in: &GxArrayView<u8>,
+        ima_mask_in_safe_win: &GxArrayWindow,
+        mask_influence_threshold: f64,
+) -> Option<GxArrayWindow>
+{
+    // Retrieve the number of poles
+    let nt = n / 2;
+    assert!(nt > 0);
+    // Ensure bspline is odd (otherwise we need to implement normalization)
+    assert!(n % 2 == 1, "Only odd order are supported");
+
+    // The parameter trunc_idx is optional, if not given it must be computed.
+    let trunc_idx = match trunc_idx {
+        Some(buffer) => buffer,
+        None => {
+            // trunc_idx was not given we have to compute it.
+            &compute_2d_truncation_index(n, epsilon)
+        }
+    };
+
+    // Compute the required domain extension based on the truncation index for order n
+    let lext = compute_2d_domain_extension_from_truncation_idx(n, &trunc_idx);
+    let l0 = lext[0];
+
+    // Compute the influence radius of an element
+    let influence_radius = compute_prefiltering_influence_radius(n, mask_influence_threshold).ceil() as usize;
+
+    // First erode of influence_radius
+    let eroded_start_row = ima_mask_in_safe_win.start_row + influence_radius;
+    let eroded_end_row = ima_mask_in_safe_win.end_row - influence_radius;
+    let eroded_start_col = ima_mask_in_safe_win.start_col + influence_radius;
+    let eroded_end_col = ima_mask_in_safe_win.end_col - influence_radius;
+
+    // Intersect with the masked border used for the truncated sum
+    let safe_win_eroded = GxArrayWindow {
+        start_row: max(eroded_start_row, l0 - nt),
+        end_row: min(eroded_end_row, ima_mask_in.nrow - (l0 - nt) - 1),
+        start_col: max(eroded_start_col, l0 - nt),
+        end_col: min(eroded_end_col, ima_mask_in.ncol - (l0 - nt) - 1),
+        };
+
+    if safe_win_eroded.start_row > safe_win_eroded.end_row
+            || safe_win_eroded.end_row >= ima_mask_in.nrow
+            || safe_win_eroded.start_col > safe_win_eroded.end_col
+            || safe_win_eroded.end_col >= ima_mask_in.ncol
+    {
+        None
+    } else {
+        Some(safe_win_eroded)
+    }
+}
 
 // Tests unitaires
 #[cfg(test)]

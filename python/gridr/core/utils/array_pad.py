@@ -67,7 +67,7 @@ if USE_FALLBACK:
         "Using fallback implementation which may allocate extra memory. "
         "Consider upgrading: pip install -U 'numpy>=2.0.0'",
         UserWarning,
-        stacklevel=1,  # stacklevel=1 car appelé au niveau module
+        stacklevel=1,  # stacklevel=1 as it is called at module level
     )
 else:
     from numpy.lib._arraypad_impl import (

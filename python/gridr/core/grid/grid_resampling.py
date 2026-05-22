@@ -23,6 +23,7 @@ Grid resampling
 # pylint: disable=C0413
 import logging
 import sys
+import warnings
 from typing import Any, NamedTuple, NoReturn, Optional, Tuple, Union
 
 import numpy as np
@@ -35,7 +36,10 @@ from gridr.core.grid.grid_utils import (
     array_compute_resampling_grid_src_boundaries,
     read_win_from_grid_metrics,
 )
-from gridr.core.interp.bspline_prefiltering import array_bspline_prefiltering
+from gridr.core.interp.bspline_prefiltering import (
+    array_bspline_prefiltering,
+    array_bspline_prefiltering_mask_safe_win,
+)
 from gridr.core.interp.interpolator import (
     Interpolator,
     InterpolatorIdentifier,
@@ -78,6 +82,13 @@ causing a Rust panic when attempting to access out-of-bounds indices.
 This safety check helps prevent such runtime errors by proactively extending
 boundary conditions if required.
 """
+
+
+class GridMetricsError(ValueError):
+    """Exception raised when grid metrics computation was not possible"""
+
+    def __init__(self, message: str = "grid metrics error"):
+        super().__init__(message)
 
 
 def calculate_source_extent(
@@ -404,10 +415,25 @@ def source_extent_pad(
         Boundary condition mode for padding the margins. If None, padded regions
         are left uninitialized (except if `fill` is provided). Available modes:
 
-        - 'edge': Repeat edge values
-        - 'reflect': Mirror reflection without repeating edge
-        - 'symmetric': Mirror reflection with repeating edge
-        - 'wrap': Circular wrap-around
+        - 'constant' (0)
+            Pads with a constant value (0).
+
+        -'edge'
+            Pads with the edge values of array.
+
+        - 'reflect'
+            Pads with the reflection of the vector mirrored on
+            the first and last values of the vector along each
+            axis.
+
+        - 'symmetric'
+            Pads with the reflection of the vector mirrored
+            along the edge of the array.
+
+        - 'wrap'
+            Pads with the wrap of the vector along the axis.
+            The first values are used to pad the end and the
+            end values are used to pad the beginning.
 
     fill : scalar, optional
         Value to initialize padded regions before applying boundary conditions.
@@ -639,12 +665,34 @@ def resolve_mask_strategy(
         A full-valid mask is treated as no mask.
 
     boundary_condition : str or None
-        Boundary condition used to fill the padded zone (``'edge'``,
-        ``'reflect'``, ``'symmetric'``, ``'wrap'``).
-        ``None`` means the padded zone contains zeros (invalid data).
+        Boundary condition used to fill the padded zone. Available modes :
+
+        - 'constant' (0)
+            Pads with a constant value (0).
+
+        -'edge'
+            Pads with the edge values of array.
+
+        - 'reflect'
+            Pads with the reflection of the vector mirrored on
+            the first and last values of the vector along each
+            axis.
+
+        - 'symmetric'
+            Pads with the reflection of the vector mirrored
+            along the edge of the array.
+
+        - 'wrap'
+            Pads with the wrap of the vector along the axis.
+            The first values are used to pad the end and the
+            end values are used to pad the beginning.
+
+        - ``None`` means the padded zone contains zeros but is considered as
+            non trusted data. The behaviour is different from `constant` : with
+            that mode, the padded zone can be either trusted or not.
 
     trust_padding : bool, default True
-        If ``True`` and a boundary condition was applied, the
+        If ``True`` and a not `None` boundary condition was applied, the
         extrapolated padding data is considered numerically valid.
         When ``False``, the padded zone is treated as suspect
         regardless of the boundary condition.
@@ -772,7 +820,7 @@ def resolve_mask_strategy(
             )
     else:
         # Padding is applied but not trusted => safe_region
-        sr = _create_safe_region(pad, trust_padding, array_in_shape)
+        sr = _create_safe_region(pad, False, array_in_shape)
         return ResamplingMaskStrategy(
             mask_kind="safe_region",
             safe_region=sr,
@@ -1112,12 +1160,37 @@ def standalone_preprocessing(
         pre-padded coordinates.  Forwarded to ``prepare_mask``.
 
     boundary_condition : str or None
-        Boundary condition for padding (``'edge'``, ``'reflect'``,
-        ``'symmetric'``, ``'wrap'``, or ``None`` for zero-fill).
+        Boundary condition used to fill the padded zone. Available modes :
 
-    trust_padding : bool or None
-        Whether extrapolated padding values are considered valid.
-        Forwarded to ``prepare_mask``.
+        - 'constant' (0)
+            Pads with a constant value (0).
+
+        -'edge'
+            Pads with the edge values of array.
+
+        - 'reflect'
+            Pads with the reflection of the vector mirrored on
+            the first and last values of the vector along each
+            axis.
+
+        - 'symmetric'
+            Pads with the reflection of the vector mirrored
+            along the edge of the array.
+
+        - 'wrap'
+            Pads with the wrap of the vector along the axis.
+            The first values are used to pad the end and the
+            end values are used to pad the beginning.
+
+        - ``None`` means the padded zone contains zeros but is considered as
+            non trusted data. The behaviour is different from `constant` : with
+            that mode, the padded zone can be either trusted or not.
+
+    trust_padding : bool, default True
+        If ``True`` and a not `None` boundary condition was applied, the
+        extrapolated padding data is considered numerically valid.
+        When ``False``, the padded zone is treated as suspect
+        regardless of the boundary condition.
 
     check_boundaries : bool
         Passed through unchanged to the return value.
@@ -1167,13 +1240,23 @@ def standalone_preprocessing(
     if array_in_origin is not None and np.any(np.asarray(array_in_origin) != 0.0):
         raise ValueError("Shifting the array origin is not available for standalone mode")
 
+    if boundary_condition is None and trust_padding:
+        warnings.warn(
+            (
+                "Standalone mode is enabled : trust_padding will be ignored with "
+                "`boundary_condition` set as `None`"
+            ),
+            UserWarning,
+            stacklevel=2,
+        )
+
     # Initialize the interpolator - required for B-spline for instance
     interp.initialize()
 
     # Compute required source extent in order to compute resampling from the grid
     (
         _,
-        _, 
+        _,
         pad,
         grid_metrics,
     ) = calculate_source_extent(
@@ -1193,10 +1276,8 @@ def standalone_preprocessing(
 
     array_in_shape_0 = array_in_shape
     if grid_metrics is None:
-        raise ValueError(
-            "Cannot compute grid metrics. Please check your grid !"
-        )
-    
+        raise GridMetricsError("Cannot compute grid metrics. Please check your grid !")
+
     # Apply padding to data if needed
     # Note : pad can be None for a full out of domain grid
     if pad is None:
@@ -1243,17 +1324,25 @@ def standalone_preprocessing(
     # Manage interpolator preprocessings
     if is_bspline(interp):
         # Prefiltering is performed in-place on the available data.
-
-        # TODO : pass safe-region if any
         array_bspline_prefiltering(
             array_in=array_in,
             array_in_mask=array_in_mask,
             interp=interp,
         )
-        # Update safe region after prefiltering
-        # NOTE : cf previous TODO => use safe-region in preprocessing
-        # For now we consider that there is no safe region after preprocessing
-        safe_region = None
+        if safe_region is not None and array_in_mask is not None:
+            # update safe_region
+            # Note : when setting trust_padding as false, the input safe region already
+            # consider the padded borders as invalid. In that case the erosion
+            # on safe_window is applied twice as it is also applied by
+            # array_bspline_prefiltering_mask_safe_win.
+            # This behaviour is not optimal but it is conservative
+            safe_region = array_bspline_prefiltering_mask_safe_win(
+                array_in_mask=array_in_mask,
+                array_in_mask_safe_win=safe_region,
+                interp=interp,
+            )
+        else:
+            safe_region = None
 
     return (
         array_in,
@@ -1489,14 +1578,32 @@ def array_grid_resampling(
 
     boundary_condition : Optional[str], default=None
         Defines how to handle boundary conditions when padding is required in
-        standalone mode. Ignored when `standalone=False`. Options:
+        standalone mode. Ignored when `standalone=False`. Available modes :
 
-        - `'edge'`: Pad with the edge values of the array (repeat boundary values).
-        - `'wrap'`: Wrap around to the opposite edge (circular/periodic boundary).
-        - `'reflect'`: Mirror reflection without repeating the edge values.
-        - `'symmetric'`: Mirror reflection with edge values repeated.
-        - `None`: Zero padding is applied. If insufficient data is available for
-          interpolation, those regions will be marked as invalid in the mask.
+        - 'constant' (0)
+            Pads with a constant value (0).
+
+        -'edge'
+            Pads with the edge values of array.
+
+        - 'reflect'
+            Pads with the reflection of the vector mirrored on
+            the first and last values of the vector along each
+            axis.
+
+        - 'symmetric'
+            Pads with the reflection of the vector mirrored
+            along the edge of the array.
+
+        - 'wrap'
+            Pads with the wrap of the vector along the axis.
+            The first values are used to pad the end and the
+            end values are used to pad the beginning.
+
+        - ``None`` Zero padding is applied. If insufficient data is available for
+          interpolation, those regions will be marked as invalid in the mask. The
+          behaviour is different from `constant` : with that mode, the padded zone
+          can be either trusted or not.
 
         The boundary condition applies to ``array_in``. For the mask, the
         behaviour depends on ``trust_padding``:
@@ -1570,6 +1677,11 @@ def array_grid_resampling(
         grid system.
     -   When `standalone=True`, the function may allocate temporary arrays
         internally, which may increase memory usage.
+    -   If the grid metrics calculation fails, the method emits a warning, sets
+        the output array’s values to the designated nodata value, and marks the
+        mask array as a masked-invalid region. When `array_out_win` is provided,
+        nodata substitution, and masking are applied only to that window; all
+        other portions of the output remain unchanged.
 
     Limitations
     -----------
@@ -1659,34 +1771,45 @@ def array_grid_resampling(
     interp = get_interpolator(interp, **interp_kwargs)
 
     # Execute standalone preprocessing if needed
+    bypass_func = False
     if standalone:
-        (
-            array_in,
-            array_in_shape,
-            array_in_origin,
-            array_in_mask,
-            array_in_mask_safe_region,
-            check_boundaries,
-        ) = standalone_preprocessing(
-            interp=interp,
-            array_in=array_in,
-            array_in_shape=array_in_shape,
-            array_in_origin=array_in_origin,
-            grid_row=grid_row,
-            grid_col=grid_col,
-            grid_resolution=grid_resolution,
-            grid_nodata=grid_nodata,
-            grid_mask=grid_mask,
-            grid_mask_valid_value=grid_mask_valid_value,
-            win=win,
-            array_in_mask=array_in_mask,
-            array_in_mask_safe_win=array_in_mask_safe_win,
-            boundary_condition=boundary_condition,
-            trust_padding=trust_padding,
-            check_boundaries=check_boundaries,
-            logger_msg_prefix=logger_msg_prefix,
-            logger=logger,
-        )
+        try:
+            (
+                array_in,
+                array_in_shape,
+                array_in_origin,
+                array_in_mask,
+                array_in_mask_safe_region,
+                check_boundaries,
+            ) = standalone_preprocessing(
+                interp=interp,
+                array_in=array_in,
+                array_in_shape=array_in_shape,
+                array_in_origin=array_in_origin,
+                grid_row=grid_row,
+                grid_col=grid_col,
+                grid_resolution=grid_resolution,
+                grid_nodata=grid_nodata,
+                grid_mask=grid_mask,
+                grid_mask_valid_value=grid_mask_valid_value,
+                win=win,
+                array_in_mask=array_in_mask,
+                array_in_mask_safe_win=array_in_mask_safe_win,
+                boundary_condition=boundary_condition,
+                trust_padding=trust_padding,
+                check_boundaries=check_boundaries,
+                logger_msg_prefix=logger_msg_prefix,
+                logger=logger,
+            )
+        except GridMetricsError:
+            warnings.warn(
+                "Grid metrics cannot be computed. Check your input grid data",
+                UserWarning,
+                stacklevel=2,
+            )
+            bypass_func = True
+        else:
+            array_in_mask_safe_win = array_in_mask_safe_region
 
     # Flatten data to pass to Rust function
     array_in = array_in.reshape(-1)
@@ -1745,6 +1868,14 @@ def array_grid_resampling(
         array_in_mask = array_in_mask.reshape(-1)
 
     # TODO : USE array_in_mask_safe_win
+    py_array_in_mask_safe_win = None
+    if array_in_mask_safe_win is not None:
+        py_array_in_mask_safe_win = PyArrayWindow2(
+            start_row=array_in_mask_safe_win[0][0],
+            end_row=array_in_mask_safe_win[0][1],
+            start_col=array_in_mask_safe_win[1][0],
+            end_col=array_in_mask_safe_win[1][1],
+        )
 
     # Manage optional output mask
     if array_out_mask is not None:
@@ -1786,27 +1917,43 @@ def array_grid_resampling(
             f"py_array_grid_resampling_ function not available for types {func_types}"
         ) from err
     else:
-        func(
-            interp=interp,
-            array_in=array_in,
-            array_in_shape=array_in_shape,
-            grid_row=grid_row,
-            grid_col=grid_col,
-            grid_shape=grid_shape,
-            grid_resolution=grid_resolution,
-            array_out=array_out,
-            array_out_shape=array_out_shape,
-            nodata_out=nodata_out,
-            array_in_origin=array_in_origin,
-            array_in_mask=array_in_mask,
-            grid_mask=grid_mask,
-            grid_mask_valid_value=grid_mask_valid_value,
-            grid_nodata=grid_nodata,
-            array_out_mask=array_out_mask,
-            grid_win=py_grid_win,
-            out_win=py_array_out_win,
-            check_boundaries=check_boundaries,
-        )
+        if not bypass_func:
+            func(
+                interp=interp,
+                array_in=array_in,
+                array_in_shape=array_in_shape,
+                grid_row=grid_row,
+                grid_col=grid_col,
+                grid_shape=grid_shape,
+                grid_resolution=grid_resolution,
+                array_out=array_out,
+                array_out_shape=array_out_shape,
+                nodata_out=nodata_out,
+                array_in_origin=array_in_origin,
+                array_in_mask=array_in_mask,
+                array_in_mask_safe_win=py_array_in_mask_safe_win,
+                grid_mask=grid_mask,
+                grid_mask_valid_value=grid_mask_valid_value,
+                grid_nodata=grid_nodata,
+                array_out_mask=array_out_mask,
+                grid_win=py_grid_win,
+                out_win=py_array_out_win,
+                check_boundaries=check_boundaries,
+            )
+        else:
+            # Bypass the func call and set output to nodata - this is mainly to
+            # be consistent with the chain method
+            if array_out_win is None:
+                array_out[:] = nodata_out
+                if array_out_mask is not None:
+                    array_out_mask[:] = Validity.INVALID
+            else:
+                view = array_out.reshape(array_out_shape)
+                view[..., *window_indices(array_out_win)] = nodata_out
+                if array_out_mask is not None:
+                    mask_view = array_out_mask.reshape(array_out_shape[1:])
+                    mask_view[*window_indices(array_out_win)] = Validity.INVALID
+
     if ret is not None:
         ret = ret.reshape(array_out_shape).squeeze()
     if ret_mask is not None:

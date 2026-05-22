@@ -191,26 +191,48 @@ pub trait GxArrayViewInterpolatorInputMaskStrategy {
     ///
     /// # Parameters
     /// - `start_idx`: flat index of the top-left corner of the window in the
+    /// - `start_row_idx`: row index of the top-left corner of the window
+    /// - `start_col_idx`: column index of the top-left corner of the window
     ///
     /// # Const parameters
     /// - `H`: window's height.
     /// - `W`: widows's width.
+    ///
+    /// # Design Rationale
+    /// This function accepts both a 1D flat index and its corresponding 2D 
+    /// row/column indices for the window's top-left corner. This dual-parameter
+    /// approach allows the implementation to chosse whichever coordinate 
+    /// representation is more optimal, avoiding unnecessary index calculations
+    /// that would be required to convert between 1D and 2D representations.
     fn count_valid_window<const H: usize, const W: usize>(
         &self, 
         start_idx: usize,
+        start_row_idx: usize,
+        start_col_idx: usize,
     ) -> usize;
     
     /// Returns the number of valid points within the window
     ///
     /// # Parameters
     /// - `start_idx`: flat index of the top-left corner of the window in the
+    /// - `start_row_idx`: row index of the top-left corner of the window
+    /// - `start_col_idx`: column index of the top-left corner of the window
     ///
     /// # Const parameters
     /// - `H`: window's height.
     /// - `W`: widows's width.
+    ///
+    /// # Design Rationale
+    /// This function accepts both a 1D flat index and its corresponding 2D 
+    /// row/column indices for the window's top-left corner. This dual-parameter
+    /// approach allows the implementation to chosse whichever coordinate 
+    /// representation is more optimal, avoiding unnecessary index calculations
+    /// that would be required to convert between 1D and 2D representations.
     unsafe fn count_valid_window_unsafe<const H: usize, const W: usize>(
         &self, 
         start_idx: usize,
+        start_row_idx: usize,
+        start_col_idx: usize,
     ) -> usize;
     
     /// Returns `1` if all points with non-zero weights in the window are valid,
@@ -319,9 +341,13 @@ impl<T: GxArrayViewInterpolatorInputMaskStrategy>
     fn count_valid_window<const H: usize, const W: usize>(
         &self, 
         start_idx: usize,
+        start_row_idx: usize,
+        start_col_idx: usize,
     ) -> usize {
         (*self).count_valid_window::<H, W>(
             start_idx,
+            start_row_idx,
+            start_col_idx,
         )
     }
     
@@ -329,9 +355,13 @@ impl<T: GxArrayViewInterpolatorInputMaskStrategy>
     unsafe fn count_valid_window_unsafe<const H: usize, const W: usize>(
         &self, 
         start_idx: usize,
+        start_row_idx: usize,
+        start_col_idx: usize,
     ) -> usize {
         (*self).count_valid_window_unsafe::<H, W>(
             start_idx,
+            start_row_idx,
+            start_col_idx,
         )
     }
 
@@ -414,6 +444,8 @@ impl GxArrayViewInterpolatorInputMaskStrategy for NoInputMask {
     fn count_valid_window<const H: usize, const W: usize>(
         &self, 
         _start_idx: usize,
+        _start_row_idx: usize,
+        _start_col_idx: usize,
     ) -> usize {
         H*W
     }
@@ -422,6 +454,8 @@ impl GxArrayViewInterpolatorInputMaskStrategy for NoInputMask {
     unsafe fn count_valid_window_unsafe<const H: usize, const W: usize>(
         &self, 
         _start_idx: usize,
+        _start_row_idx: usize,
+        _start_col_idx: usize,
     ) -> usize {
         H*W
     }
@@ -531,6 +565,8 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
     fn count_valid_window<const H: usize, const W: usize>(
         &self,
         start_idx: usize,
+        _start_row_idx: usize,
+        _start_col_idx: usize,
     ) -> usize {
         let ncol = self.mask.ncol;
         let mut row_base = start_idx;
@@ -548,6 +584,8 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
     unsafe fn count_valid_window_unsafe<const H: usize, const W: usize>(
         &self,
         start_idx: usize,
+        _start_row_idx: usize,
+        _start_col_idx: usize,
     ) -> usize {
         let ncol = self.mask.ncol;
         let data = &self.mask.data;
@@ -721,10 +759,12 @@ impl<'a> BinaryInputMaskWithSafeWindow<'a> {
         start_row_idx: usize,
         start_col_idx: usize,
     ) -> bool {
-        start_row_idx >= self.conv_safe_min_row
+        let test = start_row_idx >= self.conv_safe_min_row
             && start_row_idx <= self.conv_safe_max_row
             && start_col_idx >= self.conv_safe_min_col
-            && start_col_idx <= self.conv_safe_max_col
+            && start_col_idx <= self.conv_safe_max_col;
+        //println!("row_idx={0} [{1} - {2}] | col_idx={3} [{4} <= {5}] = {6}", start_row_idx, self.conv_safe_min_row, self.conv_safe_max_row, start_col_idx, self.conv_safe_min_col, self.conv_safe_max_col, test);
+        test
     }
 }
 
@@ -785,16 +825,37 @@ for BinaryInputMaskWithSafeWindow<'a> {
     fn count_valid_window<const H: usize, const W: usize>(
         &self,
         start_idx: usize,
+        start_row_idx: usize,
+        start_col_idx: usize,
     ) -> usize {
-        self.inner.count_valid_window::<H, W>(start_idx)
+        // With a safe window we consider that if the index is considered
+        // safe, ie. all points are valid within the window, and then the
+        // number of valid point is H*W
+        if self.is_in_conv_safe_box(start_row_idx, start_col_idx)
+        {
+            H*W
+        } else {
+            self.inner.count_valid_window::<H, W>(
+                start_idx, start_row_idx, start_col_idx
+            )
+        }
     }
 
     #[inline(always)]
     unsafe fn count_valid_window_unsafe<const H: usize, const W: usize>(
         &self,
         start_idx: usize,
+        start_row_idx: usize,
+        start_col_idx: usize,
     ) -> usize {
-        self.inner.count_valid_window_unsafe::<H, W>(start_idx)
+        if self.is_in_conv_safe_box(start_row_idx, start_col_idx)
+        {
+            H*W
+        } else {
+            self.inner.count_valid_window_unsafe::<H, W>(
+                start_idx, start_row_idx, start_col_idx
+            )
+        }
     }
 
     /// For active rows, the inner loop uses a pre-sliced row and iterator to
@@ -1704,7 +1765,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
 
         // Two-stage short-circuit mask validation.
         let count = context.input_mask()
-            .count_valid_window::<KROWS, KCOLS>(flat_base);
+            .count_valid_window::<KROWS, KCOLS>(flat_base, row_start, col_start);
 
         if count == KROWS * KCOLS
             || (count > 0
@@ -2077,7 +2138,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
 
         // Two-stage short-circuit mask validation.
         let count = context.input_mask()
-            .count_valid_window::<KROWS, KCOLS>(flat_base);
+            .count_valid_window::<KROWS, KCOLS>(flat_base, row_start, col_start);
 
         if count == KROWS * KCOLS
             || (count > 0

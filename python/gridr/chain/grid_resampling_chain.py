@@ -72,7 +72,10 @@ from gridr.core.grid.grid_resampling import (
     resolve_mask_strategy,
 )
 from gridr.core.grid.grid_utils import array_shift_grid_coordinates
-from gridr.core.interp.bspline_prefiltering import array_bspline_prefiltering
+from gridr.core.interp.bspline_prefiltering import (
+    array_bspline_prefiltering,
+    array_bspline_prefiltering_mask_safe_win,
+)
 from gridr.core.interp.interpolator import (
     Interpolator,
     InterpolatorIdentifier,
@@ -256,7 +259,9 @@ def apply_mask_strategy_chain(
         # Reproduce source_extent_pad two-step logic on the existing buffer.
 
         # Step 1: fill the padded zone with strategy.pad_fill.
-        # The buffer is already initialised to Validity.INVALID (np.full),
+        # The buffer is already initialised to Validity.INVALID (np.full) (see
+        # basic_grid_resampling_array) for the padded zone (the interior
+        # contains the read/rasterized mask value),
         # so this step only runs when pad_fill == Validity.VALID to avoid
         # a redundant write in the common case.
         if strategy.pad_fill == Validity.VALID:
@@ -534,6 +539,7 @@ def basic_grid_resampling_array(
     )
 
     if array_src_win_read is not None:
+        # if array_src_win_read is not None then pad is not None too
 
         # Read data is available
         full_nodata = False
@@ -854,12 +860,22 @@ def basic_grid_resampling_array(
         # image. Instead a propagation of invalid data is performed base on
         # the interpolator `mask_influence_threshold` parameter.
         if is_bspline(interp):
+
             array_bspline_prefiltering(
                 array_in=array_src_read_buffer,  # thats the previously read buffer
                 array_in_mask=array_in_mask,
                 interp=interp,  # The interpolator
             )
-            safe_region = None
+
+            if safe_region is not None and array_in_mask is not None:
+                # update safe_region
+                safe_region = array_bspline_prefiltering_mask_safe_win(
+                    array_in_mask=array_in_mask,
+                    array_in_mask_safe_win=safe_region,
+                    interp=interp,
+                )
+            else:
+                safe_region = None
 
         # Call the resampling method - this method returns a tuple containing
         # the output array and the output mask.
@@ -989,9 +1005,33 @@ def basic_grid_resampling_chain(
 
     boundary_condition : str or None, default None
         Optional padding mode when required data for interpolation lies
-        outside the source dataset domain. Available values are a subset
-        of the ``numpy.pad`` method modes: ``'edge'``, ``'reflect'``,
-        ``'symmetric'``, or ``'wrap'``.
+        outside the source dataset domain. Available modes :
+
+        - 'constant' (0)
+            Pads with a constant value (0).
+
+        -'edge'
+            Pads with the edge values of array.
+
+        - 'reflect'
+            Pads with the reflection of the vector mirrored on
+            the first and last values of the vector along each
+            axis.
+
+        - 'symmetric'
+            Pads with the reflection of the vector mirrored
+            along the edge of the array.
+
+        - 'wrap'
+            Pads with the wrap of the vector along the axis.
+            The first values are used to pad the end and the
+            end values are used to pad the beginning.
+
+        - ``None`` Zero padding is applied. If insufficient data is available for
+          interpolation, those regions will be marked as invalid in the mask. The
+          behaviour is different from `constant` : with that mode, the padded zone
+          can be either trusted or not.
+
         Uses a GridR-specific in-place padding implementation instead of
         ``numpy.pad`` to avoid unnecessary memory allocation.
         For the mask, the padded zone fill value is determined by

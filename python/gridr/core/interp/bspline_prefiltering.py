@@ -30,7 +30,9 @@ from typing import NoReturn, Optional
 import numpy as np
 
 from gridr.cdylib import (
+    PyArrayWindow2,
     py_array1_bspline_prefiltering_f64,
+    py_array1_bspline_prefiltering_mask_safe_win_f64,
     py_compute_2d_domain_extension,
     py_compute_2d_truncation_index,
 )
@@ -281,7 +283,7 @@ def array_bspline_prefiltering(
             "Both parameters `interp` and `n` are undefined. "
             "Please provide one (and only one) of them"
         )
-        
+
     assert array_in.flags.c_contiguous is True
 
     array_in_shape = array_in.shape
@@ -309,10 +311,9 @@ def array_bspline_prefiltering(
             )
         if trunc_idx is not None and precision is not None:
             raise Exception(
-                "The `precision` parameter and the `trunc_idx` parameter are"
-                " mutually exclusive"
+                "The `precision` parameter and the `trunc_idx` parameter are" " mutually exclusive"
             )
-            
+
         # Manage optional trunc_idx and precision
         if trunc_idx is not None:
             assert trunc_idx.flags.c_contiguous is True
@@ -344,9 +345,179 @@ def array_bspline_prefiltering(
     else:
         if not is_bspline(interp):
             raise ValueError(f"The interpolator {interp} is not a B-Spline interpolator")
-            
+
         interp.array1_bspline_prefiltering_ext_f64(
             array_in=array_in,
             array_in_shape=array_in_shape,
             array_in_mask=array_in_mask,
         )
+
+
+def array_bspline_prefiltering_mask_safe_win(
+    array_in_mask: np.ndarray,
+    array_in_mask_safe_win: np.ndarray,
+    interp: Optional[BSplineInterpolator] = None,
+    n: Optional[int] = None,
+    trunc_idx: Optional[np.ndarray] = None,
+    precision: Optional[int] = 6,
+    mask_influence_threshold: Optional[float] = 0.001,
+) -> NoReturn:
+    """Compute the safe-valid window after B-spline prefiltering with mask propagation
+
+    This is the **companion function** to [`array_bspline_prefiltering`] when
+    the caller maintains a *safe-valid window* alongside the validity mask. Instead of
+    running the actual prefiltering, this function predicts how a safe-valid window
+    shrinks once the prefiltering has been applied, *without* materially modifying the
+    mask or the image.
+
+    A *safe-valid window* is a sub-region of the input mask that is guaranteed to
+    contain only valid pixels. Propagating it through a stage that invalidates pixels
+    near borders and around invalid neighbours requires eroding the window by the
+    worst-case influence radius of that stage.
+
+    This method provides two mutually exclusive modes:
+
+      - **Via interpolator object**: Provide `interp` (must be initialized)
+      - **Direct specification**: Provide `n` with either `trunc_idx` or
+        `precision` (they are mutually exclusive)
+
+    Parameters
+    ----------
+    array_in_mask : np.ndarray
+        Validity mask (uint8: 1=valid, 0=invalid) with shape (nrow, ncol).
+        Read-only usage in order to validate the eroded safe window.
+
+    array_in_mask_safe_win: np.ndarray, shape (2, 2),
+        Caller-provided safe region within the input mask, as
+        ``[[row_start, row_end], [col_start, col_end]]`` with
+        inclusive boundaries.
+
+    interp : BSplineInterpolator, optional
+        Initialized B-spline interpolator object. Mutually exclusive with `n`.
+
+    n : int, optional
+        B-spline order (must be odd: 3, 5, 7, 9, or 11). Mutually exclusive with
+        `interp`.
+
+    trunc_idx : np.ndarray, optional
+        Precomputed truncation indices :math:`N(i, ε)`. If not provided,
+        computed from `precision`.
+        This parameter is not used if `interp` is defined.
+
+    precision : int, default=6
+        Number of decimal places for precision parameter
+        :math:`ε = 10^{-precision}`.
+        Used to compute truncation indices when `trunc_idx` is not provided.
+        Smaller values require larger margins but higher accuracy.
+        This parameter is not used if `interp` is defined.
+
+    mask_influence_threshold : float, default=0.001
+        Residual influence threshold `s` (0 < s < 1) for invalid pixel
+        propagation. Value of 1 means no propagation.
+        This parameter is not used if `interp` is defined.
+
+
+    Raises
+    ------
+    ValueError
+        If both `interp` and `n` are provided, if neither is provided, or if
+        `interp` is not a B-spline interpolator.
+
+    Exception
+        If `precision` or `mask_influence_threshold` is missing when using direct
+        mode.
+
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+    - When using `interp`, it must be initialized via `interp.initialize()`
+    - The input mask array is not modified
+    - This is a Python wrapper around the optimized Rust function
+      `array1_bspline_prefiltering_ext_gene_mask_safe_win`
+    """
+    updated_win = None
+
+    # Manage interpolator definition mode
+    if interp is not None and n is not None:
+        raise ValueError(
+            "The parameters `interp` and `n` are mutually exclusives. "
+            "Please only provide one of them"
+        )
+    elif interp is None and n is None:
+        raise ValueError(
+            "Both parameters `interp` and `n` are undefined. "
+            "Please provide one (and only one) of them"
+        )
+
+    array_in_mask_shape = array_in_mask.shape
+    array_in_mask = array_in_mask.reshape(-1)
+
+    py_array_in_mask_safe_win = PyArrayWindow2(
+        start_row=array_in_mask_safe_win[0][0],
+        end_row=array_in_mask_safe_win[0][1],
+        start_col=array_in_mask_safe_win[1][0],
+        end_col=array_in_mask_safe_win[1][1],
+    )
+
+    # Functional branch
+    if n is not None:
+        if trunc_idx is None and precision is None:
+            raise Exception(
+                "You must provide either a value for the `precision` parameter"
+                " or for the `trunc_idx` parameter"
+            )
+        if trunc_idx is not None and precision is not None:
+            raise Exception(
+                "The `precision` parameter and the `trunc_idx` parameter are" " mutually exclusive"
+            )
+
+        # Manage optional trunc_idx and precision
+        if trunc_idx is not None:
+            assert trunc_idx.flags.c_contiguous is True
+            assert trunc_idx.dtype.kind in "iu"
+            if trunc_idx.dtype != np.dtype("uintp"):
+                trunc_idx = trunc_idx.astype(np.dtype("uintp"))
+
+            # Set a valid value for unused precision
+            if precision is None:
+                precision = 0.0
+        else:
+            precision = 10 ** (-precision)
+
+        if mask_influence_threshold is None:
+            raise Exception("Missing a value for the `mask_influence_threshold` parameter")
+
+        # Call the rust method
+        updated_win = py_array1_bspline_prefiltering_mask_safe_win_f64(
+            n=n,
+            epsilon=precision,
+            array_in_mask=array_in_mask,
+            array_in_mask_shape=array_in_mask_shape,
+            array_in_mask_safe_win=py_array_in_mask_safe_win,
+            trunc_idx=trunc_idx,
+            mask_influence_threshold=mask_influence_threshold,
+        )
+
+    # Object branch
+    else:
+        if not is_bspline(interp):
+            raise ValueError(f"The interpolator {interp} is not a B-Spline interpolator")
+
+        updated_win = interp.array1_bspline_prefiltering_ext_mask_safe_win(
+            array_in_mask=array_in_mask,
+            array_in_mask_shape=array_in_mask_shape,
+            array_in_mask_safe_win=py_array_in_mask_safe_win,
+        )
+
+    if updated_win is not None:
+        # Convert PyArrayWindow2 into np.ndarray
+        updated_win = np.asarray(
+            (
+                (updated_win.start_row, updated_win.end_row),
+                (updated_win.start_col, updated_win.end_col),
+            )
+        )
+    return updated_win

@@ -21,8 +21,17 @@ use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 use numpy::{PyArray1, PyArrayMethods, ToPyArray};
 
-use crate::core::gx_array::GxArrayViewMut;
-use crate::core::interp::gx_bspline_prefiltering::{compute_2d_truncation_index, compute_2d_domain_extension, array1_bspline_prefiltering_ext_gene};
+use crate::core::gx_array::{
+    GxArrayView,
+    GxArrayViewMut
+};
+use crate::core::interp::gx_bspline_prefiltering::{
+    compute_2d_truncation_index,
+    compute_2d_domain_extension,
+    array1_bspline_prefiltering_ext_gene,
+    array1_bspline_prefiltering_ext_gene_mask_safe_win,
+};
+use crate::pyapi::py_array::PyArrayWindow2;
 
 /// Truncation index computation for max order n
 /// The truncation index array is 1-based indexing.
@@ -247,3 +256,118 @@ pub fn py_array1_bspline_prefiltering_f64(
     ).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
+/// Compute the safe-valid window after B-spline prefiltering with mask propagation
+///
+/// The function wraps the `core::interp::array1_bspline_prefiltering_ext_gene_mask_safe_win`
+/// implementation.
+///
+/// This is the **companion function** to [`array1_bspline_prefiltering_ext_gene`] when
+/// the caller maintains a *safe-valid window* alongside the validity mask. Instead of
+/// running the actual prefiltering, this function predicts how the safe-valid window
+/// shrinks once the prefiltering has been applied, *without* materially modifying the
+/// mask or the image.
+///
+/// A *safe-valid window* is a sub-region of the input mask that is guaranteed to
+/// contain only valid pixels. Propagating it through a stage that invalidates pixels
+/// near borders and around invalid neighbours requires eroding the window by the
+/// worst-case influence radius of that stage.
+///
+/// # Window Shrinkage
+///
+/// Two effects contribute to the erosion of the safe window during prefiltering:
+///
+/// 1. **Influence radius propagation:** as documented in
+///    [`array1_bspline_prefiltering_ext_gene`], an invalid pixel contaminates its
+///    neighbourhood up to a Manhattan distance of $d = \lceil \ln(s) / \ln(|z_k|) \rceil$,
+///    where $s$ is the residual influence threshold and $z_k$ is the dominant pole.
+///    The safe window must therefore be eroded by `influence_radius` pixels on each
+///    side to exclude any region that could be reached by invalid contamination.
+///
+/// 2. **Domain extension invalidation:** the recursive prefilter relies on extended
+///    boundary samples (the first/last `l0 - n/2` rows and columns) that are only
+///    valid for prefiltering, not for the subsequent interpolation. These elements
+///    are unconditionally invalidated by [`array1_bspline_prefiltering_ext_gene`],
+///    so the safe window must also exclude them.
+///
+/// The final erosion margin is the maximum of these two contributions:
+///
+/// $$\text{margin} = \max(\text{influence\_radius},\ L_0 + N/2)$$
+///
+/// where $L_0$ is the domain extension width and $N$ is the B-spline order.
+///
+/// # Return Value
+///
+/// Returns `Some(window)` with the shrunk safe-valid window when the erosion still
+/// yields a non-empty region inside the input mask, or `None` when the requested
+/// margin is too large for the input dimensions or for the original safe window.
+/// A `None` result means the caller cannot rely on a safe-valid window after
+/// prefiltering and must fall back to per-pixel validity checks.
+///
+/// # Prerequisites
+///
+/// This function assumes the same boundary extension contract as
+/// [`array1_bspline_prefiltering_ext_gene`]: the input mask `ima_mask_in` is the
+/// extended mask, and `ima_mask_in_safe_win` is expressed in the coordinate frame
+/// of that extended mask.
+///
+/// # Parameters
+///
+/// - `n`: B-spline order (must be odd: 3, 5, 7, 9, or 11)
+/// - `epsilon`: Precision parameter for the truncation index calculation. Defines the
+///   acceptable error when approximating the infinite sums. Smaller values require
+///   larger margins for prefiltering, and therefore shrink the safe window more.
+/// - `trunc_idx`: Optional buffer holding the $N(i, \epsilon)$ truncation indices.
+///   If not provided, computed internally via `compute_2d_truncation_index`.
+/// - `ima_mask_in`: Input mask array (flattened 2D view). Not modified; only its
+///   dimensions are used to bound-check the eroded window.
+/// - `ima_mask_in_safe_win`: Safe-valid window inside `ima_mask_in` (in extended
+///   coordinates).
+/// - `mask_influence_threshold`: Residual influence threshold $s$ used to compute
+///   the radius of the propagation of masked data. Determines the acceptable
+///   relative contamination from invalid pixels.
+///
+/// # Returns
+///
+/// - `Some(GxArrayWindow)`: the eroded safe-valid window, when it remains non-empty
+///   and fits inside the input mask.
+/// - `None`: when the erosion margin is too large for either the input mask
+///   dimensions or the original safe window.
+///
+/// # Panics
+///
+/// - If `n` is not odd (even orders are not supported)
+/// - If `n / 2 == 0` (invalid B-spline order)
+#[pyfunction]
+#[pyo3(signature = (n, epsilon, array_in_mask, array_in_mask_shape, array_in_mask_safe_win, mask_influence_threshold, trunc_idx=None))]
+#[allow(clippy::too_many_arguments)]
+pub fn py_array1_bspline_prefiltering_mask_safe_win_f64(
+    n: usize,
+    epsilon: f64,
+    array_in_mask: &Bound<'_, PyArray1<u8>>,
+    array_in_mask_shape: (usize, usize),
+    array_in_mask_safe_win: PyArrayWindow2,
+    mask_influence_threshold: f64,
+    trunc_idx: Option<&Bound<'_, PyArray1<usize>>>,
+) -> Result<Option<PyArrayWindow2>, PyErr>
+{
+    // Create a safe read-only array view over the mask
+    let array_in_mask_view = array_in_mask.readonly();
+    let array_in_mask_slice = array_in_mask_view.as_slice().expect("Failed to get slice");
+    let mask_array_view = GxArrayView::new(array_in_mask_slice, 1, array_in_mask_shape.0, array_in_mask_shape.1);
+
+    // Prepare optional trunc_idx to pass to the wrapped core function
+    let trunc_idx_readonly = trunc_idx.map(|array| array.readonly());
+    let trunc_idx_opt: Option<&[usize]> = trunc_idx_readonly.as_ref().map(|r| r.as_slice()).transpose()?;
+
+    Ok(
+        array1_bspline_prefiltering_ext_gene_mask_safe_win(
+            n,
+            epsilon,
+            trunc_idx_opt,
+            &mask_array_view,
+            &array_in_mask_safe_win.into(),
+            mask_influence_threshold,
+        )
+        .map(|w| PyArrayWindow2::new(w.start_row, w.end_row, w.start_col, w.end_col))
+    )
+}

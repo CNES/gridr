@@ -82,7 +82,11 @@
 //! Briand, T., & Monasse, P. (2018). Theory and Practice of Image B-Spline Interpolation.
 //! *Image Processing On Line*, 8, 99-141. https://doi.org/10.5201/ipol.2018.221
 use::std::format;
-use crate::core::gx_array::{GxArrayView, GxArrayViewMut};
+use crate::core::gx_array::{
+    GxArrayView,
+    GxArrayViewMut,
+    GxArrayWindow,
+};
 use crate::core::gx_errors::GxError;
 use super::gx_array_view_interp::{
     GxArrayViewInterpolator,
@@ -94,6 +98,7 @@ use super::gx_bspline_prefiltering::{
     compute_2d_truncation_index,
     compute_2d_domain_extension_from_truncation_idx,
     array1_bspline_prefiltering_ext_gene,
+    array1_bspline_prefiltering_ext_gene_mask_safe_win,
     TRUNCATION_INDEX_BUFFER_MAX_SIZE,
     TRUNCATION_L_BUFFER_MAX_SIZE
 };
@@ -800,6 +805,20 @@ pub trait GxBSplineInterpolatorTrait<const N: usize>: GxArrayViewInterpolator
         ima_in: &mut GxArrayViewMut<'_, f64>,
         mask_in: Option<&'a mut GxArrayViewMut<'a, u8>>,
     ) -> Result<(), GxError>;
+
+    /// Update Safe-Region definition considering pre-filtering
+    ///
+    /// # Parameters
+    /// - `mask_in`: Reference to the input mask. Primarily used to validate the updated window.
+    /// - `safe_win`: Reference to the safe window
+    ///
+    /// # Returns
+    /// - Optional safe_window if not empty
+    fn array1_bspline_prefiltering_ext_mask_safe_win(
+        &self,
+        mask_in: &GxArrayView<u8>,
+        safe_win: &GxArrayWindow
+    ) -> Result<Option<GxArrayWindow>, GxError>;
 }
 
 /// Generic implementation of B-spline interpolators with compile-time order and
@@ -901,6 +920,34 @@ impl<const N: usize> GxBSplineInterpolatorTrait<N> for GxBSplineInterpolator<N> 
             },
         }
     }
+
+    #[inline]
+    fn array1_bspline_prefiltering_ext_mask_safe_win(
+        &self,
+        mask_in: &GxArrayView<u8>,
+        safe_win: &GxArrayWindow,
+    ) -> Result<Option<GxArrayWindow>, GxError>
+    {
+        match N {
+            3 | 5 | 7 | 9 | 11 => {
+                return Ok(
+                    array1_bspline_prefiltering_ext_gene_mask_safe_win(
+                        self.order,
+                        self.epsilon,
+                        Some(&self.truncation_index),
+                        mask_in,
+                        safe_win,
+                        self.mask_influence_threshold,
+                    )
+                );
+            },
+            _ => {
+                return Err(GxError::ErrMessage("Unsupported spline order".to_string()));
+            },
+        }
+    }
+
+
 }
 
 

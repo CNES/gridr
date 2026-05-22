@@ -2515,10 +2515,10 @@ mod count_valid_window_rstest {
     #[test]
     fn no_input_mask_returns_full_count() {
         let m = NoInputMask;
-        assert_eq!(m.count_valid_window::<3, 3>(0), 9);
-        assert_eq!(m.count_valid_window::<5, 5>(0), 25);
-        assert_eq!(m.count_valid_window::<1, 1>(0), 1);
-        assert_eq!(m.count_valid_window::<3, 5>(0), 15);
+        assert_eq!(m.count_valid_window::<3, 3>(0, 0, 0), 9);
+        assert_eq!(m.count_valid_window::<5, 5>(0, 0, 0), 25);
+        assert_eq!(m.count_valid_window::<1, 1>(0, 0, 0), 1);
+        assert_eq!(m.count_valid_window::<3, 5>(0, 0, 0), 15);
     }
 
     // ------------------------------------------------------------------
@@ -2531,7 +2531,7 @@ mod count_valid_window_rstest {
         let mask_data = [1u8; 9];
         let mask_view = GxArrayView::new(&mask_data, 1, 3, 3);
         let mask = BinaryInputMask { mask: &mask_view };
-        assert_eq!(mask.count_valid_window::<3, 3>(0), 9);
+        assert_eq!(mask.count_valid_window::<3, 3>(0, 0, 0), 9);
     }
 
     /// All masked -> count = 0.
@@ -2540,7 +2540,7 @@ mod count_valid_window_rstest {
         let mask_data = [0u8; 9];
         let mask_view = GxArrayView::new(&mask_data, 1, 3, 3);
         let mask = BinaryInputMask { mask: &mask_view };
-        assert_eq!(mask.count_valid_window::<3, 3>(0), 0);
+        assert_eq!(mask.count_valid_window::<3, 3>(0, 0, 0), 0);
     }
 
     /// Parametric: mask N pixels in a 3x3 window.
@@ -2562,7 +2562,7 @@ mod count_valid_window_rstest {
         }
         let mask_view = GxArrayView::new(&mask_data, 1, 3, 3);
         let mask = BinaryInputMask { mask: &mask_view };
-        assert_eq!(mask.count_valid_window::<3, 3>(0), expected,
+        assert_eq!(mask.count_valid_window::<3, 3>(0, 0, 0), expected,
             "masked={masked_indices:?} expected={expected}");
     }
 
@@ -2576,7 +2576,7 @@ mod count_valid_window_rstest {
         let mask_data = [1u8; 25];
         let mask_view = GxArrayView::new(&mask_data, 1, 5, 5);
         let mask = BinaryInputMask { mask: &mask_view };
-        assert_eq!(mask.count_valid_window::<3, 3>(6), 9);
+        assert_eq!(mask.count_valid_window::<3, 3>(6, 0, 0), 9);
     }
 
     /// 3x3 window at offset with 2 masked pixels inside the window.
@@ -2588,7 +2588,7 @@ mod count_valid_window_rstest {
         mask_data[2 * 5 + 1] = 0; // flat 11
         let mask_view = GxArrayView::new(&mask_data, 1, 5, 5);
         let mask = BinaryInputMask { mask: &mask_view };
-        assert_eq!(mask.count_valid_window::<3, 3>(6), 7);
+        assert_eq!(mask.count_valid_window::<3, 3>(6, 0, 0), 7);
     }
 
     /// Masked pixel outside the window does not affect the count.
@@ -2598,7 +2598,7 @@ mod count_valid_window_rstest {
         mask_data[0] = 0; // outside 3x3 window at (1,1)
         let mask_view = GxArrayView::new(&mask_data, 1, 5, 5);
         let mask = BinaryInputMask { mask: &mask_view };
-        assert_eq!(mask.count_valid_window::<3, 3>(6), 9);
+        assert_eq!(mask.count_valid_window::<3, 3>(6, 0, 0), 9);
     }
 
     // ------------------------------------------------------------------
@@ -2611,7 +2611,7 @@ mod count_valid_window_rstest {
         let mask_data = [1u8; 35]; // 7 cols, 5 rows
         let mask_view = GxArrayView::new(&mask_data, 1, 5, 7);
         let mask = BinaryInputMask { mask: &mask_view };
-        assert_eq!(mask.count_valid_window::<3, 5>(8), 15);
+        assert_eq!(mask.count_valid_window::<3, 5>(8, 0, 0), 15);
     }
 
     /// 3x5 window with 3 masked.
@@ -2625,7 +2625,7 @@ mod count_valid_window_rstest {
         mask_data[19] = 0;
         let mask_view = GxArrayView::new(&mask_data, 1, 5, 7);
         let mask = BinaryInputMask { mask: &mask_view };
-        assert_eq!(mask.count_valid_window::<3, 5>(8), 12);
+        assert_eq!(mask.count_valid_window::<3, 5>(8, 0, 0), 12);
     }
 
     /// 5x3 window all valid.
@@ -2634,7 +2634,7 @@ mod count_valid_window_rstest {
         let mask_data = [1u8; 35]; // 7 cols, 5 rows
         let mask_view = GxArrayView::new(&mask_data, 1, 5, 7);
         let mask = BinaryInputMask { mask: &mask_view };
-        assert_eq!(mask.count_valid_window::<5, 3>(0), 15);
+        assert_eq!(mask.count_valid_window::<5, 3>(0, 0, 0), 15);
     }
 
     // ------------------------------------------------------------------
@@ -2647,7 +2647,7 @@ mod count_valid_window_rstest {
         let mask_data = [1u8; 9];
         let mask_view = GxArrayView::new(&mask_data, 1, 3, 3);
         let mask = BinaryInputMask { mask: &mask_view };
-        assert_eq!(mask.count_valid_window::<1, 1>(4), 1);
+        assert_eq!(mask.count_valid_window::<1, 1>(4, 0, 0), 1);
     }
 
     /// 1x1 window masked -> 0.
@@ -2657,7 +2657,7 @@ mod count_valid_window_rstest {
         mask_data[4] = 0;
         let mask_view = GxArrayView::new(&mask_data, 1, 3, 3);
         let mask = BinaryInputMask { mask: &mask_view };
-        assert_eq!(mask.count_valid_window::<1, 1>(4), 0);
+        assert_eq!(mask.count_valid_window::<1, 1>(4, 0, 0), 0);
     }
 
     // ------------------------------------------------------------------
@@ -2683,7 +2683,7 @@ mod count_valid_window_rstest {
         }
         let mask_view = GxArrayView::new(&mask_data, 1, h, w);
         let mask = BinaryInputMask { mask: &mask_view };
-        let count = mask.count_valid_window::<3, 3>(0);
+        let count = mask.count_valid_window::<3, 3>(0, 0, 0);
         let valid = mask.is_valid_window::<3, 3>(0, 0, 0);
 
         if count == total {
