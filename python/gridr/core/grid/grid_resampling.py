@@ -1949,10 +1949,11 @@ def array_grid_resampling(
                     array_out_mask[:] = Validity.INVALID
             else:
                 view = array_out.reshape(array_out_shape)
-                view[..., *window_indices(array_out_win)] = nodata_out
+                idx = window_indices(array_out_win)
+                view[(..., *idx)] = nodata_out
                 if array_out_mask is not None:
                     mask_view = array_out_mask.reshape(array_out_shape[1:])
-                    mask_view[*window_indices(array_out_win)] = Validity.INVALID
+                    mask_view[(*idx,)] = Validity.INVALID
 
     if ret is not None:
         ret = ret.reshape(array_out_shape).squeeze()
