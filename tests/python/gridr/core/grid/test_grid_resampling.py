@@ -5291,11 +5291,11 @@ class TestGridResamplingMultiPointGrid:
                     np.atleast_2d(array_out_0),
                     decimal=testing_decimal,
                 )
-            with pytest.raises(AssertionError):
-                optional_array_equal(
-                    np.atleast_2d(mask_out_2),
-                    np.atleast_2d(mask_out_0),
-                )
+            if optional_array_equal(
+                np.atleast_2d(mask_out_2),
+                np.atleast_2d(mask_out_0),
+            ):
+                raise AssertionError("Bad safe window case : masks must be different !")
         else:
             np.testing.assert_array_almost_equal(
                 np.atleast_2d(array_out_2),
