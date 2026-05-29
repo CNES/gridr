@@ -55,7 +55,10 @@ def in_notebook():
 
 def in_doc_build():
     return os.environ.get("DOC_BUILD", "0") == "1"
-
+  
+def show_bokeh(obj):
+    show(obj)
+    
 def mpl_plot_wrapper(f):
     """
     prefix has to be in kwargs.
@@ -160,7 +163,7 @@ def plot_im(data, win_rect=None, prefix=None):
                     raise ValueError("Unsupported data dimension for image in dictionary.")
 
             combined_figure = row(*bokeh_plots, spacing=5)
-            show(combined_figure)
+            show_bokeh(combined_figure)
     else:
         # Handle single image as before
         _plot_single_im(data, win_rect, prefix)
@@ -202,7 +205,7 @@ def _plot_single_im(data, win_rect, prefix):
             ret = bokeh_plot_gray(data=data, win_rect=win_rect, title=prefix)
         else:
             ret = bokeh_plot_rgb(data=data, title=prefix)
-        show(ret)
+        show_bokeh(ret)
 
 def mpl_export_multiple_gray_static(data_dict, win_rect=None, export_name=None, max_cols=4, subplot_width_inches=2, subplot_height_inches=2):
     """
@@ -333,7 +336,7 @@ def bokeh_plot_gray(data, win_rect=None, title=None):
     source = ColumnDataSource(data=dict(image=[data.tolist()]))
     p = figure(
         width=width, height=height, x_range=(0, width), y_range=(height, 0),
-        tools="", toolbar_location=None, sizing_mode="fixed",
+        tools="pan,wheel_zoom,box_zoom,reset", toolbar_location="right", sizing_mode="fixed",
     )
     p.min_border = p.min_border_left = p.min_border_right = 0
     p.min_border_top = p.min_border_bottom = 0

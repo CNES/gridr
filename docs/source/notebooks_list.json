@@ -1,4 +1,23 @@
-["grid_resampling_001.ipynb",
-"grid_masking_001.ipynb",
-"grid_resampling_chain_001.ipynb"
+[
+    "core_masking_001_conventions.ipynb",
+    "core_masking_002_rasterize.ipynb",
+    "core_masking_003_build_mask_geometries.ipynb",
+    "core_masking_004_build_mask_raster.ipynb",
+    "core_masking_005_combined.ipynb",
+    "grid_resampling_001_getting_started.ipynb",
+    "grid_resampling_002_geometric_transformations.ipynb",
+    "grid_resampling_003_output_control.ipynb",
+    "grid_resampling_004_masking.ipynb",
+    "grid_resampling_005_bspline_masking.ipynb",
+    "grid_resampling_006_boundary_conditions.ipynb",
+    "grid_resampling_007_standalone_mode.ipynb",
+    "grid_resampling_008_pipeline_mode.ipynb",
+    "grid_resampling_chain_000_overview.ipynb",
+    "grid_resampling_chain_001_getting_started.ipynb",
+    "grid_resampling_chain_002_output_mask.ipynb",
+    "grid_resampling_chain_003_grid_mask.ipynb",
+    "grid_resampling_chain_004_source_mask.ipynb",
+    "grid_resampling_chain_005_geometry_masks.ipynb",
+    "grid_resampling_chain_006_shift_and_window.ipynb",
+    "grid_resampling_chain_007_io_memory.ipynb"
 ]
