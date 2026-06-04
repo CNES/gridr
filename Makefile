@@ -19,6 +19,8 @@ ROOT_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
+export RUSTFLAGS ?= -C target-feature=+avx2,+fma
+
 # Project path to the python directory
 GRIDR_PYTHON_PATH := $(ROOT_DIR)python/gridr
 # Project path to the rust directory

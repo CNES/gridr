@@ -24,12 +24,104 @@ Shared Memory Utils module
 from datetime import datetime
 from functools import wraps
 from multiprocessing import shared_memory
-from typing import List, NoReturn, Optional, Tuple
+from typing import List, NoReturn, Optional, Tuple, Any, Callable, Optional, Type, TypeVar, Union, overload
 from uuid import uuid4
+import functools
+import inspect
+import sys
+
 
 import numpy as np
 
+# On Python 3.13+ the stdlib version exists; re-export it so users get
+# identical semantics (including its interaction with static type
+# checkers via @typing.deprecated).
+if sys.version_info >= (3, 13):
+    from warnings import deprecated  # type: ignore[attr-defined]
 
+else:
+    T = TypeVar("T", bound=Callable[..., Any])
+    C = TypeVar("C", bound=type)
+
+
+    def deprecated(
+            message: str,
+            *,
+            category: Optional[Type[Warning]] = DeprecationWarning,
+            stacklevel: int = 1,
+    ) -> Callable[[Union[T, C]], Union[T, C]]:
+        """
+        Mark a callable, class or method as deprecated.
+
+        See module docstring for full details. API mirrors
+        :func:`warnings.deprecated` from Python 3.13 (PEP 702).
+        """
+        if not isinstance(message, str):
+            raise TypeError(
+                f"Expected an object of type str for 'message', not "
+                f"{type(message).__name__!r}"
+            )
+
+        def decorator(arg: Union[T, C]) -> Union[T, C]:
+            # ---- Class deprecation -------------------------------------
+            if isinstance(arg, type):
+                cls: C = arg  # type: ignore[assignment]
+                original_init = cls.__init__
+
+                @functools.wraps(original_init)
+                def new_init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+                    if category is not None:
+                        warnings.warn(
+                            message,
+                            category=category,
+                            stacklevel=stacklevel + 1,
+                        )
+                    original_init(self, *args, **kwargs)
+
+                cls.__init__ = new_init  # type: ignore[assignment]
+                cls.__deprecated__ = message  # type: ignore[attr-defined]
+                return cls  # type: ignore[return-value]
+
+            # ---- Callable deprecation ----------------------------------
+            if callable(arg):
+                func: T = arg  # type: ignore[assignment]
+
+                if inspect.iscoroutinefunction(func):
+                    @functools.wraps(func)
+                    async def async_wrapper(*args, **kwargs):  # type: ignore[no-untyped-def]
+                        if category is not None:
+                            warnings.warn(
+                                message,
+                                category=category,
+                                stacklevel=stacklevel + 1,
+                            )
+                        return await func(*args, **kwargs)
+
+                    async_wrapper.__deprecated__ = message  # type: ignore[attr-defined]
+                    return async_wrapper  # type: ignore[return-value]
+
+                @functools.wraps(func)
+                def wrapper(*args, **kwargs):  # type: ignore[no-untyped-def]
+                    if category is not None:
+                        warnings.warn(
+                            message,
+                            category=category,
+                            stacklevel=stacklevel + 1,
+                        )
+                    return func(*args, **kwargs)
+
+                wrapper.__deprecated__ = message  # type: ignore[attr-defined]
+                return wrapper  # type: ignore[return-value]
+
+            raise TypeError(
+                "@deprecated can only be applied to a class or a callable, "
+                f"not {type(arg).__name__!r}"
+            )
+
+        return decorator
+
+
+@deprecated("Use shared_array.SharedArray instead")
 class SharedMemoryArray(object):
     """
     A class handler for managing shared memory buffers and their associated

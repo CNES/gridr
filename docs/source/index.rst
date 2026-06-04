@@ -19,6 +19,7 @@ This is the main page of GridR's documentation.
    :maxdepth: 2
    
    installation
+   environment_variables
    release_notes/index
 
 .. toctree::

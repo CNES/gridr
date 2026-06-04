@@ -48,7 +48,7 @@ the padded zone is considered valid.  It must be explicitly set when
 
 Memory model
 ------------
-Source data and output buffers are managed via ``SharedMemoryArray``
+Source data and output buffers are managed via ``SharedArray``
 to support multi-process parallelism.  Buffers are registered in a
 list and released in a ``finally`` block to prevent memory leaks even
 on error.
@@ -96,7 +96,12 @@ from gridr.core.utils.array_window import (
     window_shift,
 )
 from gridr.io.common import GridRIOMode
-from gridr.scaling.shmutils import SharedMemoryArray, create_and_register_sma
+#from gridr.scaling.shmutils import SharedMemoryArray, create_and_register_sma
+from gridr.scaling.shared_array import (
+    SharedArray,
+    create_and_register,
+    get_backend,
+)
 
 DEFAULT_IO_STRIP_SIZE = 1000
 DEFAULT_TILE_SHAPE = (1000, 1000)
@@ -304,12 +309,12 @@ def basic_grid_resampling_array(
     array_src_geometry_pair: Optional[Tuple[Optional[GeometryType], Optional[GeometryType]]],
     oversampled_grid_win: np.ndarray,
     margin: np.ndarray,
-    sma_out_buffer: SharedMemoryArray,
+    sma_out_buffer: SharedArray,
     out_win: np.ndarray,
     nodata_out: Optional[Union[int, float]],
     boundary_condition: Optional[str],
     trust_padding: bool,
-    sma_out_mask_buffer: Optional[SharedMemoryArray],
+    sma_out_mask_buffer: Optional[SharedArray],
     logger_msg_prefix: str,
     logger: logging.Logger,
 ):
@@ -412,7 +417,7 @@ def basic_grid_resampling_array(
         `array_src_ds`, ensuring context for resampling (e.g., for kernels).
         Format: ``[[top_margin, bottom_margin], [left_margin, right_margin]]``.
 
-    sma_out_buffer : SharedMemoryArray or numpy.ndarray
+    sma_out_buffer : SharedArray or numpy.ndarray
         Output array (or shared memory buffer) where resampled values will
         be written.
 
@@ -444,7 +449,7 @@ def basic_grid_resampling_array(
         ``Validity.INVALID`` regardless of the boundary condition.
         See ``resolve_mask_strategy`` for the full decision tree.
 
-    sma_out_mask_buffer : SharedMemoryArray or numpy.ndarray or None, optional
+    sma_out_mask_buffer : SharedArray or numpy.ndarray or None, optional
         Optional output array (or shared memory buffer) where output mask
         will be written. Defaults to None.
 
@@ -1164,6 +1169,7 @@ def basic_grid_resampling_chain(
     """
     if logger is None:
         logger = logging.getLogger(__name__)
+    logger.info(f"Using shared-array backend: {get_backend()}")
 
     if boundary_condition is not None and trust_padding is None:
         raise ValueError(
@@ -1171,9 +1177,9 @@ def basic_grid_resampling_chain(
             "'boundary_condition' is not None, got None"
         )
 
-    # Init a list to register SharedMemoryArray buffers
-    sma_buffer_name_list = []
-    register_sma = partial(create_and_register_sma, register=sma_buffer_name_list)
+    # Init a list to register SharedArray buffers
+    sma_buffer_list = []
+    register_sma = partial(create_and_register, register=sma_buffer_list)
 
     # Get input shape from input grid
     grid_nrow, grid_ncol = grid_ds.height, grid_ds.width
@@ -1638,6 +1644,6 @@ def basic_grid_resampling_chain(
 
     finally:
         # Release the Shared memory buffer
-        SharedMemoryArray.clear_buffers(sma_buffer_name_list)
+        SharedArray.clear_buffers(sma_buffer_list)
 
     return 1

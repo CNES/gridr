@@ -23,7 +23,7 @@ Module for a Grid and Mask creation chain
 """
 import logging
 from functools import partial
-from multiprocessing import Pool
+import multiprocessing
 from typing import Dict, Optional, Tuple, Union
 
 import numpy as np
@@ -43,7 +43,13 @@ from gridr.core.utils.array_window import (
     window_shift,
 )
 from gridr.io.common import GridRIOMode
-from gridr.scaling.shmutils import SharedMemoryArray, create_and_register_sma, shmarray_wrap
+#from gridr.scaling.shmutils import SharedMemoryArray, create_and_register_sma, shmarray_wrap
+from gridr.scaling.shared_array import (
+    SharedArray,
+    create_and_register,
+    get_backend,
+    shared_array_wrap,
+)
 
 MASK_BINARY_THRESHOLD = 0.999
 DEFAULT_IO_STRIP_SIZE = 1000
@@ -58,24 +64,24 @@ def build_mask_tile_worker(arg):
     The implementation uses directly the shmarray_wrap decorator in order to
     wrap the gridr core buid_mask function in order to conserve the same
     signature and to manage arguments typed as arrays that are passed as
-    SharedMemoryArray in the multiprocessing process.
+    SharedArray in the multiprocessing process.
     """
-    shmarray_wrap(build_mask)(**arg)
+    shared_array_wrap(build_mask)(**arg)
 
 
 def build_grid_mask_tile_worker(arg):
     """A worker that calls the build_mask and build_grid method
     This method is passed to the multiprocessing Pool.map function
 
-    The implementation uses directly the shmarray_wrap decorator in order to
+    The implementation uses directly the shared_array_wrap decorator in order to
     wrap the gridr core buid_mask function in order to conserve the same
     signature and to manage arguments typed as arrays that are passed as
-    SharedMemoryArray in the multiprocessing process.
+    SharedArray in the multiprocessing process.
     """
     build_mask_arg, build_grid_arg = arg
     if len(build_mask_arg) > 0:
-        shmarray_wrap(build_mask)(**build_mask_arg)
-    shmarray_wrap(build_grid)(**build_grid_arg)
+        shared_array_wrap(build_mask)(**build_mask_arg)
+    shared_array_wrap(build_grid)(**build_grid_arg)
 
 
 def build_mask_chain(
@@ -257,12 +263,13 @@ def build_mask_chain(
     mask. The precision of the computation may differ between float32 and
     float64.
     """
-    # Init a list to register SharedMemoryArray buffers
-    sma_buffer_name_list = []
-    register_sma = partial(create_and_register_sma, register=sma_buffer_name_list)
-
     if logger is None:
         logger = logging.getLogger(__name__)
+    logger.info(f"Using shared-array backend: {get_backend()}")
+
+    # Init a list to register SharedArray buffers
+    sma_buffer_list = []
+    register_sma = partial(create_and_register, register=sma_buffer_list)
 
     nrow_in, ncol_in = shape
     logger.debug(f"Grid shape : {nrow_in} rows x {ncol_in} columns")
@@ -456,14 +463,14 @@ def build_mask_chain(
                     #        read buffer by cloning the caracteristics of the
                     #        main output buffer. The shift for the current tile
                     #        is applied through the 'mask_in_target_win' arg.
-                    tile_smb_out = SharedMemoryArray.clone(
-                        sma=sma_write_buffer, array_slice=tile_slice
+                    tile_smb_out = SharedArray.clone(
+                        sa=sma_write_buffer, array_slice=tile_slice
                     )
 
                     tile_smb_mask_in = None
                     if sma_read_buffer is not None:
-                        tile_smb_mask_in = SharedMemoryArray.clone(
-                            sma=sma_read_buffer, array_slice=None
+                        tile_smb_mask_in = SharedArray.clone(
+                            sa=sma_read_buffer, array_slice=None
                         )
 
                     # Append process parameters to 'tasks'
@@ -484,7 +491,8 @@ def build_mask_chain(
                         }
                     )
 
-                with Pool(processes=ncpu) as pool:
+                ctxt = multiprocessing.get_context("fork")
+                with ctxt.Pool(processes=ncpu) as pool:
                     pool.map(build_mask_tile_worker, tasks)
 
             else:
@@ -531,7 +539,7 @@ def build_mask_chain(
         raise
     finally:
         # Release the Shared memory buffer
-        SharedMemoryArray.clear_buffers(sma_buffer_name_list)
+        SharedArray.clear_buffers(sma_buffer_list)
     return 1
 
 
@@ -750,10 +758,12 @@ def build_grid_mask_chain(
         - argument `ncpu` to be greater than 1.
         - argument `cpu_tile_shape` to be different from None and smaller than
           the output shape.
+    
+    The Pool mapping uses a fork context.
 
     **Shared Memory**
     The read and the output buffers are set at once and used for each strip.
-    They are allocated as Shared Memory to be efficiently shared among
+    They are allocated as Shared Array to be efficiently shared among
     multiple parallel/concurrent processes. Please note that no lock is set
     on written memory; this is justified by the fact that a strict tiling
     computation ensures that no overlap occurs across different processes.
@@ -763,9 +773,9 @@ def build_grid_mask_chain(
     mask. The precision of the computation may differ between float32 and
     float64.
     """
-    # Init a list to register SharedMemoryArray buffers
-    sma_buffer_name_list = []
-    register_sma = partial(create_and_register_sma, register=sma_buffer_name_list)
+    # Init a list to register SharedArray buffers
+    sma_buffer_list = []
+    register_sma = partial(create_and_register, register=sma_buffer_list)
 
     if logger is None:
         logger = logging.getLogger(__name__)
@@ -1045,12 +1055,12 @@ def build_grid_mask_chain(
                     #        tile is applied through the 'mask_in_target_win'
                     #        arg.
                     # grid
-                    tile_smb_grid_out = SharedMemoryArray.clone(
-                        sma=sma_w_buffer_grid, array_slice=tile_slices3
+                    tile_smb_grid_out = SharedArray.clone(
+                        sa=sma_w_buffer_grid, array_slice=tile_slices3
                     )
 
-                    tile_smb_grid_in = SharedMemoryArray.clone(
-                        sma=sma_r_buffer_grid, array_slice=None
+                    tile_smb_grid_in = SharedArray.clone(
+                        sa=sma_r_buffer_grid, array_slice=None
                     )
 
                     build_grid_args = {
@@ -1065,14 +1075,14 @@ def build_grid_mask_chain(
                     build_mask_args = {}
                     if compute_mask:
                         # mask
-                        tile_smb_mask_out = SharedMemoryArray.clone(
-                            sma=sma_w_buffer_mask, array_slice=tile_slice
+                        tile_smb_mask_out = SharedArray.clone(
+                            sa=sma_w_buffer_mask, array_slice=tile_slice
                         )
 
                         tile_smb_mask_in = None
                         if sma_r_buffer_mask is not None:
-                            tile_smb_mask_in = SharedMemoryArray.clone(
-                                sma=sma_r_buffer_mask, array_slice=None
+                            tile_smb_mask_in = SharedArray.clone(
+                                sa=sma_r_buffer_mask, array_slice=None
                             )
 
                         # Append process parameters to 'tasks'
@@ -1093,7 +1103,8 @@ def build_grid_mask_chain(
 
                     tasks.append((build_mask_args, build_grid_args))
 
-                with Pool(processes=ncpu) as pool:
+                ctxt = multiprocessing.get_context("fork")
+                with ctxt.Pool(processes=ncpu) as pool:
                     pool.map(build_grid_mask_tile_worker, tasks)
 
             # Mono processing for now
@@ -1201,6 +1212,6 @@ def build_grid_mask_chain(
 
     finally:
         # Release the Shared memory buffer
-        SharedMemoryArray.clear_buffers(sma_buffer_name_list)
+        SharedArray.clear_buffers(sma_buffer_list)
 
     return 1
