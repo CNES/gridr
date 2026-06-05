@@ -16,15 +16,15 @@ sphinxcontrib-bibtex==2.6.5
 myst-parser==4.0.1
 jupyter==1.1.1
 matplotlib==3.10.7
-bokeh==3.8.0
+bokeh==3.8.2
 auditwheel==6.4.2
 pre-commit==4.3.0
 pre-commit-hooks==6.0.0
 isort==5.8.0                   # Check imports
-black==25.9.0                  # PEP8 format code
+black==26.3.1                  # PEP8 format code
 flake8==7.3.0                  # General linter
-flake8-pyproject==1.2.3        # Support configuration in pyproject.toml
-flake8-comprehensions==3.17.0   # Check list/dict/set
+flake8-pyproject>=1.2.3        # Support configuration in pyproject.toml
+flake8-comprehensions>=3.17.0   # Check list/dict/set
 flake8-bugbear>=21.4.3,<24.0.0 # Add some rules to flake8
 pip-licenses-lib==1.0.0        # For NOTICE generation
 
