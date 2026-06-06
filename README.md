@@ -2,7 +2,7 @@
 <a target="_blank" href="https://github.com/CNES/gridr">
 <picture>
   <img
-    src="https://raw.githubusercontent.com/CNES/gridr/main/doc/images/gridr_logo.png"
+    src="https://raw.githubusercontent.com/CNES/gridr/main/docs/source/_static/images/gridr_logo.png"
     alt="GRIDR"
     width="40%"
   />

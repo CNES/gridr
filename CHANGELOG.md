@@ -334,6 +334,7 @@ standalone entry point with the chain entry point, which already exhibited this 
   (`core_masking_001_conventions` through `core_masking_005_combined`).
 - Each series has its own Sphinx index page (`*_index.rst`) with a recommended reading order and
   per-page prerequisites.
+- Deleted `doc` folder and moved logo images to `docs/source/_static/images`.
 
 ### Fixed
 
