@@ -2,7 +2,7 @@
 
 ## GRIDR License
 
-GRIDR Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
+GRIDR Copyright (c) 2026 Centre National d'Etudes Spatiales (CNES).
 
 This software is distributed under the Apache Software License (ASL) v2.0, see
 LICENSE file or http://www.apache.org/licenses/LICENSE-2.0 for details.
@@ -12,10 +12,10 @@ LICENSE file or http://www.apache.org/licenses/LICENSE-2.0 for details.
 ### Python
 This section lists the licenses of the Python dependencies used in GRIDR.
 
-- Dependancy: pyparsing
-  Version: 3.3.1
-  Authors: Paul McGuire <ptmcg.gm+pyparsing@gmail.com>
-  Website: https://github.com/pyparsing/pyparsing/
+- Dependancy: attrs
+  Version: 26.1.0
+  Authors: Hynek Schlawack <hs@ox.cx>
+  Website: https://github.com/python-attrs/attrs
   License: MIT
 
 - Dependancy: rasterio
@@ -23,6 +23,36 @@ This section lists the licenses of the Python dependencies used in GRIDR.
   Authors: Sean Gillies
   Website: https://github.com/rasterio/rasterio
   License: BSD License
+
+- Dependancy: pyparsing
+  Version: 3.3.2
+  Authors: Paul McGuire <ptmcg.gm+pyparsing@gmail.com>
+  Website: https://github.com/pyparsing/pyparsing/
+  License: MIT
+
+- Dependancy: certifi
+  Version: 2026.5.20
+  Authors: Kenneth Reitz
+  Website: https://github.com/certifi/python-certifi
+  License: Mozilla Public License 2.0 (MPL 2.0)
+
+- Dependancy: numpy
+  Version: 2.4.6
+  Authors: Travis E. Oliphant et al.
+  Website: https://numpy.org
+  License: BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0
+
+- Dependancy: scipy
+  Version: 1.17.1
+  Authors: UNKNOWN
+  Website: https://scipy.org/
+  License: BSD License
+
+- Dependancy: click
+  Version: 8.4.1
+  Authors: UNKNOWN
+  Website: https://github.com/pallets/click/
+  License: BSD-3-Clause
 
 - Dependancy: typing-extensions
   Version: 4.15.0
@@ -36,12 +66,6 @@ This section lists the licenses of the Python dependencies used in GRIDR.
   Website: https://github.com/pypa/setuptools
   License: MIT License
 
-- Dependancy: attrs
-  Version: 25.4.0
-  Authors: Hynek Schlawack <hs@ox.cx>
-  Website: https://www.attrs.org/en/stable/changelog.html
-  License: MIT
-
 - Dependancy: affine
   Version: 2.4.0
   Authors: Sean Gillies <sean.gillies@gmail.com>
@@ -54,41 +78,17 @@ This section lists the licenses of the Python dependencies used in GRIDR.
   Website: https://github.com/click-contrib/click-plugins
   License: BSD License
 
-- Dependancy: numpy
-  Version: 2.4.1
-  Authors: Travis E. Oliphant et al.
-  Website: https://numpy.org
-  License: BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0
-
 - Dependancy: cligj
   Version: 0.7.2
   Authors: Sean Gillies
   Website: https://github.com/mapbox/cligj
   License: BSD
 
-- Dependancy: scipy
-  Version: 1.17.0
-  Authors: UNKNOWN
-  Website: https://scipy.org/
-  License: BSD License
-
-- Dependancy: click
-  Version: 8.3.1
-  Authors: UNKNOWN
-  Website: https://github.com/pallets/click/
-  License: BSD-3-Clause
-
 - Dependancy: shapely
   Version: 2.1.2
   Authors: Sean Gillies
   Website: https://github.com/shapely/shapely
   License: BSD License
-
-- Dependancy: certifi
-  Version: 2026.1.4
-  Authors: Kenneth Reitz
-  Website: https://github.com/certifi/python-certifi
-  License: Mozilla Public License 2.0 (MPL 2.0)
 
 
 ### Rust
@@ -502,3 +502,4 @@ This section lists the licenses of the Rust dependencies used in GRIDR.
   Authors:  UNKNOWN
   Website:  https://github.com/winnow-rs/winnow
   License: MIT
+

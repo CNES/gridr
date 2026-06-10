@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 project = 'GridR'
 copyright = '2026, Cnes'
 author = 'CNES'
-release = '0.5.2'
+release = '0.6.0'
 contact_email = 'gridr-cnes@cnes.fr'
 
 rst_prolog = """
@@ -71,8 +71,8 @@ bibtex_bibfiles = ['references.bib']
 # Citation style (optional)
 bibtex_default_style = 'plain'  # or 'alpha', 'unsrt', etc.
 
-napoleon_google_docstring = True  # Pour activer le support Google Style
-napoleon_numpy_docstring = True # Pour désactiver le support NumPy Style (si vous ne l'utilisez pas)
+napoleon_google_docstring = True
+napoleon_numpy_docstring = True
 
 source_suffix = {
     '.rst': 'restructuredtext',
