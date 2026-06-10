@@ -77,8 +77,8 @@ RESOLUTIONS = [
 DO_TEST_001=False
 DO_TEST_INIT_ORION=False
 DO_TEST_002=False
-DO_TEST_003=True
-DO_TEST_004=False
+DO_TEST_003=False # 12000x12000 size
+DO_TEST_004=False # 4000x4000 size
 
 
 def write_array(array, dtype, fileout):
@@ -800,7 +800,7 @@ ADAPTERS = [
 ]
 
 if DO_TEST_001:
-    @pytest.mark.benchmark(group="time:gridr.core.grid.grid_resampling.array_grid_resampling")
+    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
     @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
     @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
     @pytest.mark.parametrize("resolution", RESOLUTIONS)

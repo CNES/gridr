@@ -36,7 +36,7 @@ from scipy.ndimage import map_coordinates
 
 from gridr.core.grid.grid_resampling import array_grid_resampling
 
-NROUNDS = 20
+NROUNDS = 50
 NITERATIONS = 1
 NWARMUP = 3
 NSIZES = [
@@ -47,7 +47,7 @@ NSIZES = [
     4000,
 ]
 
-DO_BENCH = False
+DO_BENCH = True 
 
 class BenchAdapter(Protocol):
     """Each tool implements that interface"""
