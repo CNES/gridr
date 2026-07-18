@@ -6,8 +6,8 @@ edition = "2021"
 license = "Apache-2.0"
 
 [features]
-extension-module = ["pyo3/extension-module"]
-default = []
+default = ["extension-module"]
+extension-module = ["dep:pyo3", "dep:numpy", "pyo3/extension-module"]
 
 [profile.release]
 #debug = true          
@@ -16,8 +16,8 @@ lto = "fat"
 codegen-units = 1   
 
 [dependencies]
-pyo3 = { version = "0.27.2", features = ["extension-module", "abi3-py310"]}
-numpy = "0.27.1"
+pyo3 = { version = "0.27.2", optional = true, features = ["abi3-py310"] }
+numpy = { version = "0.27.1", optional = true }
 ndarray = { version = "0.15.6", features = ["approx", "rayon"] }
 approx = "0.5.1"
 thiserror = "1"
@@ -33,7 +33,12 @@ pyo3-build-config = "0.27.2"
 name = "_libgridr"  # private module to be nested into Python package,
                # needs to match the name of the function with the `[#pymodule]` attribute
 path = "src/lib.rs"
-crate-type = ["cdylib"]  # required for shared library for Python to import from.
+crate-type = ["cdylib", "rlib"]  # cdylib for Python to import from, rlib so gridr can be used as a normal Rust dependency.
+# Doc examples reference paths that assume being compiled as the `gridr` crate (its
+# actual extern name is `_libgridr`, see above); adding `rlib` makes cargo attempt to
+# run them for the first time (previously skipped entirely for cdylib-only crates),
+# so keep them disabled to preserve prior `cargo test` behavior.
+doctest = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 # See also PyO3 docs on writing Cargo.toml files at https://pyo3.rs
