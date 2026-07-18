@@ -18,4 +18,5 @@
 #![warn(missing_docs)]
 //! Main gridr library entry
 pub mod core;
+#[cfg(feature = "extension-module")]
 pub mod pyapi;
