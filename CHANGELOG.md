@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## Unreleased
+
+### Added
+
+#### Documentation
+
+- Added a new `Standards` section in the HTML documentation
+
+### Changed
+
+#### Documentation
+
+- Updated pixel center terminology to align with OGC standard
+
+
 ## [0.6.0] - 2026-06-10
 
 ### ⚠️ Breaking Changes

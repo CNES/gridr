@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 project = 'GridR'
 copyright = '2026, Cnes'
 author = 'CNES'
-release = '0.6.0'
+release = '0.7.0.dev0'
 contact_email = 'gridr-cnes@cnes.fr'
 
 rst_prolog = """

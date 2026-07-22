@@ -39,7 +39,7 @@ Pixel model
 ***********
 A discrete coordinate :math:`(i, j)` refers to the pixel at **row index** :math:`i` and **column index** :math:`j`, with :math:`(0, 0)` referring the upper-left pixel.
 
-Each pixel corresponds to a rectangular region :math:`R_{i,j}` in the continuous domain. `GridR` uses the **pixel-centered sampling convention** :
+Each pixel corresponds to a rectangular region :math:`R_{i,j}` in the continuous domain. `GridR` uses the :ref:`ogc-pixel-is-point` sampling convention :
 
 .. math::
 
@@ -60,7 +60,7 @@ To avoid ambiguity between array indices and geometric coordinates we define the
 
     \mathscr{G} = \{ (x,y) \in \mathbb{R}^{2}  | x \in \mathbb{Z}, y \in \mathbb{Z} \}
 
-In the **pixel-centered sampling convention** used in `GridR`, each integer coordinate :math:`(j, i) \in \mathbb{Z}^{2}` corresponds to the center of pixel :math:`(i, j)` in the discrete image :math:`I`. We therefore use the mapping :
+In the :ref:`ogc-pixel-is-point` sampling convention used in `GridR`, each integer coordinate :math:`(j, i) \in \mathbb{Z}^{2}` corresponds to the center of pixel :math:`(i, j)` in the discrete image :math:`I`. We therefore use the mapping :
 
 .. math::
 

@@ -54,7 +54,8 @@ This is the main page of GridR's documentation.
    license
    
 .. toctree::
-   :caption: References
+   :caption: References & Standards
    :maxdepth: 1
    
    references.rst
+   standards.rst

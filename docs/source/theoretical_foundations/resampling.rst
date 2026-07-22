@@ -98,7 +98,7 @@ This process is referred to as *grid resampling* in `GridR`.
 
 For this resampling pipeline, the sampling grid is always defined in the **backward** (destination :math:`\to` source) sense: for each pixel center :math:`(j,i)` of the destination discrete image, the grid provides the continuous coordinates :math:`(x,y)` in the source image from which the value must be interpolated.
 
-This is consistent with the pixel-center convention adopted throughout `GridR`, where the center of pixel :math:`(i,j)` is located at continuous coordinates :math:`(j,i)`.
+This is consistent with the :ref:`ogc-pixel-is-point` convention adopted throughout `GridR`, where the center of pixel :math:`(i,j)` is located at continuous coordinates :math:`(j,i)`.
 
 Formally, given a destination pixel center :math:`(j,i)`, the backward grid provides
 
