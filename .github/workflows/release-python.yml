@@ -90,7 +90,7 @@ jobs:
           CIBW_BUILD: 'cp310-*'          # abi3: build only against the floor version
           CIBW_SKIP: '*-musllinux_*'     # manylinux only - numpy has no reliable musl+abi3 wheel
           CIBW_ARCHS: ${{ matrix.cibw_archs }}
-          MACOSX_DEPLOYMENT_TARGET: "10.12"
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           # manylinux builds run inside a Docker container with no Rust -
           # install it there explicitly (rustup, minimal profile, stable).
