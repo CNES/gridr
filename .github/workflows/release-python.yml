@@ -170,7 +170,7 @@ jobs:
           echo "Target input  : '${{ github.event.inputs.target }}'"
           echo "Environment   : ${{ github.event_name == 'push' && 'pypi' || '' }}"
           echo "Environment2   : ${{ github.event_name == 'push' && 'pypi' || '' }}"
-          echo "If part 2 : ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true') }}"
+          echo "If part 2 : ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true' }}"
           echo "Build-wheels result : ${{ needs.build-wheels.result }}"
           echo "Build-sdist result  : ${{ needs.build-sdist.result }}"
       - name: List uploaded artifacts (for sanity check)
