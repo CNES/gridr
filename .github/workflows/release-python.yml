@@ -4,7 +4,9 @@ name: release-python
 #   - push of a `v*` tag        -> builds AND publishes to PyPI automatically
 #   - workflow_dispatch (manual) -> builds only, unless `publish` is set to true
 #
-# NB: only `pyproject.toml`'s [project].version drives this release. The # `gridr` (pure-Rust engine) crate versions independently and is NOT # published here - see release-crate.yml (triggered by `gridr-v*` tags).
+# NB: only `pyproject.toml`'s [project].version drives this release. The
+# `gridr` (pure-Rust engine) crate versions independently and is NOT
+# published here - see release-crate.yml (triggered by `gridr-v*` tags).
 on:
   push:
     tags:
@@ -12,9 +14,16 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: 'Actually publish to PyPI (otherwise: build only)'
+        description: 'Actually publish (otherwise: build only)'
         type: boolean
         default: false
+      target:
+        description: 'Where to publish, if publish is ticked'
+        type: choice
+        options:
+          - testpypi
+          - pypi
+        default: testpypi
 
 jobs:
 
@@ -57,7 +66,7 @@ jobs:
             cibw_platform: windows
             cibw_archs: AMD64
             rustflags: '-C target-feature=+avx2,+fma'
-          - os: macos-13     # last Intel (x86_64) GitHub-hosted runner image
+          - os: macos-15-intel  # macos-13 was retired Dec 2025; this is the current Intel/x86_64 label
             cibw_platform: macos
             cibw_archs: x86_64
             rustflags: '-C target-feature=+avx2,+fma'
@@ -77,7 +86,9 @@ jobs:
       - name: Build wheel
         uses: pypa/cibuildwheel@v2.21
         env:
+          CIBW_BUILD_VERBOSITY: 1
           CIBW_BUILD: 'cp310-*'          # abi3: build only against the floor version
+          CIBW_SKIP: '*-musllinux_*'     # manylinux only - numpy has no reliable musl+abi3 wheel
           CIBW_ARCHS: ${{ matrix.cibw_archs }}
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           # manylinux builds run inside a Docker container with no Rust -
@@ -98,7 +109,26 @@ jobs:
             DIST_EXTRA_CONFIG=dist_extra_config.cfg
             RUSTFLAGS="${{ matrix.rustflags }}"
           #CIBW_TEST_COMMAND: python -c "import gridr.cdylib as c; print(c.__native_version__, c.__native_core_version__)"
-          CIBW_TEST_COMMAND: python -c "import gridr.cdylib as c"
+          CIBW_TEST_COMMAND: python -c "from gridr.cdylib import *"
+
+      # Linux only: objdump/binutils ships preinstalled on ubuntu-latest, so
+      # this is a zero-extra-dependency, high-confidence check. Windows/macOS
+      # need a different disassembler (dumpbin / otool) and aren't automated
+      # here - spot-check those manually if needed (see conversation notes).
+      - name: Verify AVX2/FMA instructions actually made it into the binary
+        if: matrix.cibw_platform == 'linux' && matrix.rustflags != ''
+        run: |
+          set -euo pipefail
+          WHEEL=$(ls wheelhouse/*.whl)
+          rm -rf /tmp/wheel_check && mkdir -p /tmp/wheel_check
+          python3 -m zipfile -e "$WHEEL" /tmp/wheel_check
+          SO_FILE=$(find /tmp/wheel_check -name '_libgridr*.so')
+          echo "Inspecting: $SO_FILE"
+          if ! objdump -d "$SO_FILE" | grep -q 'ymm'; then
+            echo "::error::No AVX2 (ymm register) instructions found in $SO_FILE - RUSTFLAGS may not have been applied at build time"
+            exit 1
+          fi
+          echo "OK: AVX2 instructions (ymm registers) found in the compiled extension."
 
       - uses: actions/upload-artifact@v4
         with:
@@ -125,28 +155,36 @@ jobs:
           path: dist/*.tar.gz
 
   # ---------------------------------------------------------------------
-  # Publish. Gated behind the `pypi` GitHub Environment (configure Trusted
-  # Publishing on PyPI's project settings pointing at this repo/workflow/
-  # environment - no stored token needed). Only runs on a real tag push,
-  # or a manual run with `publish: true` explicitly ticked.
+  # Publish. Gated behind a GitHub Environment matching the target
+  # (`pypi` or `testpypi`) - each needs its own Trusted Publishing config
+  # on the corresponding index (pypi.org and test.pypi.org are entirely
+  # separate services/accounts, configured independently).
+  #   - tag push        -> always the real `pypi` environment/index
+  #   - manual dispatch  -> whichever `target` was chosen (testpypi by
+  #                         default, so accidental manual runs can never
+  #                         reach the real index without an explicit choice)
   # ---------------------------------------------------------------------
-  #publish-pypi:
-  #  needs: [build-wheels, build-sdist]
-  #  if: github.event_name == 'push' || inputs.publish == true
-  #  runs-on: ubuntu-latest
-  #  environment: pypi
-  #  permissions:
-  #    id-token: write  # required for PyPI Trusted Publishing (OIDC)
-  #  steps:
-  #    - uses: actions/download-artifact@v4
-  #      with:
-  #        pattern: wheels-*
-  #        path: dist/
-  #        merge-multiple: true
-  #    - uses: actions/download-artifact@v4
-  #      with:
-  #        name: sdist
-  #        path: dist/
-  #    - name: Publish to PyPI
-  #      uses: pypa/gh-action-pypi-publish@release/v1
-
+  publish-pypi:
+    needs: [build-wheels, build-sdist]
+    if: github.event_name == 'push' || inputs.publish == true
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'push' && 'pypi' || inputs.target }}
+    permissions:
+      id-token: write  # required for Trusted Publishing (OIDC), both indexes
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist/
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist/
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: >-
+            ${{ (github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi')
+                && 'https://test.pypi.org/legacy/'
+                || 'https://upload.pypi.org/legacy/' }}
