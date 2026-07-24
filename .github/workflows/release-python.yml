@@ -32,7 +32,7 @@ jobs:
   # version, so nobody ever publishes a wheel under the wrong number.
   # ---------------------------------------------------------------------
   check-version:
-    if: github.event_name == 'push'
+    if: always() && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -161,7 +161,7 @@ jobs:
   debug-publish-inputs:
     needs: [build-wheels, build-sdist]   # wait for the build artifacts
     #if: always()                         # run regardless of previous success/failure
-    if: github.event_name == 'workflow_dispatch'
+    if: always() && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Show workflow metadata
@@ -189,7 +189,7 @@ jobs:
   # -------------------------------------------------------------
   publish-pypi-tag:
     needs: [build-wheels, build-sdist]
-    if: github.event_name == 'push'
+    if: always() && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: pypi                     # <-- must exist in Settings
     permissions:
@@ -214,7 +214,7 @@ jobs:
   # -------------------------------------------------------------
   publish-pypi-manual:
     needs: [build-wheels, build-sdist]
-    if: github.event_name == 'workflow_dispatch' && fromJSON(github.event.inputs.publish) == true
+    if: always() && github.event_name == 'workflow_dispatch' && fromJSON(github.event.inputs.publish) == true
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.target }}   # testpypi or pypi
     permissions:
