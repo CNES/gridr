@@ -155,57 +155,33 @@ jobs:
           name: sdist
           path: dist/*.tar.gz
 
-    # --------------------------------------------------------------
-    # DEBUG JOB – publish-pypi pre-flight check
-    # --------------------------------------------------------------
-    # This job runs *after* the wheels and sdist have been built but *before*
-    # the actual publishing step. Its sole purpose is to print out the
-    # values GitHub sees for the workflow_dispatch inputs and for the
-    # dependent jobs.  By using `if: always()` we guarantee that the job
-    # executes even when the main publish job would otherwise be skipped,
-    # so you can verify that:
-    #
-    #   • `github.event_name` is either "push" or "workflow_dispatch"
-    #   • `github.event.inputs.publish` contains the string "true" when
-    #     you have ticked the **Publish** checkbox in the UI
-    #   • `github.event.inputs.target` correctly reflects the chosen
-    #     repository (testpypi or pypi)
-    #   • The preceding jobs (`build-wheels`, `build-sdist`, and
-    #     optionally `check-version`) have completed with the expected
-    #     result (success, failure, or skipped)
-    #
-    # The job also downloads the already-uploaded artifacts and lists them,
-    # making it easy to confirm that the expected wheel and sdist files are
-    # present before the actual upload step runs.
-    #
-    # Once you have confirmed that the inputs are being passed correctly,
-    # you can either remove this job or disable it (`if: false`) to keep
-    # your CI runs fast and tidy.
-    # --------------------------------------------------------------
-    debug-publish-inputs:
-      needs: [build-wheels, build-sdist]   # wait for the build artifacts
-      if: always()                         # run regardless of previous success/failure
-      runs-on: ubuntu-latest
-      steps:
-        - name: Show workflow metadata
-          run: |
-            echo "Event name    : ${{ github.event_name }}"
-            echo "Publish input : '${{ github.event.inputs.publish }}'"
-            echo "Target input  : '${{ github.event.inputs.target }}'"
-            echo "Environment   : ${{ github.event_name == 'push' && 'pypi' || '' }}"
-            echo "Environment2   : ${{ github.event_name == 'push' && 'pypi' || '' }}"
-            echo "If part 2 : ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true') }}"
-            echo "Build-wheels result : ${{ needs.build-wheels.result }}"
-            echo "Build-sdist result  : ${{ needs.build-sdist.result }}"
-        - name: List uploaded artifacts (for sanity check)
-          uses: actions/download-artifact@v7
-          with:
-            path: ./debug-artifacts
-            merge-multiple: false
-        - name: Echo artifact tree
-          run: |
-            echo "Artifacts downloaded to ./debug-artifacts:"
-            find ./debug-artifacts -type f | sort
+  # --------------------------------------------------------------
+  # DEBUG JOB – publish-pypi pre-flight check
+  # --------------------------------------------------------------
+  debug-publish-inputs:
+    needs: [build-wheels, build-sdist]   # wait for the build artifacts
+    if: always()                         # run regardless of previous success/failure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show workflow metadata
+        run: |
+          echo "Event name    : ${{ github.event_name }}"
+          echo "Publish input : '${{ github.event.inputs.publish }}'"
+          echo "Target input  : '${{ github.event.inputs.target }}'"
+          echo "Environment   : ${{ github.event_name == 'push' && 'pypi' || '' }}"
+          echo "Environment2   : ${{ github.event_name == 'push' && 'pypi' || '' }}"
+          echo "If part 2 : ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true') }}"
+          echo "Build-wheels result : ${{ needs.build-wheels.result }}"
+          echo "Build-sdist result  : ${{ needs.build-sdist.result }}"
+      - name: List uploaded artifacts (for sanity check)
+        uses: actions/download-artifact@v7
+        with:
+          path: ./debug-artifacts
+          merge-multiple: false
+      - name: Echo artifact tree
+        run: |
+          echo "Artifacts downloaded to ./debug-artifacts:"
+          find ./debug-artifacts -type f | sort
 
   # ---------------------------------------------------------------------
   # Publish. Gated behind a GitHub Environment matching the target
