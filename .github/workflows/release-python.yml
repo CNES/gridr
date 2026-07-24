@@ -167,9 +167,9 @@ jobs:
   # ---------------------------------------------------------------------
   publish-pypi:
     needs: [build-wheels, build-sdist]
-    if: github.event_name == 'push' || inputs.publish == true
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == true)
     runs-on: ubuntu-latest
-    environment: ${{ github.event_name == 'push' && 'pypi' || inputs.target }}
+    environment: ${{ github.event_name == 'push' && 'pypi' || github.event.inputs.target }}
     permissions:
       id-token: write  # required for Trusted Publishing (OIDC), both indexes
     steps:
@@ -186,6 +186,6 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: >-
-            ${{ (github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi')
+            ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testpypi')
                 && 'https://test.pypi.org/legacy/'
                 || 'https://upload.pypi.org/legacy/' }}
