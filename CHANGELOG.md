@@ -14,6 +14,16 @@
 
 - Updated pixel center terminology to align with OGC standard
 
+### Build & Tooling
+
+- **GitHub Actions** — added `release-python.yml`.
+  - `release-python.yml`: builds wheels for manylinux_2_28/x86_64, macOS (Intel and Apple Silicon),
+    and Windows x86_64 via `cibuildwheel`, on a `v*` tag push (auto-publish) or manual dispatch
+    (build-only by default). A single `cp310-abi3` wheel per platform/arch covers Python 3.10-3.14+
+    (`py_limited_api=cp310`), so no per-Python-version matrix is needed. AVX2/FMA `RUSTFLAGS` applied
+    on every x86_64 target; automatically verified present in the compiled binary via `objdump` on
+    Linux. Publishes to PyPI (or TestPyPI, for manual test runs) via Trusted Publishing (OIDC) — no
+    stored token.
 
 ## [0.6.0] - 2026-06-10
 
