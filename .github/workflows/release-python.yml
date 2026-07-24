@@ -167,7 +167,7 @@ jobs:
   # ---------------------------------------------------------------------
   publish-pypi:
     needs: [build-wheels, build-sdist]
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == true)
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true')
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'push' && 'pypi' || github.event.inputs.target }}
     permissions:
