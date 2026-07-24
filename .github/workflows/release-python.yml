@@ -168,11 +168,10 @@ jobs:
           echo "Event name    : ${{ github.event_name }}"
           echo "Publish input : '${{ github.event.inputs.publish }}'"
           echo "Target input  : '${{ github.event.inputs.target }}'"
-          echo "Environment   : ${{ github.event_name == 'push' && 'pypi' || '' }}"
-          echo "Environment2   : ${{ github.event_name == 'push' && 'pypi' || '' }}"
-          echo "If part 2 : ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true' }}"
           echo "Build-wheels result : ${{ needs.build-wheels.result }}"
           echo "Build-sdist result  : ${{ needs.build-sdist.result }}"
+          echo "environment   = ${{ github.event_name == 'push' && 'pypi' || github.event.inputs.target }}"
+          echo "if-expression = ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true' }}"
       - name: List uploaded artifacts (for sanity check)
         uses: actions/download-artifact@v7
         with:
@@ -197,7 +196,7 @@ jobs:
     needs: [build-wheels, build-sdist]
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true')
     runs-on: ubuntu-latest
-    environment: ${{ github.event_name == 'push' && 'pypi' || github.event.inputs.target }}
+    environment: ${{ github.event_name == 'push' && 'pypi' || github.event.inputs.target || '' }}
     permissions:
       id-token: write  # required for Trusted Publishing (OIDC), both indexes
     steps:
