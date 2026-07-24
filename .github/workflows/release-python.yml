@@ -182,23 +182,42 @@ jobs:
           echo "Artifacts downloaded to ./debug-artifacts:"
           find ./debug-artifacts -type f | sort
 
-  # ---------------------------------------------------------------------
-  # Publish. Gated behind a GitHub Environment matching the target
-  # (`pypi` or `testpypi`) - each needs its own Trusted Publishing config
-  # on the corresponding index (pypi.org and test.pypi.org are entirely
-  # separate services/accounts, configured independently).
-  #   - tag push        -> always the real `pypi` environment/index
-  #   - manual dispatch  -> whichever `target` was chosen (testpypi by
-  #                         default, so accidental manual runs can never
-  #                         reach the real index without an explicit choice)
-  # ---------------------------------------------------------------------
-  publish-pypi:
+
+  # -------------------------------------------------------------
+  # 1️ Publish for a tag push  (uses the *pypi* environment)
+  # -------------------------------------------------------------
+  publish-pypi-tag:
     needs: [build-wheels, build-sdist]
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true')
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    environment: ${{ github.event_name == 'push' && 'pypi' || github.event.inputs.target || '' }}
+    environment: pypi                     # <-- must exist in Settings
     permissions:
-      id-token: write  # required for Trusted Publishing (OIDC), both indexes
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: wheels-*
+          path: dist/
+          merge-multiple: true
+      - uses: actions/download-artifact@v7
+        with:
+          name: sdist
+          path: dist/
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://upload.pypi.org/legacy/
+
+  # -------------------------------------------------------------
+  # 2️ Publish for a manual dispatch (uses the *testpypi* env)
+  # -------------------------------------------------------------
+  publish-pypi-manual:
+    needs: [build-wheels, build-sdist]
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.target }}   # testpypi or pypi
+    permissions:
+      id-token: write
     steps:
       - uses: actions/download-artifact@v7
         with:
@@ -213,6 +232,6 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: >-
-            ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testpypi')
+            ${{ github.event.inputs.target == 'testpypi'
                 && 'https://test.pypi.org/legacy/'
                 || 'https://upload.pypi.org/legacy/' }}
