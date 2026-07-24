@@ -160,7 +160,8 @@ jobs:
   # --------------------------------------------------------------
   debug-publish-inputs:
     needs: [build-wheels, build-sdist]   # wait for the build artifacts
-    if: always()                         # run regardless of previous success/failure
+    #if: always()                         # run regardless of previous success/failure
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Show workflow metadata
@@ -213,7 +214,7 @@ jobs:
   # -------------------------------------------------------------
   publish-pypi-manual:
     needs: [build-wheels, build-sdist]
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true'
+    if: github.event_name == 'workflow_dispatch' && fromJSON(github.event.inputs.publish) == true
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.target }}   # testpypi or pypi
     permissions:
