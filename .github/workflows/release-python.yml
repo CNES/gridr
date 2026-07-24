@@ -70,10 +70,12 @@ jobs:
             cibw_platform: macos
             cibw_archs: x86_64
             rustflags: '-C target-feature=+avx2,+fma'
+            deployment_target: '10.15'
           - os: macos-14     # Apple Silicon (arm64) GitHub-hosted runner image
             cibw_platform: macos
             cibw_archs: arm64
             rustflags: ''    # no AVX2/FMA on arm64
+            deployment_target: '11.0' # ARM64 starts from macOS 11
 
     runs-on: ${{ matrix.os }}
     steps:
