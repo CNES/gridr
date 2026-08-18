@@ -69,7 +69,7 @@ else
 	NUMPY_VERSION_TAG = "_numpy$(NUMPY_VERSION)"
 endif
 
-GLIBC_VERSION := $(shell ldd --version | head -n1 | grep -o '[0-9]*\.[0-9]*')
+GLIBC_VERSION := $(shell ldd --version | head -n1 | sed 's/(.*)//' | grep -o '[0-9]*\.[0-9]*')
 MANYLINUX_GLIBC_TAG := manylinux_2_$(shell echo $(GLIBC_VERSION) | cut -d. -f2)
 
 ifndef BUILD_DIST_OUTDIR
