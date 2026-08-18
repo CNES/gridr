@@ -1,0 +1,26 @@
+# Cargo.toml (workspace root)
+#
+# Two members:
+#   - gridr:    pure-Rust resampling/filtering engine, no pyo3/numpy.
+#               This is the crate an external pure-Rust project depends on.
+#   - gridr-py: PyO3 binding crate producing the `_libgridr` cdylib consumed
+#               by the Python package. Depends on `gridr` as a path
+#               dependency (see gridr-py/Cargo.toml for the version pin).
+[workspace]
+resolver = "2"
+members = ["gridr", "gridr-py"]
+
+# NB: `version` is intentionally NOT shared here anymore. `gridr`, `gridr-py`,
+# and the `gridr` Python package now version independently on purpose - see
+# each crate's own [package].version.
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+
+# Profiles can only be defined at the workspace root; they apply to every
+# member built from within the workspace.
+[profile.release]
+#debug = true
+opt-level = 3
+lto = "fat"
+codegen-units = 1

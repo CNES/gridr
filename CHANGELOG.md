@@ -10,9 +10,24 @@
 
 ### Changed
 
-#### Documentation
+#### Workspace Architecture — Cargo Workspace Split
+- Refactored the codebase to split the single Rust crate into a two-member Cargo workspace:
+  - `rust/gridr`: Pure-Rust core engine without `pyo3` or `numpy` dependencies, allowing it to be consumed as a standalone external Cargo dependency.
+  - `rust/gridr-py`: PyO3 bindings (`cdylib` crate type only) interfacing the pure-Rust engine with Python.
+- Updated internal `use` statements across both crates to align with the workspace boundaries.
+- Updated the project `Makefile` to accommodate the workspace directory structure.
+- **Python Parity:** Preserved exact public Python API and runtime behavior with zero breaking changes on the Python side.
 
+#### Documentation
 - Updated pixel center terminology to align with OGC standard
+
+### Fixed
+
+#### Workspace Architecture — Rust Doctests
+- Fixed doctests compilation errors resulting from the workspace migration - doctests were previously ignored.
+
+#### Makefile
+- Fixed Makefile parsing logic to ignore parentheses when retrieving the GLIBC version string from `ldd --version`.
 
 ### Build & Tooling
 

@@ -1,0 +1,37 @@
+# Cargo.toml
+[package]
+name = "gridr-py"
+# Own version line (see rust/Cargo.toml: versions are no longer shared
+# across the workspace). Purely cosmetic since this crate is never
+# published or depended on.
+version = "0.7.0-dev"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# `version` alongside `path`: even though this is a path dependency (both
+# crates always ship from the same commit in this monorepo), declaring the
+# semver constraint here means `cargo build` fails loudly if `gridr`'s
+# [package].version in ../gridr/Cargo.toml is ever bumped in a way that
+# breaks this constraint instead of silently picking up whatever happens to
+# be on disk.
+gridr = { path = "../gridr", version = "^0.7.0-dev" }
+pyo3 = { version = "0.27.2", features = ["abi3-py310"] }
+numpy = "0.27.0"
+
+[dev-dependencies]
+rstest = "0.26.1"
+
+[build-dependencies]
+pyo3-build-config = "0.27.2"
+
+[lib]
+# private module to be nested into Python package,
+# needs to match the name of the function with the `[#pymodule]` attribute
+name = "_libgridr"
+path = "src/lib.rs"
+# PyO3 extension module only; no external Rust project should
+# depend on this crate directly - it's a thin binding layer with
+# no rlib metadata. Pure-Rust consumers depend on `gridr` instead.
+crate-type = ["cdylib"]
+

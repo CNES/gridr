@@ -17,7 +17,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-from ._libgridr import (  # from py_grid_geometry
+from ._libgridr import (
     BSpline3Interpolator,
     BSpline5Interpolator,
     BSpline7Interpolator,
@@ -32,6 +32,8 @@ from ._libgridr import (  # from py_grid_geometry
     PyGridGeometriesMetricsF64,
     PyGridTransitionMatrix,
     PyInterpolatorType,
+    __native_version__,
+    __pyapi_native_version__,
     py_array1_add_f32_i8,
     py_array1_add_f32_u8,
     py_array1_add_f64_i8,
@@ -54,6 +56,8 @@ from ._libgridr import (  # from py_grid_geometry
 )
 
 __all__ = [
+    "__native_version__",
+    "__pyapi_native_version__",
     "PyArrayWindow2",
     "py_array1_replace_i8",
     "py_array1_replace_f32_i8",

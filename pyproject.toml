@@ -55,7 +55,7 @@ find = { where = ["python"] }
 # Private Rust extension module to be nested into the Python package
 # The last part of the target name (i.e. "_libgridr") has to match lib.name in Cargo.toml
 target = "gridr.cdylib._libgridr"
-path = "rust/gridr/Cargo.toml"
+path = "rust/gridr-py/Cargo.toml"
 binding = "PyO3"
 # Build extra options are passed through the DIST_EXTRA_CONFIG environment variable
 # This is used for abi3 wheel build

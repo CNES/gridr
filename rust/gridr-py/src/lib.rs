@@ -16,25 +16,12 @@
 // limitations under the License.
 
 #![warn(missing_docs)]
-//! # gridr
+//! PyO3 binding layer for [gridr](https://github.com/CNES/gridr), exposed
+//! to Python as the private `_libgridr` extension module.
 //!
-//! Pure-Rust geometric and radiometric raster resampling/filtering engine
-//! powering [GridR](https://github.com/CNES/gridr).
-//!
-//! This crate has **no PyO3 or NumPy dependency** and can be used as a
-//! regular Cargo dependency from any pure-Rust project.
-pub mod gx_errors;
-pub mod gx_macros;
-pub mod gx_const;
-pub mod gx_utils;
-pub mod gx_array;
-pub mod gx_array_utils;
-pub mod gx_grid;
-pub mod gx_grid_geometry;
-pub mod gx_grid_resampling;
-pub mod interp;
+//! Exposes `__pyapi_native_version__` (this crate's own `CARGO_PKG_VERSION`)
+//! and `__native_version__` (the `gridr` engine crate's version) at the
+//! Python level, so a given wheel's embedded Rust versions can always be
+//! checked at runtime - see py_bindings.rs.
+pub mod pyapi;
 
-/// This crate's own version (`CARGO_PKG_VERSION`), re-exported so that
-/// downstream crates can surface it without needing to duplicate or
-/// guess it.
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");

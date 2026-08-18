@@ -1,4 +1,6 @@
 # MANIFEST.in
+include rust/Cargo.toml
+include rust/gridr-py/Cargo.toml
 include rust/gridr/Cargo.toml
 recursive-include rust *.rs
 

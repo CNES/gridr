@@ -23,15 +23,19 @@ export RUSTFLAGS ?= -C target-feature=+avx2,+fma
 
 # Project path to the python directory
 GRIDR_PYTHON_PATH := $(ROOT_DIR)python/gridr
-# Project path to the rust directory
-GRIDR_RUST_CRATE_PATH := $(ROOT_DIR)rust/gridr
+# Project path to the rust workspace root (contains gridr and gridr-py)
+GRIDR_RUST_WORKSPACE_PATH := $(ROOT_DIR)rust
+# Project path to the PyO3 binding crate (the one producing the cdylib);
+# cargo auto-detects the workspace root from here, but the actual `target/`
+# directory lives at GRIDR_RUST_WORKSPACE_PATH, not under this crate.
+GRIDR_RUST_PYAPI_CRATE_PATH := $(ROOT_DIR)rust/gridr-py
 
 # In order to perform tests with pytest we have to build the rust library and to create
 # a symbolic link to the target path
-GRIDR_LIBGRIDR_SO_BUILD_TARGET := $(GRIDR_RUST_CRATE_PATH)/target/release/lib_libgridr.so
+GRIDR_LIBGRIDR_SO_BUILD_TARGET := $(GRIDR_RUST_WORKSPACE_PATH)/target/release/lib_libgridr.so
 GRIDR_LIBGRIDR_SO_PYTEST_TARGET := $(GRIDR_PYTHON_PATH)/cdylib/_libgridr.so
 
-GRIDR_LIBGRIDR_DOC_BUILD_PATH := $(GRIDR_RUST_CRATE_PATH)/target/doc
+GRIDR_LIBGRIDR_DOC_BUILD_PATH := $(GRIDR_RUST_WORKSPACE_PATH)/target/doc
 
 GRIDR_DOCS_ROOT_PATH := $(ROOT_DIR)docs
 ifdef GRIDR_SPHINX_BUILD_PATH
@@ -97,9 +101,14 @@ endif
 
 # Collect all Rust source files for dependency tracking.
 # This allows Make to rebuild the library only when Rust sources actually change.
-RUST_SOURCES := $(shell find $(GRIDR_RUST_CRATE_PATH)/src -name '*.rs' 2>/dev/null) \
-                $(GRIDR_RUST_CRATE_PATH)/Cargo.toml \
-                $(GRIDR_RUST_CRATE_PATH)/Cargo.lock
+# Collect all Rust source files for dependency tracking.
+# This allows Make to rebuild the library only when Rust sources actually change.
+# Includes the gridr crate since gridr-py depends on it directly.
+RUST_SOURCES := $(shell find $(GRIDR_RUST_WORKSPACE_PATH)/gridr-py/src $(GRIDR_RUST_WORKSPACE_PATH)/gridr/src -name '*.rs' 2>/dev/null) \
+                $(GRIDR_RUST_WORKSPACE_PATH)/Cargo.toml \
+                $(GRIDR_RUST_WORKSPACE_PATH)/Cargo.lock \
+                $(GRIDR_RUST_PYAPI_CRATE_PATH)/Cargo.toml \
+                $(GRIDR_RUST_WORKSPACE_PATH)/gridr/Cargo.toml
 
 .PHONY: info
 info:
@@ -148,9 +157,9 @@ $(GRIDR_VENV_SENTINEL): $(ROOT_DIR)requirements_dev.txt
 # .PHONY and making the .so the target lets Make decide whether work is needed.
 $(GRIDR_LIBGRIDR_SO_BUILD_TARGET): $(GRIDR_VENV_SENTINEL) $(RUST_SOURCES) | check
 	@echo "Building libgridr.so rust library..."
-	@echo "Rust crate location : $(GRIDR_RUST_CRATE_PATH)"
+	@echo "Rust crate location : $(GRIDR_RUST_PYAPI_CRATE_PATH)"
 	@echo "INFO: Rust build flags : $(RUSTFLAGS)"
-	@source $(GRIDR_VENV)/bin/activate && cd $(GRIDR_RUST_CRATE_PATH) && cargo build --release
+	@source $(GRIDR_VENV)/bin/activate && cd $(GRIDR_RUST_PYAPI_CRATE_PATH) && cargo build --release
 
 # The pytest symlink depends only on the compiled .so.
 # It is recreated whenever the .so is rebuilt (i.e. newer than the symlink).
@@ -166,14 +175,19 @@ build-rust: $(GRIDR_LIBGRIDR_SO_BUILD_TARGET) ## build the rust project
 .PHONY: test-rust
 test-rust: $(GRIDR_VENV_SENTINEL) ## test rust code
 	@echo "Test rust code..."
-	@source $(GRIDR_VENV)/bin/activate && cd $(GRIDR_RUST_CRATE_PATH) && RUST_BACKTRACE=1 cargo test -- --nocapture
+	@source $(GRIDR_VENV)/bin/activate && cd $(GRIDR_RUST_WORKSPACE_PATH) && RUST_BACKTRACE=1 cargo test --workspace -- --nocapture
+
+.PHONY: cargo-lock-update
+cargo-lock-update: $(GRIDR_VENV_SENTINEL) ## Upgrade cargo lock
+	@echo "Update cargo.lock..."
+	@source $(GRIDR_VENV)/bin/activate && cd $(GRIDR_RUST_WORKSPACE_PATH) && cargo update --verbose
 
 .PHONY: build-rust-doc
 build-rust-doc: $(GRIDR_VENV_SENTINEL) ## build the rust documentation
 	@echo "Building rust documentation..."
 	@echo "Rust documentation location : $(GRIDR_LIBGRIDR_DOC_BUILD_PATH)"
 	rm -rf $(GRIDR_LIBGRIDR_DOC_BUILD_PATH)
-	@source $(GRIDR_VENV)/bin/activate && cd $(GRIDR_RUST_CRATE_PATH) && cargo doc --no-deps --document-private-items
+	@source $(GRIDR_VENV)/bin/activate && cd $(GRIDR_RUST_WORKSPACE_PATH) && cargo doc --workspace --no-deps --document-private-items
 
 
 .PHONY: build-sphinx-doc
@@ -223,6 +237,12 @@ check-licenses: build ## check licenses and generate NOTICE
 	@$(GRIDR_VENV_TEST_BUILD)/bin/python -m pip install $(PIP_ARG_MAIN)--no-cache-dir $(BUILD_DIST_OUTDIR)_fixed/gridr*.whl
 	@$(GRIDR_VENV_TEST_BUILD)/bin/python $(GRIDR_SCRIPTS_PATH)/generate_notice.py
 
+# Create NOTICE
+.PHONY: check-licenses-rust-only
+check-licenses-rust-only: build-rust ## check licenses and generate NOTICE
+	@echo "Check licenses - Rust only"
+	$(SHELL) $(GRIDR_SCRIPTS_PATH)/generate_rust_notice_gridr_only.sh
+
 .PHONY: clean
 clean: clean-venv clean-build clean-pyc clean-test clean-sphinx-doc ## remove all build, test, coverage and Python artifacts
 
@@ -240,7 +260,7 @@ clean-build:
 	@rm -fr .eggs/
 	@find . -name '*.egg-info' -exec rm -fr {} +
 	@find . -name '*.egg' -exec rm -f {} +
-	@rm -fr rust/gridr/target
+	@rm -fr rust/target
 	@rm -f $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET)
 
 .PHONY: clean-pyc

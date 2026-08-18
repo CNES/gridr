@@ -1,45 +1,25 @@
 # Cargo.toml
 [package]
 name = "gridr"
+# Own version line, independent from gridr-py and from the `gridr` Python
+# package on PyPI (see rust/Cargo.toml).
 version = "0.7.0-dev"
-edition = "2021"
-license = "Apache-2.0"
+edition.workspace = true
+license.workspace = true
+repository = "https://github.com/CNES/gridr"
+description = "Pure-Rust Geometric and Radiometric Image Data Resampling library"
 
-[features]
-default = ["extension-module"]
-extension-module = ["dep:pyo3", "dep:numpy", "pyo3/extension-module"]
-
-[profile.release]
-#debug = true          
-opt-level = 3         
-lto = "fat"          
-codegen-units = 1   
+# No crate-type override: a plain [lib] target defaults to crate-type = ["lib"],
+# which produces an rlib (+ metadata) that any other Rust crate — including
+# gridr-py — can depend on via a normal [dependencies] entry.
+[lib]
+path = "src/lib.rs"
 
 [dependencies]
-pyo3 = { version = "0.27.2", optional = true, features = ["abi3-py310"] }
-numpy = { version = "0.27.1", optional = true }
-ndarray = { version = "0.15.6", features = ["approx", "rayon"] }
 approx = "0.5.1"
 thiserror = "1"
 transpose = "0.2.3"
 
 [dev-dependencies]
 rstest = "0.26.1"
-
-[build-dependencies]
-pyo3-build-config = "0.27.2"
-
-[lib]
-name = "_libgridr"  # private module to be nested into Python package,
-               # needs to match the name of the function with the `[#pymodule]` attribute
-path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]  # cdylib for Python to import from, rlib so gridr can be used as a normal Rust dependency.
-# Doc examples reference paths that assume being compiled as the `gridr` crate (its
-# actual extern name is `_libgridr`, see above); adding `rlib` makes cargo attempt to
-# run them for the first time (previously skipped entirely for cdylib-only crates),
-# so keep them disabled to preserve prior `cargo test` behavior.
-doctest = false
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-# See also PyO3 docs on writing Cargo.toml files at https://pyo3.rs
 
