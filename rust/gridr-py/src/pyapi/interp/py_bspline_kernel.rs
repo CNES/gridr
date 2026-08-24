@@ -193,7 +193,7 @@ pub struct PyBSpline11Interpolator {
 /// This macro generates Python method implementations for different dimensional
 /// B-Spline interpolators.
 macro_rules! impl_pybspline {
-    ($name:ident, $n:expr) => {
+    ($name:ident, $n:expr_2021) => {
         #[pymethods]
         impl $name {
             /// Creates a new GxBSplineInterpolator<N> instance.

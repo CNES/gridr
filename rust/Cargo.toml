@@ -14,7 +14,7 @@ members = ["gridr", "gridr-py"]
 # and the `gridr` Python package now version independently on purpose - see
 # each crate's own [package].version.
 [workspace.package]
-edition = "2021"
+edition = "2024"
 license = "Apache-2.0"
 
 # Profiles can only be defined at the workspace root; they apply to every

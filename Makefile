@@ -258,8 +258,8 @@ clean-build:
 	@rm -fr dist*/
 	@rm -fr build*/
 	@rm -fr .eggs/
-	@find . -name '*.egg-info' -exec rm -fr {} +
-	@find . -name '*.egg' -exec rm -f {} +
+	@find $(GRIDR_VENV) -name '*.egg-info' -exec rm -fr {} +
+	@find $(GRIDR_VENV) -name '*.egg' -exec rm -fr {} +
 	@rm -fr rust/target
 	@rm -f $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET)
 

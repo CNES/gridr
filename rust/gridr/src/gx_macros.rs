@@ -48,7 +48,7 @@
 /// - If only one is `Some`, it returns the given error.
 #[macro_export]
 macro_rules! assert_options_match {
-    ($opt1:expr, $opt2:expr, $err:expr) => {{
+    ($opt1:expr_2021, $opt2:expr_2021, $err:expr_2021) => {{
         match ($opt1.is_some(), $opt2.is_some()) {
             (true, true) | (false, false) => {}
             _ => return Err($err),
@@ -86,7 +86,7 @@ macro_rules! assert_options_match {
 /// - If both are `Some`, it returns the given error.
 #[macro_export]
 macro_rules! assert_options_exclusive {
-    ($opt1:expr, $opt2:expr, $err:expr) => {{
+    ($opt1:expr_2021, $opt2:expr_2021, $err:expr_2021) => {{
         match ($opt1.is_some(), $opt2.is_some()) {
             (true, false) | (false, true) | (false, false) => {}
             (true, true) => return Err($err),

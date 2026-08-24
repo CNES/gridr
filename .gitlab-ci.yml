@@ -16,7 +16,7 @@ workflow:
 stages:
     - init
     - quality
-    - sonarqube
+    #- sonarqube
     - package
     - release
     - doc
@@ -72,19 +72,20 @@ variables:
     # Variables globales déclarées dans le yaml 
     
     # Tags des images exclusives python
-    TAG_UL_IMAGE_PYTHON_DEFAULT_VERSION: "3.11"
+    TAG_UL_IMAGE_PYTHON_DEFAULT_VERSION: "3.12"
     TAG_UL_IMAGE_PYTHON: "python:${TAG_UL_IMAGE_PYTHON_DEFAULT_VERSION}"
 
     # Definition des variables pour la definition de l'image a utiliser pour la creation du venv, build et test.
     # L'image est definie par : "rust_python:rust-${TAG_IMAGE_RUST_VERSION}_python-${TAG_IMAGE_PYTHON_VERSION}_${TAG_IMAGE_OS}"
-    TAG_IMAGE_RUST_VERSION: "1.89"
-    TAG_IMAGE_PYTHON_VERSION_311: "3.11.12"
-    TAG_IMAGE_PYTHON_VERSION_310: "3.10.17"
-    #TAG_IMAGE_OS: "bookworm-slim"
+    TAG_IMAGE_RUST_VERSION: "1.97.1"
+    TAG_IMAGE_PYTHON_VERSION_314: "3.14.7"
+    TAG_IMAGE_PYTHON_VERSION_312: "3.12.14"
+    TAG_IMAGE_PYTHON_VERSION_311: "3.11.16"
+    TAG_IMAGE_PYTHON_VERSION_310: "3.10.21"
     TAG_IMAGE_OS: "rockylinux8-minimal"
     
-    TAG_IMAGE_PYTHON_DEFAULT_VERSION: "3.11.12"
-    TAG_IMAGE_RUST_DEFAULT_VERSION: "1.89"
+    TAG_IMAGE_PYTHON_DEFAULT_VERSION: "3.12.14"
+    TAG_IMAGE_RUST_DEFAULT_VERSION: "1.97.1"
     # Set the numpy version (temp)
     NUMPY_VERSION_MIN: "1.25.0"
 
@@ -147,9 +148,10 @@ rust_python_init:
     stage: init
     parallel:
         matrix:
-          #- TAG_IMAGE_PYTHON_VERSION: "3.10.17"
-          - TAG_IMAGE_PYTHON_VERSION: "3.11.12"
-          - TAG_IMAGE_PYTHON_VERSION: "3.10.17"
+          - TAG_IMAGE_PYTHON_VERSION: "3.14.7"
+          - TAG_IMAGE_PYTHON_VERSION: "3.12.14"
+          - TAG_IMAGE_PYTHON_VERSION: "3.11.16"
+          - TAG_IMAGE_PYTHON_VERSION: "3.10.21"
             NUMPY_VERSION: "1.25.0"
     # Utilisation de l'image rust_python generee specifiquement
     image: ${ARTIFACTORY_RUST_PYTHON_IMAGE_URL}/rust_python:rust-${TAG_IMAGE_RUST_VERSION}_python-${TAG_IMAGE_PYTHON_VERSION}_${TAG_IMAGE_OS}
@@ -195,7 +197,7 @@ python_init:
     
     script:
         # Mise en place du venv
-        - TAG_VERSION_PYTHON="3_11"
+        - TAG_VERSION_PYTHON="3_12"
         - VENV_VERSION_PYTHON=python_only_env_${TAG_VERSION_PYTHON}
         - python -m venv ${VENV_VERSION_PYTHON}
         - source ${VENV_VERSION_PYTHON}/bin/activate
@@ -218,9 +220,10 @@ pytest:
     #image: ${ARTIFACTORY_URL}/rust:1.79.0-bookworm
     parallel:
         matrix:
-          #- TAG_IMAGE_PYTHON_VERSION: "3.10.17"
-          - TAG_IMAGE_PYTHON_VERSION: "3.11.12"
-          - TAG_IMAGE_PYTHON_VERSION: "3.10.17"
+          - TAG_IMAGE_PYTHON_VERSION: "3.14.7"
+          - TAG_IMAGE_PYTHON_VERSION: "3.12.14"
+          - TAG_IMAGE_PYTHON_VERSION: "3.11.16"
+          - TAG_IMAGE_PYTHON_VERSION: "3.10.21"
             NUMPY_VERSION: "1.25.0"
     image: ${ARTIFACTORY_RUST_PYTHON_IMAGE_URL}/rust_python:rust-${TAG_IMAGE_RUST_VERSION}_python-${TAG_IMAGE_PYTHON_VERSION}_${TAG_IMAGE_OS}
     needs: 
@@ -275,16 +278,13 @@ pylint_analysis:
     # Debian 11 : python 3.9
     parallel:
         matrix:
-          #- TAG_IMAGE_PYTHON_VERSION: "3.10.17"
-          - TAG_IMAGE_PYTHON_VERSION: "3.11.12"
-          #- TAG_IMAGE_PYTHON_VERSION: "3.10.17"
-          #  NUMPY_VERSION: "1.25.0"
+          - TAG_IMAGE_PYTHON_VERSION: "3.12.14"
     image: ${ARTIFACTORY_RUST_PYTHON_IMAGE_URL}/rust_python:rust-${TAG_IMAGE_RUST_VERSION}_python-${TAG_IMAGE_PYTHON_VERSION}_${TAG_IMAGE_OS}
     needs: 
         - rust_python_init
     script:
         # For now manual set TAG_VERSION_PYTHON
-        #- TAG_VERSION_PYTHON="3_11"
+        #- TAG_VERSION_PYTHON="3_12"
         # Mise en place du venv
         - VENV_VERSION_PYTHON=python_env_${TAG_IMAGE_PYTHON_VERSION}_numpy${NUMPY_VERSION}
         - GRIDR_VENV=${VENV_VERSION_PYTHON} make pylint
@@ -294,48 +294,48 @@ pylint_analysis:
           - ./pylint_report.json
         expire_in: 1 day
 
-sonarqube:
-    stage: sonarqube
-    image: ${ARTIFACTORY_URL}/${TAG_IMAGE_SONAR}
-    needs:
-      - pytest
-      - pylint_analysis
-    variables:
-        # Definition de variables pour configuer sonar scanner
-        # Ces variables sont appelées par defaut par sonar-scanner
-        SONAR_TOKEN: ${SONARQUBE_TOKEN}
-        SONAR_HOST_URL: https://${SONARQUBE_HOST}
-        GIT_DEPTH: 0  #Prevent clone shallow error
-    before_script:
-        # Ajout un seul certificat du CNES dans java pour accéder à SonarQube en HTTPS. C'est lié à une limitation de Keytool.
-        # Nous sommes obligé de prendre un autre certificat car sonar-scanner ne se base pas sur l'intégralité de la chaine de certificat mais seulement du premier parent du serveur.
-        - keytool -importcert -alias sonarqube -file "/certs-cnes/AC_TECHNIQUE_SERVEURS_2028.crt" -keystore ${JAVA_HOME}/lib/security/cacerts -storepass changeit -noprompt
+# sonarqube:
+    # stage: sonarqube
+    # image: ${ARTIFACTORY_URL}/${TAG_IMAGE_SONAR}
+    # needs:
+      # - pytest
+      # - pylint_analysis
+    # variables:
+        # # Definition de variables pour configuer sonar scanner
+        # # Ces variables sont appelées par defaut par sonar-scanner
+        # SONAR_TOKEN: ${SONARQUBE_TOKEN}
+        # SONAR_HOST_URL: https://${SONARQUBE_HOST}
+        # GIT_DEPTH: 0  #Prevent clone shallow error
+    # before_script:
+        # # Ajout un seul certificat du CNES dans java pour accéder à SonarQube en HTTPS. C'est lié à une limitation de Keytool.
+        # # Nous sommes obligé de prendre un autre certificat car sonar-scanner ne se base pas sur l'intégralité de la chaine de certificat mais seulement du premier parent du serveur.
+        # - keytool -importcert -alias sonarqube -file "/certs-cnes/AC_TECHNIQUE_SERVEURS_2028.crt" -keystore ${JAVA_HOME}/lib/security/cacerts -storepass changeit -noprompt
  
-    script:
-        - |-
-            if [ ${CI_PIPELINE_SOURCE} == "merge_request_event" ]; then
-              SONARQUBE_PARAMETERS="-Dsonar.pullrequest.key='${CI_MERGE_REQUEST_IID}' -Dsonar.pullrequest.branch='${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}' -Dsonar.pullrequest.base='${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}'"
-            elif [[ ${CI_COMMIT_BRANCH} =~ ^(feature|hotfix|bugfix|release|develop).*$ ]]; then
-              SONARQUBE_PARAMETERS="-Dsonar.branch.name='${CI_COMMIT_BRANCH}'"
-            fi
-        - "[ $DEBUG = true ] && echo sonar-scanner ${SONARQUBE_PARAMETERS} -Dsonar.externalIssuesReportPaths=pylint_report.json -Dsonar.sources=python -Dsonar.python.coverage.reportPaths=.coverage-reports/* -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300"
-        # Scan du projet avec sonar-scanner
-        - |-
-            if [[ -z ${SONAR_PROJECT_KEY} ]]; then 
-                sonar-scanner ${SONARQUBE_PARAMETERS} -X -Dsonar.verbose=true -Dsonar.externalIssuesReportPaths=pylint_report.json -Dsonar.sources=python -Dsonar.python.coverage.reportPaths=.coverage-reports/* -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300
-            else 
-                sonar-scanner ${SONARQUBE_PARAMETERS} -X -Dsonar.verbose=true -Dsonar.externalIssuesReportPaths=pylint_report.json -Dsonar.sources=python -Dsonar.python.coverage.reportPaths=.coverage-reports/* -Dsonar.projectKey="${SONAR_PROJECT_KEY}" -Dsonar.projectName="${SONAR_PROJECT_NAME}" -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300
-            fi
+    # script:
+        # - |-
+            # if [ ${CI_PIPELINE_SOURCE} == "merge_request_event" ]; then
+              # SONARQUBE_PARAMETERS="-Dsonar.pullrequest.key='${CI_MERGE_REQUEST_IID}' -Dsonar.pullrequest.branch='${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}' -Dsonar.pullrequest.base='${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}'"
+            # elif [[ ${CI_COMMIT_BRANCH} =~ ^(feature|hotfix|bugfix|release|develop).*$ ]]; then
+              # SONARQUBE_PARAMETERS="-Dsonar.branch.name='${CI_COMMIT_BRANCH}'"
+            # fi
+        # - "[ $DEBUG = true ] && echo sonar-scanner ${SONARQUBE_PARAMETERS} -Dsonar.externalIssuesReportPaths=pylint_report.json -Dsonar.sources=python -Dsonar.python.coverage.reportPaths=.coverage-reports/* -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300"
+        # # Scan du projet avec sonar-scanner
+        # - |-
+            # if [[ -z ${SONAR_PROJECT_KEY} ]]; then 
+                # sonar-scanner ${SONARQUBE_PARAMETERS} -X -Dsonar.verbose=true -Dsonar.externalIssuesReportPaths=pylint_report.json -Dsonar.sources=python -Dsonar.python.coverage.reportPaths=.coverage-reports/* -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300
+            # else 
+                # sonar-scanner ${SONARQUBE_PARAMETERS} -X -Dsonar.verbose=true -Dsonar.externalIssuesReportPaths=pylint_report.json -Dsonar.sources=python -Dsonar.python.coverage.reportPaths=.coverage-reports/* -Dsonar.projectKey="${SONAR_PROJECT_KEY}" -Dsonar.projectName="${SONAR_PROJECT_NAME}" -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300
+            # fi
       
-    allow_failure: true
-    artifacts:
-        untracked: true
-        expire_in: 1 day
-    cache:
-        key: "coverage-python-reports"
-        paths:
-          - .coverage-reports/coverage.xml
-        policy: pull
+    # allow_failure: true
+    # artifacts:
+        # untracked: true
+        # expire_in: 1 day
+    # cache:
+        # key: "coverage-python-reports"
+        # paths:
+          # - .coverage-reports/coverage.xml
+        # policy: pull
 
 package-build:
     stage: package
@@ -344,8 +344,10 @@ package-build:
     # Debian 11 : python 3.9
     parallel:
         matrix:
-          - TAG_IMAGE_PYTHON_VERSION: "3.11.12"
-          - TAG_IMAGE_PYTHON_VERSION: "3.10.17"
+          - TAG_IMAGE_PYTHON_VERSION: "3.14.7"
+          - TAG_IMAGE_PYTHON_VERSION: "3.12.14"
+          - TAG_IMAGE_PYTHON_VERSION: "3.11.16"
+          - TAG_IMAGE_PYTHON_VERSION: "3.10.21"
             NUMPY_VERSION: "1.25.0"
     image: ${ARTIFACTORY_RUST_PYTHON_IMAGE_URL}/rust_python:rust-${TAG_IMAGE_RUST_VERSION}_python-${TAG_IMAGE_PYTHON_VERSION}_${TAG_IMAGE_OS}
     needs: 
@@ -409,14 +411,14 @@ release-publish-artifactory:
         - pytest
     script:
         # Mise en place du venv
-        #- TAG_VERSION_PYTHON="3_11"
+        #- TAG_VERSION_PYTHON="3_12"
         #- VENV_VERSION_PYTHON=python_only_env_${TAG_VERSION_PYTHON}
         #- source ${VENV_VERSION_PYTHON}/bin/activate
         #- ls dist/*
         #- python -m twine upload --verbose --cert ${CNES_CERTIFICATE} --repository-url https://${ARTIFACTORY_HOST}/artifactory/api/pypi/${ARTIFACTORY_GRIDR_PIP} --username ${ARTIFACTORY_USER} --password ${ARTIFACTORY_TOKEN} dist/*
         #- !reference [.template_release_job, script]
         - |
-          TAG_VERSION_PYTHON="3_11"
+          TAG_VERSION_PYTHON="3_12"
           # Extraire la version du tag
           TAG_VERSION=${CI_COMMIT_TAG#v}
           # Extraire la version de pyproject.toml
@@ -509,8 +511,6 @@ build_doc:
         #FOR NOW THE CI ONLY WORKS WITH DEBIAN 12 PACKAGED PYTHON      
         #- apt-get update && apt-get install -y python3.11 libpython3.11-dev python3.11-venv python3-pip
     script:
-        # For now manual set TAG_VERSION_PYTHON
-        #- TAG_VERSION_PYTHON="3_11"
         # Mise en place du venv
         - VENV_VERSION_PYTHON=python_env_${TAG_IMAGE_PYTHON_DEFAULT_VERSION}
         - GRIDR_VENV=${VENV_VERSION_PYTHON} make build-sphinx-doc

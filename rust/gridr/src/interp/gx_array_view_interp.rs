@@ -309,9 +309,9 @@ impl<T: GxArrayViewInterpolatorInputMaskStrategy>
     }
     
     #[inline(always)]
-    unsafe fn is_valid_unsafe(&self, idx: usize) -> u8 {
+    unsafe fn is_valid_unsafe(&self, idx: usize) -> u8 { unsafe {
         (*self).is_valid_unsafe(idx)
-    }
+    }}
     
     #[inline(always)]
     fn is_valid_window<const H: usize, const W: usize>(
@@ -331,11 +331,11 @@ impl<T: GxArrayViewInterpolatorInputMaskStrategy>
         start_idx: usize,
         start_row_idx: usize,
         start_col_idx: usize,
-    ) -> u8 {
+    ) -> u8 { unsafe {
         (*self).is_valid_window_unsafe::<H, W>(
             start_idx, start_row_idx, start_col_idx
         )
-    }
+    }}
     
     #[inline(always)]
     fn count_valid_window<const H: usize, const W: usize>(
@@ -357,13 +357,13 @@ impl<T: GxArrayViewInterpolatorInputMaskStrategy>
         start_idx: usize,
         start_row_idx: usize,
         start_col_idx: usize,
-    ) -> usize {
+    ) -> usize { unsafe {
         (*self).count_valid_window_unsafe::<H, W>(
             start_idx,
             start_row_idx,
             start_col_idx,
         )
-    }
+    }}
 
     #[inline(always)]
     fn is_valid_weighted_window<const H: usize, const W: usize>(
@@ -388,12 +388,12 @@ impl<T: GxArrayViewInterpolatorInputMaskStrategy>
         start_col_idx: usize,
         weights_row: &[f64],
         weights_col: &[f64],
-    ) -> u8 {
+    ) -> u8 { unsafe {
         (*self).is_valid_weighted_window_unsafe::<H, W>(
             start_idx, start_row_idx, start_col_idx,
             weights_row, weights_col,
         )
-    }
+    }}
 
     #[inline(always)]
     fn is_enabled(&self) -> bool {
@@ -508,10 +508,10 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
     }
 
     #[inline(always)]
-    unsafe fn is_valid_unsafe(&self, idx: usize) -> u8 {
+    unsafe fn is_valid_unsafe(&self, idx: usize) -> u8 { unsafe {
         // SAFETY: caller guarantees idx is within mask bounds.
         *self.mask.data.get_unchecked(idx)
-    }
+    }}
 
     /// Pre-slices one row at a time to eliminate bounds checks in the
     /// inner loop.  The iterator `fold` compiles to a tight AND chain
@@ -541,7 +541,7 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
         start_idx: usize,
         _start_row_idx: usize,
         _start_col_idx: usize,
-    ) -> u8 {
+    ) -> u8 { unsafe {
         let ncol = self.mask.ncol;
         let data = &self.mask.data;
         let mut row_base = start_idx;
@@ -557,7 +557,7 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
             row_base += ncol;
         }
         acc
-    }
+    }}
 
     /// Pre-slices one row at a time.  The `map(|&v| v as usize).sum()`
     /// pattern compiles to a tight add chain without bounds checks.
@@ -586,7 +586,7 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
         start_idx: usize,
         _start_row_idx: usize,
         _start_col_idx: usize,
-    ) -> usize {
+    ) -> usize { unsafe {
         let ncol = self.mask.ncol;
         let data = &self.mask.data;
         let mut row_base = start_idx;
@@ -600,7 +600,7 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
             row_base += ncol;
         }
         acc
-    }
+    }}
 
     /// For active rows, the inner loop uses a pre-sliced row and iterator to
     /// eliminate bounds checks.
@@ -650,7 +650,7 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
         _start_col_idx: usize,
         weights_row: &[f64],
         weights_col: &[f64],
-    ) -> u8 {
+    ) -> u8 { unsafe {
         let ncol = self.mask.ncol;
         let data = &self.mask.data;
         let height_m1 = H - 1;
@@ -675,7 +675,7 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
             row_base += ncol;
         }
         1
-    }
+    }}
     
     #[inline(always)]
     fn is_enabled(&self) -> bool {
@@ -777,10 +777,10 @@ for BinaryInputMaskWithSafeWindow<'a> {
     }
 
     #[inline(always)]
-    unsafe fn is_valid_unsafe(&self, idx: usize) -> u8 {
+    unsafe fn is_valid_unsafe(&self, idx: usize) -> u8 { unsafe {
         // SAFETY: caller guarantees idx is within mask bounds.
         *self.inner.mask.data.get_unchecked(idx)
-    }
+    }}
 
     /// Pre-slices one row at a time to eliminate bounds checks in the
     /// inner loop.  The iterator `fold` compiles to a tight AND chain
@@ -808,7 +808,7 @@ for BinaryInputMaskWithSafeWindow<'a> {
         start_idx: usize,
         start_row_idx: usize,
         start_col_idx: usize,
-    ) -> u8 {
+    ) -> u8 { unsafe {
         if self.is_in_conv_safe_box(start_row_idx, start_col_idx)
         {
             1
@@ -817,7 +817,7 @@ for BinaryInputMaskWithSafeWindow<'a> {
                 start_idx, start_row_idx, start_col_idx
             )
         }
-    }
+    }}
 
     /// Pre-slices one row at a time.  The `map(|&v| v as usize).sum()`
     /// pattern compiles to a tight add chain without bounds checks.
@@ -847,7 +847,7 @@ for BinaryInputMaskWithSafeWindow<'a> {
         start_idx: usize,
         start_row_idx: usize,
         start_col_idx: usize,
-    ) -> usize {
+    ) -> usize { unsafe {
         if self.is_in_conv_safe_box(start_row_idx, start_col_idx)
         {
             H*W
@@ -856,7 +856,7 @@ for BinaryInputMaskWithSafeWindow<'a> {
                 start_idx, start_row_idx, start_col_idx
             )
         }
-    }
+    }}
 
     /// For active rows, the inner loop uses a pre-sliced row and iterator to
     /// eliminate bounds checks.
@@ -888,7 +888,7 @@ for BinaryInputMaskWithSafeWindow<'a> {
         start_col_idx: usize,
         weights_row: &[f64],
         weights_col: &[f64],
-    ) -> u8 {
+    ) -> u8 { unsafe {
         if self.is_in_conv_safe_box(start_row_idx, start_col_idx)
         {
             1
@@ -898,7 +898,7 @@ for BinaryInputMaskWithSafeWindow<'a> {
                 weights_row, weights_col
             )
         }
-    }
+    }}
     
     #[inline(always)]
     fn is_enabled(&self) -> bool {
@@ -1973,7 +1973,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
     ) where
         T: Copy + std::ops::Mul<f64, Output = f64> + Into<f64>,
         V: Copy + From<f64>,
-    {
+    { unsafe {
         let half_rows  = (KROWS / 2) as i64;
         let half_cols  = (KCOLS / 2) as i64;
         let ncol       = array_in.ncol;
@@ -2008,7 +2008,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
             in_shift  += in_var_sz;
             out_shift += out_var_sz;
         }
-    }
+    }}
 
     // =========================================================================
     // interpolate_nomask_partial_unsafe
@@ -2032,7 +2032,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         T: Copy + std::ops::Mul<f64, Output = f64> + Into<f64>,
         V: Copy + From<f64>,
         OM: GxArrayViewInterpolatorOutputMaskStrategy,
-    {
+    { unsafe {
         let half_rows  = (KROWS / 2) as i64;
         let half_cols  = (KCOLS / 2) as i64;
         let ncol       = array_in.ncol;
@@ -2101,7 +2101,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
             out_shift += out_var_sz;
         }
         output_mask.set_value(out_idx, 1);
-    }
+    }}
 
     // =========================================================================
     // interpolate_masked_unchecked
@@ -2125,7 +2125,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         T: Copy + std::ops::Mul<f64, Output = f64> + Into<f64>,
         V: Copy + From<f64>,
         IC: GxArrayViewInterpolationContextTrait,
-    {
+    { unsafe {
         let half_rows  = (KROWS / 2) as i64;
         let half_cols  = (KCOLS / 2) as i64;
         let ncol       = array_in.ncol;
@@ -2177,7 +2177,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
                 context.output_mask(), array_in.nvar, out_var_sz,
             );
         }
-    }
+    }}
 
     // =========================================================================
     // interpolate_masked_partial
@@ -2201,7 +2201,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         T: Copy + std::ops::Mul<f64, Output = f64> + Into<f64> + PartialEq,
         V: Copy + From<f64> + PartialEq,
         IC: GxArrayViewInterpolationContextTrait,
-    {
+    { unsafe {
         let half_rows  = (KROWS / 2) as i64;
         let half_cols  = (KCOLS / 2) as i64;
         let ncol       = array_in.ncol;
@@ -2279,7 +2279,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
             out_shift += out_var_sz;
         }
         context.output_mask().set_value(out_idx, 1);
-    }
+    }}
     
     // =========================================================================
     // compute_weights  (required)
