@@ -21,6 +21,9 @@
 #### Documentation
 - Updated pixel center terminology to align with OGC standard
 
+#### Rust edition upgrade
+- Upgraded Rust code to be compliant with edition 2024 (requires rust 1.85.1)
+
 ### Fixed
 
 #### Workspace Architecture — Rust Doctests
@@ -39,6 +42,11 @@
     on every x86_64 target; automatically verified present in the compiled binary via `objdump` on
     Linux. Publishes to PyPI (or TestPyPI, for manual test runs) via Trusted Publishing (OIDC) — no
     stored token.
+
+- **CNES Gitlab-CI** - rust/python version's upgrades
+  - Bumped default Rust version to 1.97.1
+  - Bumped python version 3.10 and 3.11 to latest security patches
+  - Added tests iterations for python 3.12 and 3.14
 
 ## [0.6.0] - 2026-06-10
 

@@ -7,6 +7,7 @@ name = "gridr-py"
 version = "0.7.0-dev"
 edition.workspace = true
 license.workspace = true
+rust-version = "1.85.1"
 
 [dependencies]
 # `version` alongside `path`: even though this is a path dependency (both

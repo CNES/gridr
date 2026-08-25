@@ -8,6 +8,7 @@ edition.workspace = true
 license.workspace = true
 repository = "https://github.com/CNES/gridr"
 description = "Pure-Rust Geometric and Radiometric Image Data Resampling library"
+rust-version = "1.85.1"
 
 # No crate-type override: a plain [lib] target defaults to crate-type = ["lib"],
 # which produces an rlib (+ metadata) that any other Rust crate — including
