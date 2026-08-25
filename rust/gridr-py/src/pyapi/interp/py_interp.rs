@@ -92,7 +92,7 @@ use crate::pyapi::interp::py_optimized_bicubic_kernel::PyOptimizedBicubicInterpo
 /// - `Nearest`: Nearest neighbor interpolation method
 /// - `Linear`: Linear interpolation method
 /// - `OptimizedBicubic`: Optimized bicubic interpolation method
-#[pyclass]
+#[pyclass(skip_from_py_object)]
 #[derive(Clone, Copy)]
 pub enum PyInterpolatorType {
     /// Nearest neighbor interpolation variant

@@ -75,7 +75,7 @@ use super::py_array::{PyArrayWindow2};
 /// between Python and Rust implementations. The `From` trait implementations allow for
 /// seamless conversion between Python and Rust representations when interfacing with other
 /// components.
-#[pyclass(name = "PyGridTransitionMatrix")]
+#[pyclass(name = "PyGridTransitionMatrix", from_py_object)]
 #[derive(Debug, Clone, Copy)]
 pub struct PyGridTransitionMatrix {
     /// Inner Rust GridTransitionMatrix instance that performs all computations.
@@ -193,7 +193,7 @@ impl From<PyGridTransitionMatrix> for GridTransitionMatrix {
 /// The Python class internally stores a `GeometryBounds<usize>` instance in its `inner` field.
 /// All attribute access and modification operations are delegated to this inner Rust instance,
 /// ensuring consistent behavior between Python and Rust implementations.
-#[pyclass(name = "PyGeometryBoundsUsize")]
+#[pyclass(name = "PyGeometryBoundsUsize", from_py_object)]
 #[derive(Debug, Clone)]
 pub struct PyGeometryBoundsUsize {
     /// Inner Rust GeometryBounds<usize> instance that performs all computations.
@@ -256,7 +256,7 @@ impl PyGeometryBoundsUsize {
 /// The Python class internally stores a `GeometryBounds<f64>` instance in its `inner` field.
 /// All attribute access and modification operations are delegated to this inner Rust instance,
 /// ensuring consistent behavior between Python and Rust implementations.
-#[pyclass(name = "PyGeometryBoundsF64")]
+#[pyclass(name = "PyGeometryBoundsF64", from_py_object)]
 #[derive(Debug, Clone)]
 pub struct PyGeometryBoundsF64 {
     /// Inner Rust GeometryBounds<f64> instance that performs all computations.
@@ -346,7 +346,7 @@ where
 /// wrapped classes (`PyGeometryBoundsUsize`, `PyGeometryBoundsF64`, and
 /// `PyGridTransitionMatrix`) store the actual Rust implementations that perform
 /// all computational operations.
-#[pyclass(name = "PyGridGeometriesMetricsF64")]
+#[pyclass(name = "PyGridGeometriesMetricsF64", skip_from_py_object)]
 #[derive(Debug)]
 pub struct PyGridGeometriesMetricsF64 {
     /// Bounding box of the destination grid (in pixel indices).

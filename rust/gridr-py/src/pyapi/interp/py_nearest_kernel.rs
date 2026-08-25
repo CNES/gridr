@@ -79,7 +79,7 @@ use gridr::interp::gx_array_view_interp::{GxArrayViewInterpolator, GxArrayViewIn
 ///
 /// The implementation uses thread-safe reference counting (`Arc`) combined with read-write
 /// locking (`RwLock`) to allow safe concurrent access and sharing between threads.
-#[pyclass(name = "NearestInterpolator")]
+#[pyclass(name = "NearestInterpolator", from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyNearestInterpolator {
     /// Inner interpolator wrapped in Arc<RwLock> for thread-safe shared ownership

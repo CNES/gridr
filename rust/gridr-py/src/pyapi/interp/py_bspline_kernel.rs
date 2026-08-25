@@ -122,7 +122,7 @@ use crate::pyapi::py_array::PyArrayWindow2;
 ///
 /// The implementation uses thread-safe reference counting (`Arc`) combined with read-write
 /// locking (`RwLock`) to allow safe concurrent access and sharing between threads.
-#[pyclass(name = "BSpline3Interpolator")]
+#[pyclass(name = "BSpline3Interpolator", from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyBSpline3Interpolator {
     /// Inner interpolator wrapped in Arc<RwLock> for thread-safe shared ownership
@@ -137,7 +137,7 @@ pub struct PyBSpline3Interpolator {
 ///
 /// The implementation uses thread-safe reference counting (`Arc`) combined with read-write
 /// locking (`RwLock`) to allow safe concurrent access and sharing between threads.
-#[pyclass(name = "BSpline5Interpolator")]
+#[pyclass(name = "BSpline5Interpolator", from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyBSpline5Interpolator {
     /// Inner interpolator wrapped in Arc<RwLock> for thread-safe shared ownership
@@ -152,7 +152,7 @@ pub struct PyBSpline5Interpolator {
 ///
 /// The implementation uses thread-safe reference counting (`Arc`) combined with read-write
 /// locking (`RwLock`) to allow safe concurrent access and sharing between threads.
-#[pyclass(name = "BSpline7Interpolator")]
+#[pyclass(name = "BSpline7Interpolator", from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyBSpline7Interpolator {
     /// Inner interpolator wrapped in Arc<RwLock> for thread-safe shared ownership
@@ -167,7 +167,7 @@ pub struct PyBSpline7Interpolator {
 ///
 /// The implementation uses thread-safe reference counting (`Arc`) combined with read-write
 /// locking (`RwLock`) to allow safe concurrent access and sharing between threads.
-#[pyclass(name = "BSpline9Interpolator")]
+#[pyclass(name = "BSpline9Interpolator", from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyBSpline9Interpolator {
     /// Inner interpolator wrapped in Arc<RwLock> for thread-safe shared ownership
@@ -182,7 +182,7 @@ pub struct PyBSpline9Interpolator {
 ///
 /// The implementation uses thread-safe reference counting (`Arc`) combined with read-write
 /// locking (`RwLock`) to allow safe concurrent access and sharing between threads.
-#[pyclass(name = "BSpline11Interpolator")]
+#[pyclass(name = "BSpline11Interpolator", from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyBSpline11Interpolator {
     /// Inner interpolator wrapped in Arc<RwLock> for thread-safe shared ownership

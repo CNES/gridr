@@ -17,7 +17,7 @@ path = "src/lib.rs"
 
 [dependencies]
 approx = "0.5.1"
-thiserror = "1"
+thiserror = "2"
 transpose = "0.2.3"
 
 [dev-dependencies]

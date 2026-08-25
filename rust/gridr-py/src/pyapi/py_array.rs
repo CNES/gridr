@@ -50,7 +50,7 @@ use gridr::gx_array::{GxArrayWindow};
 /// # Modify attributes
 /// print(window.start_row)  # 1
 /// ```
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyArrayWindow2 {
     #[pyo3(get, set)]
