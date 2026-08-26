@@ -13,8 +13,8 @@
 
 
 [![Python](https://img.shields.io/badge/python-v3.10+-blue.svg)](https://www.python.org/downloads/release/python-3100/)
-[![minimum rustc 1.80](https://img.shields.io/badge/rustc-1.80+-blue?logo=rust)](https://rust-lang.github.io/rfcs/2495-min-rust-version.html)
-[![minimum pyo3 0.27.2](https://img.shields.io/badge/pyo3-0.27.2+-green?logo=rust)](https://github.com/PyO3/pyo3)
+[![minimum rustc 1.85.1](https://img.shields.io/badge/rustc-1.85.1+-blue?logo=rust)](https://rust-lang.github.io/rfcs/2495-min-rust-version.html)
+[![minimum pyo3 0.29.2](https://img.shields.io/badge/pyo3-0.29.2+-green?logo=rust)](https://github.com/PyO3/pyo3)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-orange.svg)](CONTRIBUTING.md)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0/)
 [![Documentation](https://readthedocs.org/projects/gridr/badge/?version=latest)](https://gridr.readthedocs.io/)
