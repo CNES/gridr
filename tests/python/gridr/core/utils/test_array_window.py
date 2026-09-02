@@ -14,6 +14,7 @@ PYTHONPATH=${PWD}/python/:$PYTHONPATH pytest tests/python/gridr/core/utils/test_
 """
 import numpy as np
 import pytest
+import random
 import rasterio
 
 from gridr.core.utils.array_window import (
@@ -25,6 +26,7 @@ from gridr.core.utils.array_window import (
     window_indices,
     window_overflow,
     window_shape,
+    compose_slice,
 )
 
 ARRAY_00 = np.arange(4 * 7).reshape(4, 7)
@@ -427,3 +429,83 @@ class TestArrayWindow:
         np.testing.assert_equal(
             window_overflow(arr=data2d, win=[(0, 4), (-4, 15)], axes=0), [[0, 1], [0, 0]]
         )
+
+    
+    # -------------------------------------------------------------------------
+    # Test compose_slice
+    # -------------------------------------------------------------------------
+    @pytest.mark.parametrize(
+        "N, outer, inner",
+        [
+            # --- simple / nominal cases ---
+            (10, slice(1, None, 2), slice(0, None, 3)), # pure decimation
+            (10, slice(2, 8), slice(1, None, 2)), # windowing + decimation
+            (10, slice(None), slice(None)), # two no-op slices
+            (10, slice(None), slice(2, None, 2)), # no-op outer
+            (10, slice(2, 8), slice(None)), # no-op inner
+
+            # --- N == 0 / empty lists ---
+            (0, slice(None), slice(None)),
+            (0, slice(1, 5), slice(0, None, 2)),
+
+            # --- N == 1 (negative steps) ---
+            (1, slice(None), slice(None)),
+            (1, slice(1, -20, -2), slice(-20, 20, None)),
+            (1, slice(0, 1), slice(0, None, -1)),
+
+            # --- outer/inner that yield an empty result ---
+            (10, slice(5, 5), slice(None)), # outer already empty
+            (10, slice(2, 8), slice(3, 3)), # empty inner
+            (10, slice(8, 2), slice(None)), # empty outer (reversed bounds, +step)
+            (10, slice(None), slice(5, 2)), # empty inner (reversed bounds, +step)
+
+            # --- out-of-bounds offset/factor ---
+            (10, slice(100, None), slice(None)), # outer start > N
+            (10, slice(None, None, 3), slice(100, None)), # inner start > L_o
+            (10, slice(-100, -1), slice(None)), # outer start very negative
+
+            # --- combined negative steps ---
+            (10, slice(None, None, -1), slice(None, None, -1)), # double reversal
+            (10, slice(8, 2, -1), slice(1, None, 2)),
+            (10, slice(None), slice(None, None, -1)),
+            (5, slice(-2, -20, -2), slice(0, None, 1)),
+            (3, slice(2, -100, -2), slice(-100, 2, 1)),
+
+            # --- combined steps producing a large step_c ---
+            (100, slice(1, None, 3), slice(2, None, 5)),
+
+            # --- explicit None everywhere ---
+            (10, slice(None, None, None), slice(None, None, None)),
+        ],
+    )
+    def test_compose_slice_matches_chained_indexing(self, N, outer, inner):
+        arr = list(range(N))
+        expected = arr[outer][inner]
+        combined = compose_slice(outer, inner, N)
+        assert arr[combined] == expected
+
+
+    def test_compose_slice_random_exhaustive_domain_positive_and_negative(self):
+        """Large random sweep, including negative and out-of-bounds offsets/steps."""
+        random.seed(42)
+        Ns = [0, 1, 2, 3, 5, 10]
+        vals = [None, -100, -20, -7, -3, -2, -1, 0, 1, 2, 3, 7, 20, 100]
+        steps = [None, -5, -2, -1, 1, 2, 5]
+
+        for _ in range(20000):
+            N = random.choice(Ns)
+            arr = list(range(N))
+
+            outer = slice(random.choice(vals), random.choice(vals), random.choice(steps))
+            expected_after_outer = arr[outer]
+
+            inner = slice(random.choice(vals), random.choice(vals), random.choice(steps))
+            expected = expected_after_outer[inner]
+
+            combined = compose_slice(outer, inner, N)
+            got = arr[combined]
+
+            assert got == expected, (
+                f"N={N}, outer={outer}, inner={inner} "
+                f"-> expected={expected}, got={got}, combined={combined}"
+            )

@@ -738,3 +738,44 @@ def from_rio_window(rio_win: Window) -> np.ndarray:
         ]
     )
     return win
+
+
+def compose_slice(outer: slice, inner: slice, N: int) -> slice:
+    """
+    Composes two successive slices (arr[outer][inner]) into a single
+    equivalent slice, directly applicable to arr (of length N on this axis).
+    
+    Parameters
+    ----------
+    outer: slice
+        Outer slice
+    
+    inner: slice
+        Inner slice
+        
+    N: int
+        Length of the target axis
+    
+    Returns
+    -------
+    slice
+        The composed slice.
+    """
+    start_o, stop_o, step_o = outer.indices(N)
+    L_o = len(range(start_o, stop_o, step_o))
+
+    start_i, stop_i, step_i = inner.indices(L_o)
+    L_i = len(range(start_i, stop_i, step_i))
+
+    if L_i == 0:
+        return slice(0, 0, 1)
+
+    step_c = step_o * step_i
+    start_c = start_o + start_i * step_o
+    stop_c = start_c + (L_i - 1) * step_c + (1 if step_c > 0 else -1)
+    if stop_c < 0:
+        # "stop before index 0" must never be encoded as a negative integer
+        # (Python would reinterpret it as counting from the end).
+        stop_c = None
+
+    return slice(start_c, stop_c, step_c)

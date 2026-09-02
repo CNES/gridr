@@ -89,7 +89,7 @@ def fft_array_filter_fallback(
     out_mode: ConvolutionOutputMode,
     binary: bool = False,
     binary_threshold: float = 1e-3,
-    zoom: int = 1,
+    zoom: int |tuple = 1,
     round_out: bool = True,
 ) -> NoReturn:
     """Wrapper to the fft_array_filter core method in case of no strip.
@@ -289,7 +289,14 @@ def fft_filtering_oa_strip_chain(
     """
     if logger is None:
         logger = logging.getLogger(__name__)
-    assert zoom == 1
+    
+    zoom_p, zoom_q = parse_zoom(zoom)
+    
+    assert zoom_p == 1
+    if zoom_q < 1:
+        raise Exception("Invalid value for zoom Q coefficient")
+    if zoom_q > 1:
+        logger.debug("Zoom Q coefficient is greater than 1 - apply a decimation")
 
     logger.debug("precompute output shape")
     # compute output shape from method parameters
