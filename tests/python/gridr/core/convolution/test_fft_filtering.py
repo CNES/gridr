@@ -11,6 +11,7 @@ Tests for the gridr.core.convolution.fft_filtering module
 
 PYTHONPATH=$PWD/python:$PYTHONPATH pytest tests/python/gridr/core/convolution/test_fft_filtering.py
 """
+import inspect
 import numpy as np
 import pytest
 
@@ -30,6 +31,81 @@ from gridr.core.convolution.fft_filtering import (
 
 IDENTITY_KERNEL = np.array([[0, 0, 0], [0, 1, 0], [0, 0, 0]])
 GAUSSIAN_BLUR_3_3 = 1.0 / 16.0 * np.array([[1, 2, 1], [2, 4, 2], [1, 2, 1]])
+
+_ASSERT_EQUAL_STRICT_PARAM_SUPPORTED = "strict" in inspect.signature(np.testing.assert_equal).parameters
+_ASSERT_ALLCLOSE_STRICT_PARAM_SUPPORTED = "strict" in inspect.signature(np.testing.assert_allclose).parameters
+
+def assert_equal(actual, desired, err_msg="", verbose=True, *, strict=False):
+    """Like numpy.testing.assert_equal, with a `strict` option (shape + dtype)
+    that works whether or not the installed Numpy natively supports it."""
+    if _ASSERT_EQUAL_STRICT_PARAM_SUPPORTED:
+        np.testing.assert_equal(
+            actual, desired, err_msg=err_msg, verbose=verbose, strict=strict
+        )
+        return
+    
+    if strict:
+        actual_arr = np.asanyarray(actual)
+        desired_arr = np.asanyarrany(desired)
+        
+        if actual_arr.shape != desired_arr.shape:
+            msg = f"Shapes do not match: {actual_arr.shape} != {desired_arr.shape}"
+            raise AssertionError(f"{msg}\n{err_msg}" if err_msg else msg)
+        
+        if actual_arr.dtype != desired_arr.dtype:
+            msg = f"Dtypes do not match: {actual_arr.dtype} != {desired_arr.dtype}"
+            raise AssertionError(f"{msg}\n{err_msg}" if err_msg else msg)
+    
+    np.testing.assert_equal(actual, desired, err_msg=err_msg, verbose=verbose)
+        
+
+def assert_allclose(
+    actual,
+    desired,
+    rtol=1e-7,
+    atol=0,
+    equal_nan=True,
+    err_msg="",
+    verbose=True,
+    *,
+    strict=False
+):
+    """Like numpy.testing.assert_allclose, with a `strict` option (shape + dtype)
+    that works whether or not the installed Numpy natively supports it."""
+    if _ASSERT_ALLCLOSE_STRICT_PARAM_SUPPORTED:
+        np.testing.assert_allclose(
+            actual,
+            desired,
+            rtol=rtol,
+            atol=atol,
+            equal_nan=equal_nan,
+            err_msg=err_msg,
+            verbose=verbose,
+            strict=strict,
+        )
+        return
+    
+    if strict:
+        actual_arr = np.asanyarray(actual)
+        desired_arr = np.asanyarrany(desired)
+        
+        if actual_arr.shape != desired_arr.shape:
+            msg = f"Shapes do not match: {actual_arr.shape} != {desired_arr.shape}"
+            raise AssertionError(f"{msg}\n{err_msg}" if err_msg else msg)
+        
+        if actual_arr.dtype != desired_arr.dtype:
+            msg = f"Dtypes do not match: {actual_arr.dtype} != {desired_arr.dtype}"
+            raise AssertionError(f"{msg}\n{err_msg}" if err_msg else msg)
+    
+    np.testing.assert_allclose(
+            actual,
+            desired,
+            rtol=rtol,
+            atol=atol,
+            equal_nan=equal_nan,
+            err_msg=err_msg,
+            verbose=verbose,
+        )
 
 
 class TestFFTFiltering:
@@ -187,7 +263,7 @@ class TestFFTFiltering:
             err_msg = (
                 f"axes={axes} ndim={ndim}"
             )
-            np.testing.assert_equal(
+            assert_equal(
                 np.asarray(ret_axes), np.asarray(expected), err_msg=err_msg, strict=True
             )
 
@@ -221,7 +297,7 @@ class TestFFTFiltering:
             err_msg = (
                 f"fil.shape={fil.shape} zoom={zoom} ndim={ndim} axes={axes}"
             )
-            np.testing.assert_equal(
+            assert_equal(
                 np.asarray(margins), np.asarray(expected), err_msg=err_msg, strict=True
             )
 
@@ -279,28 +355,28 @@ class TestFFTFiltering:
             err_msg = (
                 f"fil.shape={fil.shape} zoom={zoom} axes={axes} - error on filter"
             )
-            np.testing.assert_equal(
+            assert_equal(
                 ret[0], np.asarray(expected[0]), err_msg=err_msg, strict=True,
             )
             # error on win
             err_msg = (
                 f"fil.shape={fil.shape} zoom={zoom} axes={axes} - error on win"
             )
-            np.testing.assert_equal(
+            assert_equal(
                 np.asarray(ret[1]), np.asarray(expected[1]), err_msg=err_msg, strict=True,
             )
             # error on axes
             err_msg = (
                 f"fil.shape={fil.shape} zoom={zoom} axes={axes} - error on axes"
             )
-            np.testing.assert_equal(
+            assert_equal(
                 np.asarray(ret[2]), np.asarray(expected[2]), err_msg=err_msg, strict=True,
             )
             # error on conv_margins
             err_msg = (
                 f"fil.shape={fil.shape} zoom={zoom} axes={axes} - error on conv_margins"
             )
-            np.testing.assert_equal(
+            assert_equal(
                 np.asarray(ret[3]), np.asarray(expected[3]), err_msg=err_msg, strict=True,
             )
 
@@ -400,7 +476,7 @@ class TestFFTFiltering:
             f"zoom={zoom}, centered_decimation={centered_decimation} "
             f"nrow={ncol}, ncol={ncol}, nvar={nvar}",
         )
-        np.testing.assert_allclose(
+        assert_allclose(
             arr_out, arr_val, rtol=1e-6, atol=0, err_msg=err_msg, strict=True,
         )
 

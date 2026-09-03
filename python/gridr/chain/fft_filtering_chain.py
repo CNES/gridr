@@ -85,11 +85,13 @@ def fft_array_filter_fallback(
     ds_out: rasterio.io.DatasetWriter,
     band: int,
     fil: np.ndarray,
+    win: np.ndarray,
     boundary: BoundaryPad,
     out_mode: ConvolutionOutputMode,
     binary: bool = False,
     binary_threshold: float = 1e-3,
-    zoom: int |tuple = 1,
+    zoom: Union[int, Tuple[int, int]] = 1,
+    centered_decimation: bool = True,
     round_out: bool = True,
 ) -> NoReturn:
     """Wrapper to the fft_array_filter core method in case of no strip.
@@ -107,6 +109,11 @@ def fft_array_filter_fallback(
 
     fil : numpy.ndarray
         The filter given as an array in the spatial domain.
+        
+    win : np.ndarray or None
+        The production window given as a list of tuples containing the
+        first and last index for each dimension. For example, for a 2D array:
+        ``((first_row, last_row), (first_col, last_col))``.
 
     boundary : BoundaryPad
         The edge management rule as a single value (similar for each side) or
@@ -123,11 +130,17 @@ def fft_array_filter_fallback(
         In case the `binary` option is activated, all values greater or equal
         to `binary_threshold` are set to 1, 0 otherwise. Defaults to 1e-3.
 
-    zoom : int or tuple, optional
+    zoom : int or Tuple[int, int], optional
         The zoom factor. It can either be a single integer or a tuple of
-        two integers representing the rational P/Q and given as (P, Q).
-
-        Defaults to 1.
+        two integers representing the rational P/Q (e.g., (P, Q)),
+        by default 1.
+    
+    centered_decimation : bool, optional
+        If True, applies centering to the decimation when Q>1. If False,
+        performs simple decimation without centering. Default is True.
+        
+        Please note the centering is computed through an offset depending of
+        the parity of Q : Q // 2 if Q is even, (Q - 1) / 2 if Q is odd.
 
     round_out : bool, optional
         Option to round the written output to the nearest integer.
@@ -150,10 +163,11 @@ def fft_array_filter_fallback(
     arr_out, shift_same = fft_array_filter(
         arr=arr,
         fil=fil,
-        win=None,  # full array
+        win=win,  # full array
         boundary=boundary,
         out_mode=out_mode,
         zoom=zoom,
+        centered_decimation=centered_decimation,
         axes=None,
     )
     if binary:
@@ -173,7 +187,8 @@ def fft_filtering_oa_strip_chain(
     strip_size: int = 512,
     binary: bool = False,
     binary_threshold: float = 1e-3,
-    zoom: int = 1,
+    zoom: Union[int, Tuple[int, int]] = 1,
+    centered_decimation: bool = True,
     round_out: bool = True,
     logger=None,
 ) -> int:
@@ -215,10 +230,18 @@ def fft_filtering_oa_strip_chain(
         In case the `binary` option is activated, all values greater or equal
         to `binary_threshold` are set to 1, 0 otherwise. Defaults to 1e-3.
 
-    zoom : int or tuple, optional
+    zoom : int or Tuple[int, int], optional
         The zoom factor. It can either be a single integer or a tuple of
-        two integers representing the rational P/Q and given as (P, Q).
-        Defaults to 1.
+        two integers representing the rational P/Q (e.g., (P, Q)),
+        by default 1.
+        by default 1.
+    
+    centered_decimation : bool, optional
+        If True, applies centering to the decimation when Q>1. If False,
+        performs simple decimation without centering. Default is True.
+        
+        Please note the centering is computed through an offset depending of
+        the parity of Q : Q // 2 if Q is even, (Q - 1) / 2 if Q is odd.
 
     round_out : bool, optional
         Option to round the written output to the nearest integer.
@@ -250,6 +273,8 @@ def fft_filtering_oa_strip_chain(
         strip size.
     -   The input raster number of rows must be greater than twice the
         filter size.
+        
+    This method limit the processing to 2D array only.
 
     Examples
     --------
@@ -290,28 +315,55 @@ def fft_filtering_oa_strip_chain(
     if logger is None:
         logger = logging.getLogger(__name__)
     
-    zoom_p, zoom_q = parse_zoom(zoom)
+    # zoom different from 1 not yet implemented
+    (P, Q) = normalize_zoom_arg(zoom)
     
-    assert zoom_p == 1
-    if zoom_q < 1:
-        raise Exception("Invalid value for zoom Q coefficient")
-    if zoom_q > 1:
-        logger.debug("Zoom Q coefficient is greater than 1 - apply a decimation")
-
-    logger.debug("precompute output shape")
-    # compute output shape from method parameters
-    shape_out = fft_array_filter_output_shape(
+    # Check the combination of parameters `out_mode` and `zoom_pq`
+    # If zoom Q factor is greater than 1, a decimation will be performed thus
+    # impacting the output shape.
+    fft_array_filter_check_args(out_mode, (P, Q))
+    
+    # The overlap-add reconstruction must be performed on full resolute
+    # data.
+    # When Q > 1, the decimation is performed in the chunk loop in order to
+    # guarantee the right offset with regards to the decimation
+    # Therefore we require both the virtual full resolute output shape (as
+    # if no decimation is performed - in order to allocate a sufficiant
+    # buffer) and the final output shape obtained after decimation.
+    logger.debug(
+        "Precompute the full resolute (inner) shape (Q forced to 1)..."
+    )
+    inner_shape_out = fft_array_filter_output_shape(
         arr=ArrayProfile.from_dataset(ds_in),
         fil=fil,
         win=None,
         boundary=boundary,
         out_mode=out_mode,
-        zoom=zoom,
+        zoom=(P, 1), # => force Q = 1
+        centered_decimation=centered_decimation,
         axes=None,
     )
-    logger.debug(f"precomputed output shape : {shape_out}")
-
+    logger.debug(f"Full resolute (inner) shape : {inner_shape_out}")
+    
+    # logger.debug("Precompute output shape")
+    # # compute output shape from method parameters
+    # outer_shape_out = fft_array_filter_output_shape(
+        # arr=ArrayProfile.from_dataset(ds_in),
+        # fil=fil,
+        # win=None,
+        # boundary=boundary,
+        # out_mode=out_mode,
+        # zoom=(P, Q),
+        # centered_decimation=centered_decimation,
+        # axes=None,
+    # )
+    # logger.debug(f"precomputed output shape : {shape_out}")
+    
+    # Currently limit for 2D data - set axes to be None
     fil = fft_odd_filter(fil, axes=None)
+    
+    # Compute the margin needed to avoid edge effect
+    #conv_margins = get_filter_margin(fil=fil, zoom=(P, Q), ndim=2, axes=None)
 
     strip_size = check_oa_strip_size(
         arr=ArrayProfile.from_dataset(ds_in), fil=fil, strip_size=strip_size
@@ -325,16 +377,18 @@ def fft_filtering_oa_strip_chain(
     if len(chunk_boundaries) == 1:
         # Full read => fallback to the core method
         fft_array_filter_fallback(
-            ds_in,
-            ds_out,
-            band,
-            fil,
-            boundary,
-            out_mode,
-            binary,
-            binary_threshold,
-            zoom,
-            round_out,
+            ds_in=ds_in,
+            ds_out=ds_out,
+            band=band,
+            fil=fil,
+            win=None,
+            boundary=boundary,
+            out_mode=out_mode,
+            binary=binary,
+            binary_threshold=binary_threshold,
+            zoom=(P, Q),
+            centered_decimation=centered_decimation,
+            round_out=round_out,
         )
     else:
         # The overlap add algorithm is implemented here in order to limit
