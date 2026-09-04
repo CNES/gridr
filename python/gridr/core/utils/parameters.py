@@ -25,7 +25,7 @@ from typing import Any, Tuple, Union
 
 
 def tuplify(
-    p: Any, ndim: int, fill: Any, strict: bool = True
+    p: Any, ndim: int, *, fill: Any, strict: bool = True
 ) -> Tuple[Tuple[Any, Any], ...]:
     """Utility method to convert a single parameter to a tuple of pairs.
 

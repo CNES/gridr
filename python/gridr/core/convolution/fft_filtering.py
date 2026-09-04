@@ -721,7 +721,18 @@ def build_plan(
         Rational resampling factor ``P/Q``. Only ``P == 1`` is implemented;
         ``Q > 1`` decimates the output. Default ``1``.
     decimation : DecimationOrigin, optional
-        Which sample of each block of ``Q`` is kept. Default
+        Which sample of each block of ``Q`` is kept, on every target axis. The
+        phase is counted in the **output** frame, not in the input one, so what
+        it lands on depends on ``out_mode``. With ``SAME``, index 0 of the
+        output is the first sample of ``win``, hence ``LEADING`` keeps the
+        window's own first sample and ``CENTERED`` keeps the one
+        ``(Q - 1) // 2`` samples further in. With ``FULL``, index 0 is the first
+        sample of the convolution support, which sits :attr:`AxisPlan.origin`
+        samples ahead of the window's first one; with ``VALID`` it sits
+        ``kernel_size - 1`` samples into that support. In both of those, neither
+        origin lands on the window's first sample. Moving ``win`` therefore
+        moves the sampling grid with it: this decimates the window, it does not
+        resample the array on a grid anchored at index 0. Default
         :attr:`DecimationOrigin.CENTERED`.
     axes : int, iterable of int, or None, optional
         Axes along which to convolve. Other axes are passed through untouched.
