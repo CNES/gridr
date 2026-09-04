@@ -1,6 +1,4 @@
-# coding: utf8
-#
-# Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
+# Copyright (c) 2024-2026 Centre National d'Etudes Spatiales (CNES).
 #
 # This file is part of GRIDR
 # (see https://github.com/CNES/gridr).
@@ -17,882 +15,987 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+"""Windowed N-d convolution with explicit boundary and decimation control.
+
+This module wraps :mod:`scipy.signal` convolution with the extra machinery
+GridR needs for tiled raster processing:
+
+* a **production window** so that only the requested region is produced, while
+  the margins needed by the kernel are read from the surrounding data when it
+  exists;
+* **per-side boundary policies**, so that a tile in the middle of a raster uses
+  real neighbouring data while a tile on the raster edge is padded;
+* **decimation** (zoom ``P/Q`` with ``P == 1``) fused into the output slicing,
+  so no intermediate full-resolution array is materialised beyond the
+  convolution result itself.
+
+Design
+------
+All the geometry is computed once, without touching the pixels, by
+:func:`build_plan`, which returns an immutable :class:`FilterPlan`. Both
+:func:`fft_array_filter` and :func:`fft_array_filter_output_shape` are thin
+consumers of that plan, so the predicted shape and the produced shape cannot
+drift apart: they are the same code path.
+
+Conventions
+-----------
+Window
+    A window is an integer array of shape ``(ndim, 2)`` holding
+    ``(first, last)`` **inclusive** indices per axis, following
+    :mod:`gridr.core.utils.array_window`.
+
+Convolution, not correlation
+    The kernel is *convolved*, i.e. flipped, consistently with
+    :func:`scipy.signal.convolve` and :func:`scipy.ndimage.convolve`. Pass a
+    pre-flipped kernel if you want correlation. This is invisible for symmetric
+    kernels and very visible for asymmetric ones.
+
+Data type
+    The working dtype defaults to ``np.result_type(arr, kernel)``. An integer
+    or ``float64`` kernel applied to a ``float32`` raster therefore doubles the
+    memory footprint; pass ``dtype=np.float32`` to pin it down.
+
+Non-finite values
+    FFT convolution is global: a single ``NaN`` in the input contaminates the
+    whole output. Mask or fill nodata before calling, or use a direct method
+    with an explicit nodata strategy.
 """
-FFT Filtering core module
-"""
+
+from __future__ import annotations
+
 import math
-from enum import IntEnum
-from typing import Iterable, Tuple, Union
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+from enum import Enum
+from typing import NamedTuple, SupportsIndex
 
 import numpy as np
+from numpy.typing import ArrayLike, DTypeLike, NDArray
 from scipy import signal
 
-from gridr.core.utils.array_window import (
-    window_check,
-    window_extend,
-    window_overflow,
-    compose_slice,
-)
-from gridr.core.utils.parameters import tuplify
+from gridr.core.utils.array_pad import pad_inplace
+from gridr.core.utils.array_window import window_check
+
+__all__ = [
+    "AxisPlan",
+    "BoundaryPad",
+    "ConvolutionMethod",
+    "ConvolutionOutputMode",
+    "DecimationOrigin",
+    "FilterPlan",
+    "FilterResult",
+    "Zoom",
+    "align_kernel",
+    "build_plan",
+    "decimated_size",
+    "decimation_offset",
+    "fft_array_filter",
+    "fft_array_filter_output_shape",
+    "kernel_margin",
+    "normalize_axes",
+    "normalize_zoom",
+    "pad_kernel_to_odd",
+]
 
 
-class BoundaryPad(IntEnum):
-    """Boundary pad mode enumeration."""
+# --------------------------------------------------------------------------- #
+# Enumerations
+# --------------------------------------------------------------------------- #
+class BoundaryPad(Enum):
+    """Whether a given side is padded, and how padding is done when it is.
 
-    NONE = 1
-    REFLECT = 2
+    The specification carries two separable pieces of information, and they are
+    not on the same footing. **Where** to pad is a per-side decision: a tile in
+    the middle of a raster reads real neighbours on every side, a tile in a
+    corner has to synthesise two of them. **How** to pad is a property of the
+    signal, not of the side: a raster is reflective, or periodic, or bounded by
+    zeros. Mixing ``REFLECT`` on one edge with ``WRAP`` on another is rejected.
 
+    Consequently a specification may name any number of sides, but at most one
+    non-``NONE`` policy overall. ``NONE`` means "do not extend on that side";
+    every other member names the single padding rule in force.
 
-class ConvolutionOutputMode(IntEnum):
-    """Convolution area output mode enumeration."""
-
-    SAME = 1
-    FULL = 2
-    VALID = 3
-
-
-def normalize_zoom_arg(zoom: int | tuple[int, int]) -> tuple[int, int]:
+    The policy only describes what happens *outside* the input array. Inside
+    it, the kernel margin is always read from the real neighbouring samples.
     """
-    Normalize the zoom argument to a simplified tuple of integers.
 
-    This function converts the zoom argument to a tuple of integers (P, Q) and 
-    simplifies the fraction by dividing both values by their greatest common 
-    divisor (GCD).
+    #: No margin at all on that side; the production window is used as-is.
+    NONE = "none"
+    #: Mirror without repeating the edge sample (``numpy`` ``"reflect"``).
+    REFLECT = "reflect"
+    #: Mirror repeating the edge sample (``numpy`` ``"symmetric"``).
+    SYMMETRIC = "symmetric"
+    #: Repeat the edge sample (``numpy`` ``"edge"``).
+    EDGE = "edge"
+    #: Periodic continuation, e.g. longitude wrap-around (``numpy`` ``"wrap"``).
+    WRAP = "wrap"
+    #: Fill with zeros (``numpy`` ``"constant"``).
+    ZERO = "zero"
+
+    @property
+    def numpy_mode(self) -> str:
+        """The corresponding :func:`numpy.pad` mode."""
+        if self is BoundaryPad.NONE:
+            raise ValueError("BoundaryPad.NONE has no numpy.pad equivalent")
+        return _NUMPY_PAD_MODE[self]
+
+
+_NUMPY_PAD_MODE: dict[BoundaryPad, str] = {
+    BoundaryPad.REFLECT: "reflect",
+    BoundaryPad.SYMMETRIC: "symmetric",
+    BoundaryPad.EDGE: "edge",
+    BoundaryPad.WRAP: "wrap",
+    BoundaryPad.ZERO: "constant",
+}
+
+
+class ConvolutionOutputMode(Enum):
+    """Which part of the convolution result is returned."""
+
+    #: The production window, at the same sampling as the input (before zoom).
+    SAME = "same"
+    #: The whole convolution support, margins and padding included.
+    FULL = "full"
+    #: Only the samples that saw no implicit zero padding from the convolution.
+    VALID = "valid"
+
+
+class ConvolutionMethod(Enum):
+    """Backend used for the convolution itself."""
+
+    #: :func:`scipy.signal.oaconvolve` — overlap-add, best for large kernels.
+    OVERLAP_ADD = "overlap_add"
+    #: :func:`scipy.signal.fftconvolve` — single FFT over the whole array.
+    FFT = "fft"
+    #: :func:`scipy.signal.convolve` with ``method="direct"``.
+    DIRECT = "direct"
+    #: Let SciPy pick between direct and FFT (:func:`scipy.signal.convolve`).
+    AUTO = "auto"
+
+
+class DecimationOrigin(Enum):
+    """Which sample of each decimation block of ``Q`` samples is kept."""
+
+    #: First sample of the block (offset 0).
+    LEADING = "leading"
+    #: Centre of the block, i.e. offset ``(Q - 1) // 2``. For even ``Q`` there
+    #: is no exact centre and the lower of the two central samples is kept.
+    CENTERED = "centered"
+
+
+# --------------------------------------------------------------------------- #
+# Scalar helpers — pure integer arithmetic, no arrays involved
+# --------------------------------------------------------------------------- #
+class Zoom(NamedTuple):
+    """A rational zoom factor ``P / Q`` in lowest terms."""
+
+    p: int
+    q: int
+
+    @property
+    def is_supported(self) -> bool:
+        """``True`` if the current implementation can honour this factor.
+
+        Only pure decimation (``P == 1``) is implemented; interpolation
+        (``P > 1``) requires a polyphase upsampling stage.
+        """
+        return self.p == 1 and self.q >= 1
+
+
+def _is_scalar(value: object) -> bool:
+    """``True`` for a single value, ``False`` for anything with an axis.
+
+    ``isinstance(x, SupportsIndex)`` is not usable here: every
+    :class:`numpy.ndarray` exposes ``__index__`` regardless of its size, so a
+    one-element array would be mistaken for a scalar and a two-element one
+    would raise from inside the conversion.
+    """
+    try:
+        return np.ndim(value) == 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _as_index(value: object, name: str) -> int:
+    """Coerce to a Python ``int``, rejecting ``bool`` and non-integral input."""
+    if isinstance(value, bool):
+        raise TypeError(f"{name} must be an integer, got a bool")
+    if not isinstance(value, SupportsIndex):
+        raise TypeError(f"{name} must be an integer, got {type(value).__name__}")
+    return int(value.__index__())
+
+
+def normalize_zoom(zoom: int | tuple[int, int]) -> Zoom:
+    """Normalize a zoom argument to a :class:`Zoom` in lowest terms.
 
     Parameters
     ----------
-    zoom : int or tuple[int, int]
-        The zoom factor. It can either be a single integer or a tuple of
-        two integers representing the rational P/Q and given as (P, Q).
+    zoom : int or tuple of two ints
+        Either ``P`` (implying ``Q = 1``) or the pair ``(P, Q)``. Any object
+        implementing ``__index__`` is accepted, so ``numpy`` integers work.
 
     Returns
     -------
-    tuple[int, int]
-        A tuple containing the normalized and simplified P and Q values.
+    Zoom
+        The simplified factor.
 
     Raises
     ------
     TypeError
-        If the input type is not int or tuple[int, int].
+        If ``zoom`` is neither an integer nor a pair of integers.
     ValueError
-        If the tuple does not contain exactly two integers.
+        If the pair has the wrong length, or if ``P`` or ``Q`` is not strictly
+        positive.
+
+    Examples
+    --------
+    >>> normalize_zoom(2)
+    Zoom(p=2, q=1)
+    >>> normalize_zoom((2, 6))
+    Zoom(p=1, q=3)
     """
-    if isinstance(zoom, int):
-        P, Q = zoom, 1
-    elif isinstance(zoom, tuple):
-        if len(zoom) != 2:
-            raise ValueError("Tuple must contain exactly two integers")
-        P, Q = zoom
-        if not all(isinstance(x, int) for x in (P, Q)):
-            raise ValueError("Both elements in the tuple must be integers")
-            
-        # Simplify the fraction by dividing by GCD
-        gcd = math.gcd(P, Q)
-        if gcd != 0:  # To avoid division by zero
-            P = P // gcd
-            Q = Q // gcd
-        
+    if _is_scalar(zoom):
+        p, q = _as_index(zoom, "zoom"), 1
     else:
-        raise TypeError(
-            "Unsupported type for the `zoom` argument. Expected int or tuple[int, int]"
-        )
-    
-    if P <= 0:
-        raise ValueError(f"Zoom factor P (={P}) cannot be zero or less")
-        
-    if Q <= 0:
-        raise ValueError(f"Zoom factor Q (={Q}) cannot be zero or less")
-    
-    return P, Q
+        items = list(zoom)
+        if len(items) != 2:
+            raise ValueError(f"zoom pair must contain exactly two integers, got {len(items)}")
+        p = _as_index(items[0], "zoom P")
+        q = _as_index(items[1], "zoom Q")
+
+    if p <= 0:
+        raise ValueError(f"zoom P must be strictly positive, got {p}")
+    if q <= 0:
+        raise ValueError(f"zoom Q must be strictly positive, got {q}")
+
+    gcd = math.gcd(p, q)
+    return Zoom(p // gcd, q // gcd)
 
 
-def zoom_is_supported(
-    zoom: tuple[int, int]
-) -> bool:
-    """Returns True if the zoom is supported by the current implementation.
-    
-    Parameters
-    ----------
-    zoom : tuple[int, int]
-        The zoom factor as a tuple of two integers representing the rational 
-        P/Q and given as (P, Q).
-    """
-    return zoom[0] == 1 and zoom[1] >= 1
+def decimation_offset(q: int, origin: DecimationOrigin = DecimationOrigin.CENTERED) -> int:
+    """Index of the sample kept inside each block of ``q`` samples.
 
+    ``DecimationOrigin.CENTERED`` yields ``(q - 1) // 2`` — the exact centre for
+    odd ``q``, the lower of the two central samples for even ``q``.
 
-def decimated_size(N: int, Q: int, offset: int = 0) -> int:
-    """
-    Computes length of a decimated iterable.
-
-    Parameters
-    ----------
-    N: int
-        Length of the original list (>= 0)
-    
-    Q: int
-        Decimation factor (strictly positive integer)
-    
-    offset: int, optional
-        Starting offset (>= 0). Default 0.
-        
-    Returns
-    -------
-    int:
-        Number of elements after decimation
-    
     Raises
     ------
     ValueError
-        If a parameter is out of domain (negative, or Q <= 0)
+        If ``q`` is not strictly positive.
     """
-    if N < 0:
-        raise ValueError(f"N must be >= 0, got {N}")
-    if Q <= 0:
-        raise ValueError(f"Q must be > 0, got {Q}")
+    if q <= 0:
+        raise ValueError(f"q must be strictly positive, got {q}")
+    return 0 if origin is DecimationOrigin.LEADING else (q - 1) // 2
+
+
+def decimated_size(size: int, q: int, offset: int = 0) -> int:
+    """Length of ``range(size)[offset::q]``.
+
+    Parameters
+    ----------
+    size : int
+        Length of the original axis, ``>= 0``.
+    q : int
+        Decimation step, strictly positive.
+    offset : int, optional
+        Index of the first sample kept, ``>= 0``. Default ``0``.
+
+    Raises
+    ------
+    ValueError
+        If any argument is out of domain.
+    """
+    if size < 0:
+        raise ValueError(f"size must be >= 0, got {size}")
+    if q <= 0:
+        raise ValueError(f"q must be > 0, got {q}")
     if offset < 0:
         raise ValueError(f"offset must be >= 0, got {offset}")
-
-    if offset >= N:
+    if offset >= size:
         return 0
-
-    return (N - offset - 1) // Q + 1
-
-
-def normalize_axes(axes: int | tuple | None, ndim: int) -> tuple:
-    """
-    Normalize axes input (int, tuple, or None) to a tuple of positive axis
-    indices.
-    
-    Parameters:
-    -----------
-    axes: int, tuple of ints, or None
-        Target axes
-    
-    ndim: int
-        Total number of dimensions of the input array related to axes.
-    
-    Returns:
-    --------
-    tuple of ints
-        Normalized non-negative axis indices.
-    """
-    if axes is None:
-        return tuple(range(ndim))
-        
-    axes_tuple = (axes, ) if isinstance(axes, int) else tuple(axes)
-    
-    # Convert negative indices (e.g., -1 -> ndim - 1) and check boundaries
-    normalized = []
-    for a in axes_tuple:
-        if abs(a) >= ndim:
-            raise ValueError(
-                f"Axis {a} is out of bounds for ndim={ndim}"
-            )
-        normalized.append(a % ndim)
-    
-    return tuple(normalized)
+    return (size - offset - 1) // q + 1
 
 
-def align_filter_dim(
-    fil: np.ndarray,
-    ndim: int,
-    axes=None,
-) -> np.ndarray:
-    """
-    Aligns a filter `fil` to match `ndim` dimensions.
-    
-    Parameters
-    ----------
-    fil : np.ndarray
-        The input filter as ndarray.
-    
-    ndim: int
-        Total number of dimensions of the input array related to axes.
-    
-    axes: int, tuple of ints, or None
-        Target axes
-        
-    Returns
-    -------
-    np.ndarray
-        Reshaped filter guaranteed to have `ndim` dimensions.
-    """
-    fil = np.asarray(fil)
-    target_axes = normalize_axes(axes, ndim)
-
-    # Case 1: Filter rank matches the number of specified axes   
-    if fil.ndim == len(target_axes):
-        new_shape = [1] * ndim
-        for axis, size in zip(target_axes, fil.shape):
-            new_shape[axis] = size
-        return fil.reshape(new_shape)
-    
-    # Case 2: Filter alreay has ndim dimensions
-    if fil.ndim == ndim:        
-        for i in range(ndim):
-            if i not in target_axes and fil.shape[i] != 1:
-                raise ValueError(
-                    f"Axis {i} is not in target axes {target_axes}, "
-                    f"so its size in filter must be 1 (got {fil.shape[i]})."
-                )
-        return fil
-    
-    raise ValueError(
-        f"Filter dimension mismatch: filter has {fil.ndim}D, but "
-        f"{len(target_axes)} target axis/axes were specified for a {ndim}D "
-        "array."
-    )
-
-
-def get_filter_margin(
-    fil: np.ndarray,
-    zoom: int | tuple[int, int],
-    ndim: int,
-    axes=None,
-) -> Tuple[int]:
-    """Compute the required margin for filter in order to avoid edge effect.
-
-    In case of zoom = 1 it corresponds to the half size of the filter.
+def normalize_axes(axes: int | Iterable[int] | None, ndim: int) -> tuple[int, ...]:
+    """Normalize an axis specification to distinct non-negative indices.
 
     Parameters
     ----------
-    fil : np.ndarray
-        The input filter as ndarray.
+    ``axes`` is a **set** of axes, not a permutation: it selects which axes take
+    part in the operation and says nothing about their order. This matches
+    :func:`scipy.signal.oaconvolve`, whose result is identical for ``(1, 2)``
+    and ``(2, 1)``. The returned axes are therefore sorted, so that a kernel of
+    reduced rank always maps positionally onto increasing array axes. Transpose
+    the kernel if you need a different mapping.
 
-    zoom : int or tuple[int, int]
-        The zoom factor. It can either be a single integer or a tuple of
-        two integers representing the rational P/Q and given as (P, Q).
-    
-    ndim: int
-        Total number of dimensions of the input array related to axes.
-
-    axes : {None, int, tuple of int}, optional
-        The axes that will be used for margin computation, by default None.
+    Parameters
+    ----------
+    axes : int, iterable of int, or None
+        Target axes. ``None`` means every axis. Negative indices are accepted
+        with the usual ``numpy`` semantics, i.e. ``-ndim <= axis < ndim``.
+    ndim : int
+        Rank of the array the axes refer to.
 
     Returns
     -------
-    Tuple[int]
-        The margins array along all dimensions of the input filter.
-    """
-    # Verify that zoom P=1 and Q=1 (compatibility with this implementation)
-    zoom_pq = normalize_zoom_arg(zoom)
-    if not zoom_is_supported(zoom_pq):
-        raise ValueError(
-            f"Zoom P/Q = ({zoom_pq[0]}/{zoom_pq[1]}) value is not yet supported"
-        )
-    
-    axes = normalize_axes(axes, ndim)
-    margins = [0 if i not in axes else fil.shape[i] // 2 for i in range(ndim)]
-    return margins
+    tuple of int
+        The distinct target axes, sorted, as non-negative indices.
 
-
-def pad_array(
-    arr: np.ndarray,
-    win: np.ndarray,
-    pad: Tuple[int, int, int, int],
-    boundary: Union[BoundaryPad, Tuple[Tuple[BoundaryPad, BoundaryPad]]],
-    axes=None,
-) -> np.ndarray:
-    """Pad an array with respect to the rules set for edge management.
-
-    Parameters
-    ----------
-    arr : np.ndarray
-        The input array.
-
-    win : np.ndarray
-        The production window given as a list of tuple containing the
-        first and last index for each dimension. E.g., for a 2D array:
-        ``((first_row, last_row), (first_col, last_col))``.
-
-    pad : Tuple[int, int, int, int]
-        The size of padding for each side as a 4-element tuple
-        (top, bottom, right, left).
-
-    boundary : Union[BoundaryPad, Tuple[Tuple[BoundaryPad, BoundaryPad]]]
-        The edge management rule as a single value (similar for each side)
-        or a tuple ((top, bottom), (left, right)). The rule is defined
-        by the `BoundaryPad` enum.
-
-    axes : {None, int, tuple of int}, optional
-        The axes on which to perform the padding, by default None.
-
-    Returns
-    -------
-    np.ndarray
-        The padded array.
-    """
-    if axes is None:
-        axes = range(arr.ndim)
-
-    out = arr
-    boundary_set = list(
-        {b for b in np.asarray(boundary).flat if b not in [BoundaryPad.NONE, None, np.nan]}
-    )
-    if len(boundary_set) == 0:
-        pass
-    elif len(boundary_set) == 1:
-        mode = None
-        if boundary_set[0] == BoundaryPad.REFLECT:
-            mode = "reflect"
-        else:
-            raise Exception(f"Not valid padding mode {boundary_set[0]}")
-
-        indices = tuple(
-            (
-                slice(None, None) if i not in axes else slice(win[i][0], win[i][1] + 1)
-                for i in range(arr.ndim)
-            )
-        )
-        out = np.pad(arr[indices], pad, mode=mode)
-    else:
-        raise Exception("Only one not NONE BoundaryPad mode is implemented")
-    return out
-
-
-def fft_odd_filter(
-    fil: np.ndarray,
-    axes=None,
-) -> np.ndarray:
-    """Check that the filter has an odd length along specified axes.
-
-    If it is not the case it is right/bottom padded with zero on the
-    corresponding axe(s).
-
-    Parameters
-    ----------
-    fil : np.ndarray
-        The filter as a numpy ndarray.
-
-    axes : {None, int, tuple of int}, optional
-        The axes that will be used for convolution computation,
-        by default None.
-
-    Returns
-    -------
-    np.ndarray
-        The odd filter as numpy ndarray.
-    """
-    if axes is None:
-        axes = range(fil.ndim)
-
-    # If filter has an even size, we first pad with a 0 on the right et lower
-    # edge
-    pad_fil = [0 if i not in axes else 1 - fil.shape[i] % 2 for i in range(fil.ndim)]
-    if np.any(pad_fil):
-        pad_arg = tuple(((0, pad_fil[i]) for i in range(fil.ndim)))
-        fil = np.pad(fil, pad_arg, mode="constant", constant_values=0)
-    return fil
-
-
-def fft_array_filter_check_args(
-    out_mode: ConvolutionOutputMode = ConvolutionOutputMode.SAME,
-    zoom: int | tuple[int, int] = 1,
-):
-    """Validate the configuration of convolution parameters.
-
-    This function checks that the combination of output mode and zoom factor
-    is supported by the convolution implementation.
-    
-    Parameters
-    ----------
-    out_mode : ConvolutionOutputMode, optional
-        The output mode for the returned array.
-        Default to `ConvolutionOutputMode.SAME`.
-
-    zoom : int or Tuple[int, int], optional
-        The zoom factor. It can either be a single integer or a tuple of
-        two integers representing the rational P/Q (e.g., (P, Q)),
-        by default 1.
-    
     Raises
     ------
     ValueError
-        If the combination of output mode and zoom factor is not supported.
-    TypeError
-        If the zoom argument has an invalid type.
-    """
-    # Normalize and validate the zoom argument
-    try:
-        P, Q = normalize_zoom_arg(zoom)
-    except (TypeError, ValueError) as e:
-        raise TypeError(f"Invalid zoom argument: {str(e)}") from e
+        If an axis is out of bounds or repeated.
 
-    if not zoom_is_supported((P, Q)):
-        raise ValueError(
-            f"Zoom P/Q = ({P}/{Q}) value is not yet supported"
+    Examples
+    --------
+    >>> normalize_axes(-1, 3)
+    (2,)
+    >>> normalize_axes((2, 0), 3)
+    (0, 2)
+    >>> normalize_axes(None, 2)
+    (0, 1)
+    """
+    if ndim < 0:
+        raise ValueError(f"ndim must be >= 0, got {ndim}")
+    if axes is None:
+        return tuple(range(ndim))
+
+    raw = (axes,) if _is_scalar(axes) else tuple(axes)
+
+    normalized: list[int] = []
+    for item in raw:
+        axis = _as_index(item, "axis")
+        if not -ndim <= axis < ndim:
+            raise ValueError(f"axis {axis} is out of bounds for ndim={ndim}")
+        axis %= ndim
+        if axis in normalized:
+            raise ValueError(f"axis {axis} is repeated in {axes!r}")
+        normalized.append(axis)
+    return tuple(sorted(normalized))
+
+
+# --------------------------------------------------------------------------- #
+# Kernel preparation
+# --------------------------------------------------------------------------- #
+def align_kernel(kernel: ArrayLike, ndim: int, axes: int | Iterable[int] | None = None) -> NDArray:
+    """Broadcast a kernel so that it has exactly ``ndim`` dimensions.
+
+    Two shapes are accepted:
+
+    * a kernel of rank ``len(axes)``, whose ``i``-th dimension is mapped onto
+      the ``i``-th target axis in increasing order, singleton dimensions being
+      inserted on the remaining axes;
+    * a kernel already of rank ``ndim``, which is returned unchanged provided
+      its size is ``1`` on every axis outside ``axes``.
+
+    When both readings apply (``len(axes) == ndim``) the second one wins: a
+    full-rank kernel is assumed to be already expressed in array axis order.
+
+    ``axes`` is normalized here rather than assumed to be already sorted, so the
+    function is safe to call on its own. The mapping is positional against the
+    sorted axes and never reorders the kernel samples; pass a transposed kernel
+    if you need a different assignment.
+
+    Raises
+    ------
+    ValueError
+        If the rank matches neither reading, or if a full-rank kernel is not
+        singleton outside ``axes``.
+    """
+    kernel = np.asarray(kernel)
+    axes = normalize_axes(axes, ndim)
+
+    if kernel.ndim == ndim:
+        bad = [i for i in range(ndim) if i not in axes and kernel.shape[i] != 1]
+        if bad:
+            raise ValueError(
+                f"kernel must be singleton outside the target axes {axes}; "
+                f"axis/axes {bad} have sizes {[kernel.shape[i] for i in bad]}"
+            )
+        return kernel
+
+    if kernel.ndim == len(axes):
+        shape = [1] * ndim
+        for axis, size in zip(axes, kernel.shape, strict=True):
+            shape[axis] = size
+        return kernel.reshape(shape)
+
+    raise ValueError(
+        f"kernel has rank {kernel.ndim}, expected {len(axes)} (one dimension per "
+        f"target axis) or {ndim} (one dimension per array axis)"
+    )
+
+
+def pad_kernel_to_odd(kernel: NDArray, axes: int | Iterable[int] | None = None) -> NDArray:
+    """Right-pad the kernel with zeros so its size is odd along every target axis.
+
+    An odd size gives the kernel an unambiguous centre, which is what makes the
+    ``SAME`` output alignment well defined.
+
+    ``axes`` is normalized here rather than assumed to be already normalized,
+    so the function is safe to call on its own.
+    """
+    axes = normalize_axes(axes, kernel.ndim)
+    widths = [(0, 0)] * kernel.ndim
+    padded = False
+    for axis in axes:
+        if kernel.shape[axis] % 2 == 0:
+            widths[axis] = (0, 1)
+            padded = True
+    if not padded:
+        return kernel
+    return np.pad(kernel, widths, mode="constant", constant_values=0)
+
+
+def kernel_margin(kernel: NDArray, axes: int | Iterable[int] | None = None) -> tuple[int, ...]:
+    """Half-width of an odd-sized kernel along every axis, ``0`` outside ``axes``.
+
+    ``axes`` is normalized here, so the function is safe to call on its own.
+    """
+    axes = normalize_axes(axes, kernel.ndim)
+    return tuple(kernel.shape[i] // 2 if i in axes else 0 for i in range(kernel.ndim))
+
+
+# --------------------------------------------------------------------------- #
+# The plan
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True, slots=True)
+class AxisPlan:
+    """Geometry of a single axis, in samples."""
+
+    #: Slice read from the input array before padding.
+    source: slice
+    #: Padding widths ``(before, after)`` added around :attr:`source`.
+    pad_width: tuple[int, int]
+    #: Length of the convolution input, i.e. :attr:`source` plus its padding.
+    conv_size: int
+    #: Length of the ``"full"`` convolution result along this axis.
+    full_size: int
+    #: Index, in the ``"full"`` result, of the first requested sample.
+    origin: int
+    #: Number of requested samples, before decimation.
+    window_size: int
+    #: Slice extracting the requested output from the ``"full"`` result.
+    output: slice
+    #: Length of ``output``.
+    output_size: int
+
+
+@dataclass(frozen=True, slots=True)
+class FilterPlan:
+    """Everything :func:`fft_array_filter` needs, derived from shapes alone.
+
+    The plan is data-independent: it is a function of the input *shape*, the
+    kernel, and the options. It can be built and inspected without allocating
+    the raster, which is what makes tiled scheduling and shape prediction
+    exact rather than merely consistent.
+    """
+
+    #: Kernel aligned to the array rank and padded to an odd size.
+    kernel: NDArray
+    #: Target axes, normalized.
+    axes: tuple[int, ...]
+    #: Per-axis geometry, one entry per array dimension.
+    per_axis: tuple[AxisPlan, ...]
+    #: The rule actually applied to the margins, ``NONE`` when this particular
+    #: window needs no synthetic sample. Invariant:
+    #: ``(pad_mode is BoundaryPad.NONE) == (not needs_padding)``.
+    pad_mode: BoundaryPad
+    #: Requested output mode.
+    out_mode: ConvolutionOutputMode
+    #: Normalized zoom factor.
+    zoom: Zoom
+    #: Working dtype of the convolution.
+    dtype: np.dtype
+    #: Backend used for the convolution.
+    method: ConvolutionMethod
+
+    @property
+    def output_shape(self) -> tuple[int, ...]:
+        """Shape of the array returned by :func:`fft_array_filter`."""
+        return tuple(axis.output_size for axis in self.per_axis)
+
+    @property
+    def source(self) -> tuple[slice, ...]:
+        """Slices reading the convolution input out of the source array."""
+        return tuple(axis.source for axis in self.per_axis)
+
+    @property
+    def output(self) -> tuple[slice, ...]:
+        """Slices extracting the result out of the ``"full"`` convolution."""
+        return tuple(axis.output for axis in self.per_axis)
+
+    @property
+    def window(self) -> NDArray[np.int64]:
+        """Production window expressed in ``"full"`` output coordinates.
+
+        Shape ``(ndim, 2)``, inclusive bounds, following the GridR window
+        convention.
+        """
+        return np.asarray(
+            [(axis.origin, axis.origin + axis.window_size - 1) for axis in self.per_axis],
+            dtype=np.int64,
         )
 
-    # Check for supported combinations of out_mode and zoom
-    if Q > 1 and out_mode != ConvolutionOutputMode.SAME:
-        raise ValueError(
-            f"Zoom factor with Q={Q} is not supported with output mode {out_mode}. "
-            f"Only Q=1 is supported with output modes other than SAME. "
-            f"Consider using ConvolutionOutputMode.SAME or a zoom factor with Q=1."
+    @property
+    def conv_shape(self) -> tuple[int, ...]:
+        """Shape of the convolution input, padding included."""
+        return tuple(axis.conv_size for axis in self.per_axis)
+
+    @property
+    def pad_width(self) -> tuple[tuple[int, int], ...]:
+        """Padding widths per axis, in :func:`numpy.pad` order."""
+        return tuple(axis.pad_width for axis in self.per_axis)
+
+    @property
+    def src_win(self) -> tuple[slice, ...]:
+        """Where the real samples sit inside the padded convolution input."""
+        return tuple(
+            slice(axis.pad_width[0], axis.conv_size - axis.pad_width[1]) for axis in self.per_axis
         )
 
+    @property
+    def needs_padding(self) -> bool:
+        """``True`` if at least one side has to be synthesised."""
+        return any(any(axis.pad_width) for axis in self.per_axis)
 
-def fft_array_filter_check_data(
-    arr: np.ndarray,
-    fil: np.ndarray,
-    win: Union[np.ndarray or None],
-    zoom: int | tuple[int, int] = 1,
-    axes=None,
-) -> Tuple[np.ndarray, np.ndarray, Iterable, Tuple]:
-    """Performs checks on input data to ensure expected types and profiles.
 
-    This function handles:
+class FilterResult(NamedTuple):
+    """Result of :func:`fft_array_filter`.
 
-        - Converting axes to explicit definitions if `None` is given.
-        - Converting the window to an explicit definition if `None` is given,
-          and ensuring it's an `ndarray` type.
-        - Making sure the filter has an odd size along each dimension.
-        - Computing convolution margins.
-
-    Parameters
-    ----------
-    arr : np.ndarray
-        The input array.
-
-    fil : np.ndarray
-        The filter given as an array in the spatial domain.
-
-    win : np.ndarray or None
-        The production window given as a list of tuples containing the
-        first and last index for each dimension. For example, for a 2D array:
-        ``((first_row, last_row), (first_col, last_col))``.
-
-    zoom : int or Tuple[int, int], optional
-        The zoom factor. It can either be a single integer or a tuple of
-        two integers representing the rational P/Q (e.g., (P, Q)),
-        by default 1.
-
-    axes : {None, int, tuple of int}, optional
-        The axes on which to perform the convolution, by default None.
-
-    Returns
-    -------
-    Tuple[np.ndarray, np.ndarray, Iterable, Tuple]
-        A tuple containing the filter, the window, the axes, and the margins.
+    Unpacks as ``(data, window)`` for backward compatibility.
     """
-    axes = normalize_axes(axes, arr.ndim)
 
-    # Normalize filter dimension
-    fil = align_filter_dim(fil, arr.ndim, axes)
-    
-    # If filter has an even size, we first pad with a 0 on the right et lower edge
-    fil = fft_odd_filter(fil, axes)
+    #: The filtered samples.
+    data: NDArray
+    #: Production window in ``"full"`` output coordinates, inclusive bounds.
+    window: NDArray[np.int64]
 
-    # Compute the margin needed to avoid edge effect
-    conv_margins = get_filter_margin(fil=fil, zoom=zoom, ndim=arr.ndim, axes=axes)
 
-    # Set window to full array if not given
+BoundarySpec = BoundaryPad | Sequence[Sequence[BoundaryPad]]
+
+
+def _normalize_boundary(
+    boundary: BoundarySpec, ndim: int, axes: tuple[int, ...]
+) -> tuple[tuple[tuple[bool, bool], ...], BoundaryPad]:
+    """Split a boundary specification into *where* to pad and *how*.
+
+    Returns one ``(before, after)`` pair of booleans per axis, plus the single
+    declared policy (``NONE`` when no side asks to be extended).
+
+    A scalar applies to every side. A sequence of pairs shorter than ``ndim``
+    is right-aligned and the leading axes default to ``NONE``, so that a 2-D
+    ``((top, bottom), (left, right))`` specification keeps working on a stacked
+    3-D array.
+
+    Raises
+    ------
+    ValueError
+        If two different non-``NONE`` policies appear. See :class:`BoundaryPad`
+        for why that combination is refused rather than implemented.
+    """
+    if isinstance(boundary, BoundaryPad):
+        pairs = [(boundary, boundary)] * ndim
+    else:
+        if isinstance(boundary, (str, bytes)) or not isinstance(boundary, Iterable):
+            raise TypeError(
+                "boundary must be a BoundaryPad or a sequence of (before, after) "
+                f"pairs, got {boundary!r}"
+            )
+        given = [tuple(pair) for pair in boundary]
+        if len(given) > ndim:
+            raise ValueError(f"boundary has {len(given)} pairs for a {ndim}-d array")
+        for pair in given:
+            if len(pair) != 2:
+                raise ValueError(
+                    f"each boundary entry must be a (before, after) pair, got {pair!r}"
+                )
+        pairs = [(BoundaryPad.NONE, BoundaryPad.NONE)] * (ndim - len(given)) + given  # type: ignore[assignment]
+
+    for axis, pair in enumerate(pairs):
+        for side in pair:
+            if not isinstance(side, BoundaryPad):
+                raise TypeError(f"boundary on axis {axis} must be a BoundaryPad, got {side!r}")
+
+    effective = [
+        pair if axis in axes else (BoundaryPad.NONE, BoundaryPad.NONE)
+        for axis, pair in enumerate(pairs)
+    ]
+
+    policies = {side for pair in effective for side in pair if side is not BoundaryPad.NONE}
+    if len(policies) > 1:
+        names = ", ".join(sorted(policy.name for policy in policies))
+        raise ValueError(
+            f"a single padding policy must apply to the whole array, got {names}. "
+            "Sides choose whether they are padded, not how."
+        )
+
+    where = tuple(
+        (pair[0] is not BoundaryPad.NONE, pair[1] is not BoundaryPad.NONE) for pair in effective
+    )
+    return where, policies.pop() if policies else BoundaryPad.NONE
+
+
+def _normalize_window(win: ArrayLike | None, shape: tuple[int, ...]) -> NDArray[np.int64]:
+    """Return an integer ``(ndim, 2)`` inclusive window, defaulting to the full array."""
     if win is None:
-        # Define a correct 2d window matching the array dimensions
-        win = [(None, None) if i not in axes else (0, arr.shape[i] - 1) for i in range(arr.ndim)]
-    win = np.asarray(win)
+        return np.asarray([(0, size - 1) for size in shape], dtype=np.int64)
 
-    # Check process_window with input arr
-    if not window_check(arr, win, axes):
-        raise Exception("Target window error : not contained in input data")
+    window = np.asarray(win)
+    if window.dtype == object or not np.issubdtype(window.dtype, np.integer):
+        raise TypeError(
+            "win must contain integers only; use the full extent of an axis "
+            "instead of None to leave it untouched"
+        )
+    if window.shape != (len(shape), 2):
+        raise ValueError(f"win must have shape ({len(shape)}, 2), got {window.shape}")
+    return window.astype(np.int64, copy=False)
 
-    return fil, win, axes, conv_margins
+
+def _axis_output(
+    out_mode: ConvolutionOutputMode,
+    *,
+    full_size: int,
+    origin: int,
+    window_size: int,
+    kernel_size: int,
+) -> slice:
+    """Slice selecting the requested region inside the ``"full"`` result."""
+    if out_mode is ConvolutionOutputMode.FULL:
+        return slice(0, full_size)
+    if out_mode is ConvolutionOutputMode.SAME:
+        return slice(origin, origin + window_size)
+    if out_mode is ConvolutionOutputMode.VALID:
+        trim = kernel_size - 1
+        stop = full_size - trim
+        if stop <= trim:
+            raise ValueError(
+                f"VALID output is empty: kernel of size {kernel_size} does not fit "
+                f"in a convolution input of size {full_size - trim}"
+            )
+        return slice(trim, stop)
+
+    # Unreachable: build_plan validates the enum type and every member is handled
+    # above. Kept so that adding a member fails loudly instead of silently
+    # returning None.
+    raise ValueError(f"unsupported output mode {out_mode!r}")  # pragma: no cover
 
 
-def fft_array_filter_output_shape(
-    arr: np.ndarray,
-    fil: np.ndarray,
-    win: Union[np.ndarray or None],
-    boundary: Union[BoundaryPad, Tuple[Tuple[BoundaryPad, BoundaryPad]]] = BoundaryPad.NONE,
+def build_plan(
+    shape: tuple[int, ...],
+    kernel: ArrayLike,
+    win: ArrayLike | None = None,
+    *,
+    boundary: BoundarySpec = BoundaryPad.NONE,
     out_mode: ConvolutionOutputMode = ConvolutionOutputMode.SAME,
     zoom: int | tuple[int, int] = 1,
-    centered_decimation: bool = True,
-    axes=None,
-) -> np.ndarray:
-    """Compute `fft_array_filter` expected output shape along all axes.
+    decimation: DecimationOrigin = DecimationOrigin.CENTERED,
+    axes: int | Iterable[int] | None = None,
+    dtype: DTypeLike | None = None,
+    method: ConvolutionMethod = ConvolutionMethod.OVERLAP_ADD,
+) -> FilterPlan:
+    """Compute the full geometry of a filtering operation without touching data.
+
+    This is the single source of truth for shapes, slices and padding: both
+    :func:`fft_array_filter` and :func:`fft_array_filter_output_shape` consume
+    the plan it returns.
 
     Parameters
     ----------
-    arr : np.ndarray
-        The input array.
-
-    fil : np.ndarray
-        The filter given as an array in the spatial domain.
-
-    win : np.ndarray or None
-        The production window given as a list of tuples containing the
-        first and last index for each dimension. For example, for a 2D array:
-        ``((first_row, last_row), (first_col, last_col))``.
-
-    boundary : Union[BoundaryPad, Tuple[Tuple[BoundaryPad, BoundaryPad]]], optional
-        The edge management rule as a single value (similar for each side)
-        or a tuple ((top, bottom), (left, right)). The rule is defined
-        by the `BoundaryPad` enum, by default `BoundaryPad.NONE`.
-
+    shape : tuple of int
+        Shape of the array that will be filtered.
+    kernel : array_like
+        Filter taps in the spatial domain. Even-sized axes are right-padded
+        with zeros so that the kernel has a well-defined centre.
+    win : array_like or None, optional
+        Production window as ``(ndim, 2)`` **inclusive** bounds. ``None`` means
+        the whole array.
+    boundary : BoundaryPad or sequence of pairs, optional
+        Policy applied on each side when the kernel margin falls outside the
+        array. A scalar applies everywhere. Default
+        :attr:`BoundaryPad.NONE`, i.e. no margin at all.
     out_mode : ConvolutionOutputMode, optional
-        The output mode for the returned array.
-        Default to `ConvolutionOutputMode.SAME`.
-
-    zoom : int or Tuple[int, int], optional
-        The zoom factor. It can either be a single integer or a tuple of
-        two integers representing the rational P/Q (e.g., (P, Q)),
-        by default 1.
-    
-    centered_decimation : bool, optional
-        If True, applies centering to the decimation when Q>1. If False,
-        performs simple decimation without centering. Default is True.
-        
-        Please note the centering is computed through an offset depending of
-        the parity of Q : Q // 2 if Q is even, (Q - 1) / 2 if Q is odd.
-        
-
-    axes : {None, int, tuple of int}, optional
-        The axes on which to perform the convolution, by default None.
+        Region of the convolution to return. Default
+        :attr:`ConvolutionOutputMode.SAME`.
+    zoom : int or tuple of two ints, optional
+        Rational resampling factor ``P/Q``. Only ``P == 1`` is implemented;
+        ``Q > 1`` decimates the output. Default ``1``.
+    decimation : DecimationOrigin, optional
+        Which sample of each block of ``Q`` is kept. Default
+        :attr:`DecimationOrigin.CENTERED`.
+    axes : int, iterable of int, or None, optional
+        Axes along which to convolve. Other axes are passed through untouched.
+        Default ``None``, i.e. every axis.
+    dtype : data-type, optional
+        Working dtype. Default ``np.result_type(kernel, ...)`` resolved by
+        :func:`fft_array_filter` against the input array.
+    method : ConvolutionMethod, optional
+        Convolution backend. Default :attr:`ConvolutionMethod.OVERLAP_ADD`.
 
     Returns
     -------
-    np.ndarray
-        An array containing the output shape.
+    FilterPlan
+        Immutable description of the operation.
 
-    Notes
-    -----
-    Currently, this function only supports a `zoom` factor of 1. An assertion
-    will fail if a different zoom value is provided, as other zoom factors are
-    not yet implemented.
+    Raises
+    ------
+    ValueError
+        If the options are inconsistent, if the window is not contained in the
+        array, or if the requested zoom is not supported.
     """
-    # zoom different from 1 not yet implemented
-    (P, Q) = normalize_zoom_arg(zoom)
-    
-    # Check the combination of parameters `out_mode` and `zoom_pq`
-    # If zoom Q factor is greater than 1, a decimation will be performed thus impacting
-    # the output shape.
-    fft_array_filter_check_args(out_mode, (P, Q)) 
-    
-    out = np.nan
+    ndim = len(shape)
+    axes = normalize_axes(axes, ndim)
+    zoom_pq = normalize_zoom(zoom)
+    if not zoom_pq.is_supported:
+        raise ValueError(
+            f"zoom P/Q = {zoom_pq.p}/{zoom_pq.q} is not supported; "
+            "only pure decimation (P == 1) is implemented"
+        )
+    if not isinstance(out_mode, ConvolutionOutputMode):
+        raise TypeError(f"out_mode must be a ConvolutionOutputMode, got {out_mode!r}")
+    if not isinstance(method, ConvolutionMethod):
+        raise TypeError(f"method must be a ConvolutionMethod, got {method!r}")
+    if not isinstance(decimation, DecimationOrigin):
+        raise TypeError(f"decimation must be a DecimationOrigin, got {decimation!r}")
 
-    # check data and compute convolution margins
-    fil, win, axes, conv_margins = fft_array_filter_check_data(
-        arr, fil, win, (P, Q), axes
-    )
-    win_margins = win
+    kernel = align_kernel(kernel, ndim, axes)
+    kernel = pad_kernel_to_odd(kernel, axes)
+    margins = kernel_margin(kernel, axes)
 
-    # Get the boundary management - ensure the number of pairs aligns with
-    # `ndim` by left-padding with fill=BoundaryPad.NONE which is neutral
-    # for the process that will follow.
-    boundary = np.asarray(
-        tuplify(boundary, ndim=arr.ndim, fill=BoundaryPad.NONE, strict=False)
-    )
+    window = _normalize_window(win, shape)
+    if not window_check(np.empty(shape, dtype=np.uint8), window, axes):
+        raise ValueError(f"production window {window.tolist()} is not contained in shape {shape}")
 
-    if np.any(boundary != BoundaryPad.NONE):
-        
-        # Note : Zoom Q factor > 1 not supported in this mode.
-        
-        # We want to manage at least one edge with either outer data
-        # or padding.
-        # Define the margins array
-        margins = np.repeat(conv_margins, 2).reshape((len(conv_margins), 2))
+    pad_sides, pad_mode = _normalize_boundary(boundary, ndim, axes)
+    offset = decimation_offset(zoom_pq.q, decimation)
 
-        # Margins are computed regardless the boundary mode on each edge.
-        # Here we make it compliant with the boundary definition.
-        # If BoundaryPad.NONE => set the corresponding margin to 0
-        margins = np.where(boundary != BoundaryPad.NONE, margins, 0)
+    per_axis: list[AxisPlan] = []
+    for axis in range(ndim):
+        size = shape[axis]
+        first, last = int(window[axis][0]), int(window[axis][1])
+        window_size = last - first + 1
 
-        # Apply the margin to the production window
-        win_margins = window_extend(win, margins, reverse=False)
-
-    if out_mode == ConvolutionOutputMode.FULL:
-        # It returns the full data with eventually applied margins
-        out = [
-            (
-                arr.shape[i]
-                if i not in axes
-                else win_margins[i][1] - win_margins[i][0] + 1 + 2 * conv_margins[i]
+        if axis not in axes:
+            per_axis.append(
+                AxisPlan(
+                    source=slice(0, size),
+                    pad_width=(0, 0),
+                    conv_size=size,
+                    full_size=size,
+                    origin=0,
+                    window_size=size,
+                    output=slice(0, size),
+                    output_size=size,
+                )
             )
-            for i in range(arr.ndim)
-        ]    
-            
-    elif out_mode == ConvolutionOutputMode.SAME:
-        # It returns the data corresponding to the input window
-        # Please note that this mode takes into account the optional
-        # padding that may be performed
-        out = [
-            arr.shape[i] if i not in axes else win[i][1] - win[i][0] + 1
-            for i in range(arr.ndim)
-        ]
-        
-        # Zoom Q > 1 => a downsampling will be performed
-        if Q > 1:
-            decimation_offset = 0
-            if centered_decimation:
-                if Q % 2:
-                    decimation_offset = Q // 2
-                else:
-                    decimation_offset = (Q - 1) // 2
-            
-            # Update output size
-            out = [
-                out[i] if i not in axes
-                else decimated_size(out[i], Q, decimation_offset)
-                for i in range(arr.ndim)
-            ]
+            continue
 
-    else:
-        raise NotImplementedError
+        margin = margins[axis]
+        synthesise_before, synthesise_after = pad_sides[axis]
 
-    return np.asarray(out)
+        # Real neighbours are always taken when they exist, whatever the
+        # policy: a boundary condition describes the edge of the array, never a
+        # seam in the middle of it. The policy only decides what happens beyond
+        # what the array holds.
+        real_before = min(margin, first)
+        real_after = min(margin, size - 1 - last)
+        pad_before = margin - real_before if synthesise_before else 0
+        pad_after = margin - real_after if synthesise_after else 0
+
+        source = slice(first - real_before, last + real_after + 1)
+        lead = real_before + pad_before
+        trail = real_after + pad_after
+        conv_input_size = lead + window_size + trail
+        full_size = conv_input_size + kernel.shape[axis] - 1
+        origin = margin + lead
+
+        output = _axis_output(
+            out_mode,
+            full_size=full_size,
+            origin=origin,
+            window_size=window_size,
+            kernel_size=kernel.shape[axis],
+        )
+        output_size = output.stop - output.start
+
+        if zoom_pq.q > 1:
+            output = slice(output.start + offset, output.stop, zoom_pq.q)
+            output_size = decimated_size(output_size, zoom_pq.q, offset)
+
+        per_axis.append(
+            AxisPlan(
+                source=source,
+                pad_width=(pad_before, pad_after),
+                conv_size=conv_input_size,
+                full_size=full_size,
+                origin=origin,
+                window_size=window_size,
+                output=output,
+                output_size=output_size,
+            )
+        )
+
+    # A declared policy that ends up padding nothing — an interior tile reading
+    # real neighbours on every side — is not the rule executed for this plan.
+    if not any(any(axis.pad_width) for axis in per_axis):
+        pad_mode = BoundaryPad.NONE
+
+    return FilterPlan(
+        kernel=kernel,
+        axes=axes,
+        per_axis=tuple(per_axis),
+        pad_mode=pad_mode,
+        out_mode=out_mode,
+        zoom=zoom_pq,
+        dtype=np.dtype(dtype) if dtype is not None else np.dtype(kernel.dtype),
+        method=method,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Execution
+# --------------------------------------------------------------------------- #
+def _make_convolution_input(arr: NDArray, plan: FilterPlan) -> NDArray:
+    """Build the padded, dtype-converted input of the convolution.
+
+    One allocation and one copy, whatever the number of padded sides: the
+    destination buffer is created at its final size, the real samples are
+    written into it — the assignment also performs the dtype conversion — and
+    the margins are filled in place by
+    :func:`gridr.core.utils.array_pad.pad_inplace`.
+
+    Padding side by side with :func:`numpy.pad` would allocate a full-size
+    array per side, up to ``2 * ndim`` copies of the tile to synthesise a few
+    rows of margin, and it would also be wrong for a non-local policy: a
+    ``WRAP`` applied second wraps around the already-extended array instead of
+    the original one. Both problems disappear once the buffer is written once,
+    in place.
+    """
+    source = arr[plan.source]
+    if plan.pad_mode is BoundaryPad.NONE:
+        return np.asarray(source, dtype=plan.dtype)
+
+    buffer = np.empty(plan.conv_shape, dtype=plan.dtype)
+    src_win = plan.src_win
+    buffer[src_win] = source
+    pad_inplace(buffer, src_win, plan.pad_width, mode=plan.pad_mode.numpy_mode)
+    return buffer
+
+
+_CONVOLVERS = {
+    ConvolutionMethod.OVERLAP_ADD: lambda a, k, axes: signal.oaconvolve(
+        a, k, mode="full", axes=axes
+    ),
+    ConvolutionMethod.FFT: lambda a, k, axes: signal.fftconvolve(a, k, mode="full", axes=axes),
+    ConvolutionMethod.DIRECT: lambda a, k, axes: signal.convolve(
+        a, k, mode="full", method="direct"
+    ),
+    ConvolutionMethod.AUTO: lambda a, k, axes: signal.convolve(a, k, mode="full", method="auto"),
+}
 
 
 def fft_array_filter(
-    arr: np.ndarray,
-    fil: np.ndarray,
-    win: Union[np.ndarray or None],
-    boundary: Union[BoundaryPad, Tuple[Tuple[BoundaryPad, BoundaryPad]]] = BoundaryPad.NONE,
+    arr: NDArray,
+    kernel: ArrayLike,
+    win: ArrayLike | None = None,
+    *,
+    boundary: BoundarySpec = BoundaryPad.NONE,
     out_mode: ConvolutionOutputMode = ConvolutionOutputMode.SAME,
-    zoom: Union[int, Tuple[int, int]] = 1,
-    centered_decimation: bool = True,
-    axes=None,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """FFT convolve between an array and a filter.
+    zoom: int | tuple[int, int] = 1,
+    decimation: DecimationOrigin = DecimationOrigin.CENTERED,
+    axes: int | Iterable[int] | None = None,
+    dtype: DTypeLike | None = None,
+    method: ConvolutionMethod = ConvolutionMethod.OVERLAP_ADD,
+    plan: FilterPlan | None = None,
+) -> FilterResult:
+    """Convolve ``arr`` with ``kernel`` over a production window.
 
-    This method wraps the `scipy.signal.oaconvolve` method by adding some
-    functionalities:
-
-    - The filter is assumed to have an odd size; if it is not the case, it's
-      padded on the right and bottom edges with zeros.
-    - The user can specify the production window to limit the data given to the
-      convolution method. Note that what's actually given to the FFT convolution
-      depends on the `boundary` argument.
-    - An edge management option is available to precisely define how boundaries
-      are handled on each side. In detail:
-
-        - `BoundaryPad.NONE`: No padding is applied on the edge of the
-            production window.
-        - `BoundaryPad.REFLECT`: Padding is applied. The padding length is
-            calculated from the filter size. If data is available in the full
-            array, it's considered. If data is not available or only partially
-            available, a "mirror" pad is applied. In this case, the array given
-            to the FFT convolution method is extended; note that the convolution
-            method still applies zero padding internally.
-
-        Note that the padding rule may differ for each side.
-
-    - The output window can differ depending on the `out_mode`:
-
-        - In mode "SAME": The output window matches the input production
-          window.
-        - In mode "FULL": The output directly corresponds to the "full" mode of
-          the internal convolution method, thus embedding both the margins (from
-          the filter) and the extent from the `BoundaryPad` mode. In this case,
-          the second element of the output can be used to get the position of
-          the production window origin.
-    
-    - For zoom factors (P, Q) with Q>1, the method performs decimation after convolution.
-      The centering of the decimation can be controlled with the `centered_decimation`
-      parameter.
+    See :func:`build_plan` for the meaning of every option; this function only
+    executes the plan it describes.
 
     Parameters
     ----------
-    arr : np.ndarray
-        The input array.
-
-    fil : np.ndarray
-        The filter given as an array in the spatial domain.
-
-    win : np.ndarray or None
-        The production window given as a list of tuples containing the
-        first and last index for each dimension. For example, for a 2D array:
-        ``((first_row, last_row), (first_col, last_col))``.
-
-    boundary : Union[BoundaryPad, Tuple[Tuple[BoundaryPad, BoundaryPad]]], optional
-        The edge management rule as a single value (similar for each side)
-        or a tuple ((top, bottom), (left, right)). The rule is defined by
-        the `BoundaryPad` enum, by default `BoundaryPad.NONE`.
-
-    out_mode : ConvolutionOutputMode, optional
-        The output mode for the returned array, by default `ConvolutionOutputMode.SAME`.
-
-    zoom : int or Tuple[int, int], optional
-        The zoom factor. It can either be a single integer or a tuple of
-        two integers representing the rational P/Q (e.g., (P, Q)),
-        by default 1.
-    
-    centered_decimation : bool, optional
-        If True, applies centering to the decimation when Q>1. If False,
-        performs simple decimation without centering. Default is True.
-        
-        Please note the centering is computed through an offset depending of
-        the parity of Q : Q // 2 if Q is even, (Q - 1) / 2 if Q is odd.
-        
-    axes : {None, int, tuple of int}, optional
-        The axes on which to perform the convolution. WARNING: Not yet used,
-        by default None.
+    arr : numpy.ndarray
+        Input array.
+    plan : FilterPlan, optional
+        A plan built beforehand by :func:`build_plan`. When given, every other
+        option is ignored. Reusing a plan across the tiles of a raster avoids
+        recomputing the geometry for each of them.
 
     Returns
     -------
-    Tuple[np.ndarray, np.ndarray]
-        A tuple containing:
+    FilterResult
+        Named tuple ``(data, window)``. ``window`` locates the production
+        window inside the ``"full"`` convolution frame, with inclusive bounds.
 
-        -   The filtered array whose size depends on the convolution mode.
-        -   The output coordinates of the production window considering a
-            "full" mode output.
-
-    Notes
-    -----
-    Currently, this function only supports a `zoom` factor of 1. An assertion
-    will fail if a different zoom value is provided, as other zoom
-    factors are not yet implemented.
+    Examples
+    --------
+    >>> import numpy as np
+    >>> arr = np.arange(25, dtype=np.float32).reshape(5, 5)
+    >>> kernel = np.array([[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]])
+    >>> out, window = fft_array_filter(arr, kernel)
+    >>> out.shape
+    (5, 5)
+    >>> window.tolist()  # inclusive bounds, in the "full" convolution frame
+    [[1, 5], [1, 5]]
     """
-    # zoom different from 1 not yet implemented
-    (P, Q) = normalize_zoom_arg(zoom)
-    
-    # Check the combination of parameters `out_mode` and `zoom_pq`
-    # If zoom Q factor is greater than 1, a decimation will be performed thus
-    # impacting the output shape.
-    fft_array_filter_check_args(out_mode, (P, Q))
-    
-    # check data and compute convolution margins
-    fil, win, axes, conv_margins = fft_array_filter_check_data(
-        arr, fil, win, (P, Q), axes
-    )
-
-    convol_fct = signal.oaconvolve
-    conv_arr = None
-
-    # Compute the shift to apply to the full output in order to get the same
-    # window as input.
-    # This default computation corresponds to the case where BoundaryPad is set
-    # to NONE for all edges
-    shift_same = np.asarray(
-        [0 if i not in axes else fil.shape[i] // 2 for i in range(fil.ndim)]
-    )
-
-    # Get the boundary management - ensure the number of pairs aligns with
-    # `ndim` by left-padding with fill=BoundaryPad.NONE which is neutral
-    # for the process that will follow.
-    boundary = np.asarray(
-        tuplify(boundary, ndim=arr.ndim, fill=BoundaryPad.NONE, strict=False)
-    )
-
-    if np.all(boundary == BoundaryPad.NONE):
-        # final window corresponds to the input window
-        indices = tuple(
-            (
-                slice(None, None) if i not in axes else slice(int(win[i][0]), int(win[i][1] + 1))
-                for i in range(arr.ndim)
-            )
+    arr = np.asarray(arr)
+    if plan is None:
+        plan = build_plan(
+            arr.shape,
+            kernel,
+            win,
+            boundary=boundary,
+            out_mode=out_mode,
+            zoom=zoom,
+            decimation=decimation,
+            axes=axes,
+            dtype=dtype if dtype is not None else np.result_type(arr, np.asarray(kernel)),
+            method=method,
         )
-        conv_arr = arr[indices]
+    elif plan.per_axis and len(plan.per_axis) != arr.ndim:
+        raise ValueError(f"plan was built for a {len(plan.per_axis)}-d array, got {arr.ndim}-d")
 
-    elif np.any(boundary != BoundaryPad.NONE):
-        # We want to manage at least one edge with either outer data
-        # or padding.
-        # Define the margins array
-        
-        margins = np.repeat(conv_margins, 2).reshape((len(conv_margins), 2))
+    conv_arr = _make_convolution_input(arr, plan)
+    conv_kernel = np.asarray(plan.kernel, dtype=plan.dtype)
 
-        # Margins are computed regardless the boundary mode on each edge.
-        # Here we make it compliant with the boundary definition.
-        # If BoundaryPad.NONE => set the corresponding margin to 0
-        try:
-            margins = np.where(boundary != BoundaryPad.NONE, margins, 0)
-        except ValueError as err:
-            raise ValueError(
-                f"shift_same : {shift_same}\n",
-                f"boundary: {boundary}\n",
-                f"margins : {margins}\n",
-                f"margins[:, 0]: {margins[:,0]}"
-                f"conv_margins : {conv_margins}\n",
-                f"fil : {fil}\n",
-                f"fil.shape : {fil.shape}\n",
-            ) from err
+    full = _CONVOLVERS[plan.method](conv_arr, conv_kernel, plan.axes)
+    return FilterResult(data=full[plan.output], window=plan.window)
 
-        # For output : in order to get the same window we have to take
-        # account of used margins to shift the window
-        try:
-            shift_same += margins[:, 0]
-        except ValueError as err:
-            raise ValueError(
-                f"shift_same : {shift_same}\n"
-                f"margins : {margins}\n",
-                f"margins[:, 0]: {margins[:,0]}"
-                f"conv_margins : {conv_margins}\n",
-                f"fil : {fil}\n",
-                f"fil.shape : {fil.shape}\n",
-            ) from err
 
-        # Apply the margin to the production window
-        win_margins = window_extend(win, margins, reverse=False)
+def fft_array_filter_output_shape(
+    arr_or_shape: NDArray | tuple[int, ...],
+    kernel: ArrayLike,
+    win: ArrayLike | None = None,
+    *,
+    boundary: BoundarySpec = BoundaryPad.NONE,
+    out_mode: ConvolutionOutputMode = ConvolutionOutputMode.SAME,
+    zoom: int | tuple[int, int] = 1,
+    decimation: DecimationOrigin = DecimationOrigin.CENTERED,
+    axes: int | Iterable[int] | None = None,
+) -> tuple[int, ...]:
+    """Shape :func:`fft_array_filter` would return, without doing the work.
 
-        # Next compute the padding
-        # Here 0 means that no padding is required
-        pad = window_overflow(arr, win_margins, axes)
+    Accepts either an array or a plain shape, so a scheduler can size its
+    outputs before any pixel exists.
 
-        if np.all(pad == 0):
-            # Nothing more to do, just take the window with margins
-            indices = tuple(
-                (
-                    (
-                        slice(None, None)
-                        if i not in axes
-                        else slice(win_margins[i][0], win_margins[i][1] + 1)
-                    )
-                    for i in range(arr.ndim)
-                )
-            )
-            conv_arr = arr[indices]
-        else:
-            # Perform the padding - it directly gives the conv array
-            win_pad = window_extend(win_margins, pad, reverse=True)
-            conv_arr = pad_array(arr=arr, win=win_pad, pad=pad, boundary=boundary, axes=axes)
-
-    # Perform the convolution with mode = 'full' in order to master the
-    # returned window
-    out = convol_fct(conv_arr, fil, mode="full", axes=axes)
-
-    if out_mode == ConvolutionOutputMode.FULL:
-        # It returns the full data with eventually applied margins
-        # That directly correspond to the output
-        pass
-    elif out_mode == ConvolutionOutputMode.SAME:
-        # It returns the data corresponding to the input window
-        # Please note that this mode takes into account the optional
-        # padding that may be performed
-        indices = tuple(
-            (
-                (
-                    slice(None, None)
-                    if i not in axes
-                    else slice(shift_same[i], shift_same[i] + win[i][1] - win[i][0] + 1)
-                )
-                for i in range(arr.ndim)
-            )
-        )
-        
-        if Q > 1:
-            decimation_offset = 0
-            if centered_decimation:
-                if Q % 2:
-                    decimation_offset = Q // 2
-                else:
-                    decimation_offset = (Q - 1) // 2
-
-            # Compose the indices with the decimation
-            indices = tuple(
-                (
-                    (
-                        slice(None, None)
-                        if i not in axes
-                        else compose_slice(indices[i], slice(decimation_offset, None, Q), out.shape[i])
-                    )
-                    for i in range(arr.ndim)
-                )
-            )
-
-        out = out[indices]
-    
-    else:
-        raise NotImplementedError
-
-    win_same = np.asarray([shift_same, shift_same + win[:, 1] - win[:, 0]]).T
-
-    return out, win_same
+    Examples
+    --------
+    >>> fft_array_filter_output_shape((50, 60), np.ones((3, 3)), zoom=(1, 5))
+    (10, 12)
+    """
+    shape = (
+        tuple(arr_or_shape.shape)
+        if isinstance(arr_or_shape, np.ndarray)
+        else tuple(int(size) for size in arr_or_shape)
+    )
+    return build_plan(
+        shape,
+        kernel,
+        win,
+        boundary=boundary,
+        out_mode=out_mode,
+        zoom=zoom,
+        decimation=decimation,
+        axes=axes,
+    ).output_shape
