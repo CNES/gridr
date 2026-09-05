@@ -49,10 +49,10 @@ import pytest
 from scipy import ndimage
 
 from gridr.core.convolution.fft_filtering import (
-    BoundaryPad,
-    ConvolutionMethod,
-    ConvolutionOutputMode,
-    DecimationOrigin,
+    BOUNDARY_MODES,
+    CONVOLUTION_METHODS,
+    DECIMATION_ORIGINS,
+    OUTPUT_MODES,
     Zoom,
     align_kernel,
     build_plan,
@@ -84,19 +84,18 @@ GAUSSIAN_KERNEL = (1.0 / 16.0) * np.array([[1.0, 2.0, 1.0], [2.0, 4.0, 2.0], [1.
 
 #: Boundary policies mapped onto the equivalent :mod:`scipy.ndimage` mode.
 PAD_TO_NDIMAGE = {
-    BoundaryPad.REFLECT: "mirror",
-    BoundaryPad.SYMMETRIC: "reflect",
-    BoundaryPad.EDGE: "nearest",
-    BoundaryPad.WRAP: "grid-wrap",
-    BoundaryPad.ZERO: "constant",
+    "reflect": "mirror",
+    "symmetric": "reflect",
+    "edge": "nearest",
+    "wrap": "grid-wrap",
+    "constant": "constant",
 }
 
 
 def _boundary_matrix() -> list:
-    """Every scalar policy plus the full ``2 ** 4`` grid of per-side policies.
-    """
-    scalars = [BoundaryPad.NONE, BoundaryPad.REFLECT]
-    sides = [BoundaryPad.NONE, BoundaryPad.REFLECT]
+    """Every scalar policy plus the full ``2 ** 4`` grid of per-side policies."""
+    scalars = ["none", "reflect"]
+    sides = ["none", "reflect"]
     pairs = [
         ((top, bottom), (left, right))
         for top, bottom, left, right in itertools.product(sides, repeat=4)
@@ -105,9 +104,9 @@ def _boundary_matrix() -> list:
 
 
 def _boundary_id(boundary) -> str:
-    if isinstance(boundary, BoundaryPad):
-        return boundary.name
-    return "-".join(side.name[0] for pair in boundary for side in pair)
+    if isinstance(boundary, str):
+        return boundary
+    return "-".join(side[0] for pair in boundary for side in pair)
 
 
 BOUNDARY_MATRIX = _boundary_matrix()
@@ -116,8 +115,7 @@ BOUNDARY_IDS = [_boundary_id(b) for b in BOUNDARY_MATRIX]
 
 @pytest.fixture(name="raster")
 def fixture_raster() -> np.ndarray:
-    """A deterministic pseudo-random raster.
-    """
+    """A deterministic pseudo-random raster."""
     return np.random.default_rng(20250903).standard_normal((50, 60))
 
 
@@ -128,8 +126,7 @@ def fixture_stack() -> np.ndarray:
 
 
 def assert_array(actual, expected, *, dtype=None, rtol=1e-10, atol=0.0, err_msg=""):
-    """Assert shape, dtype and values, with no dependency on the NumPy version.
-    """
+    """Assert shape, dtype and values, with no dependency on the NumPy version."""
     actual = np.asanyarray(actual)
     expected = np.asanyarray(expected)
     assert actual.shape == expected.shape, f"shape {actual.shape} != {expected.shape}. {err_msg}"
@@ -189,19 +186,37 @@ class TestNormalizeZoom:
         assert normalize_zoom(zoom).is_supported is supported
 
 
-class TestBoundaryPadMapping:
-    """The enumeration's own contract, independent of any filtering."""
+class TestBoundaryModes:
+    """The vocabulary itself, independent of any filtering."""
 
-    @pytest.mark.parametrize("policy", [p for p in BoundaryPad if p is not BoundaryPad.NONE])
-    def test_every_policy_maps_to_a_usable_numpy_mode(self, policy):
-        mode = policy.numpy_mode
-        padded = np.pad(np.arange(5.0), (2, 2), mode=mode)
-        assert padded.shape == (9,)
+    @pytest.mark.parametrize("policy", [m for m in BOUNDARY_MODES if m != "none"])
+    def test_every_policy_is_a_numpy_pad_mode(self, policy):
+        assert np.pad(np.arange(5.0), (2, 2), mode=policy).shape == (9,)
 
-    def test_none_has_no_numpy_equivalent(self):
-        """``NONE`` means "do not extend", so asking for its pad mode is a bug."""
-        with pytest.raises(ValueError, match="no numpy.pad equivalent"):
-            BoundaryPad.NONE.numpy_mode
+    def test_none_is_the_only_one_without_a_numpy_equivalent(self):
+        with pytest.raises(ValueError, match="mode"):
+            np.pad(np.arange(5.0), (2, 2), mode="none")
+
+    @pytest.mark.parametrize("spelling", [None, "none"])
+    def test_none_and_None_are_the_same_policy(self, raster, spelling):
+        assert_array(
+            fft_array_filter(raster, ASYMMETRIC_KERNEL, boundary=spelling).data,
+            fft_array_filter(raster, ASYMMETRIC_KERNEL, boundary="none").data,
+            rtol=0,
+            atol=0,
+        )
+
+    def test_an_unknown_mode_names_the_valid_ones(self):
+        with pytest.raises(ValueError, match="unknown boundary mode"):
+            fft_array_filter(np.zeros((5, 5)), np.ones((3, 3)), boundary="mirror")
+
+    @pytest.mark.parametrize(
+        ("option", "value"),
+        [("out_mode", "SAME"), ("method", "overlap"), ("decimation", "middle")],
+    )
+    def test_every_vocabulary_rejects_a_near_miss(self, option, value):
+        with pytest.raises(ValueError, match=f"unknown {option}"):
+            build_plan((10, 10), DIRAC_KERNEL, **{option: value})
 
 
 class TestNormalizeAxes:
@@ -246,10 +261,9 @@ class TestDecimation:
 
     @pytest.mark.parametrize("q", range(1, 12))
     def test_centered_offset_is_block_centre(self, q):
-        """The centre of a block of ``q`` samples, lower one when ``q`` is even.
-        """
-        assert decimation_offset(q, DecimationOrigin.CENTERED) == (q - 1) // 2
-        assert decimation_offset(q, DecimationOrigin.LEADING) == 0
+        """The centre of a block of ``q`` samples, lower one when ``q`` is even."""
+        assert decimation_offset(q, "centered") == (q - 1) // 2
+        assert decimation_offset(q, "leading") == 0
 
     @pytest.mark.parametrize(("q", "expected"), [(1, 0), (2, 0), (3, 1), (4, 1), (5, 2), (8, 3)])
     def test_centered_offset_reference_values(self, q, expected):
@@ -293,8 +307,6 @@ class TestKernelPreparation:
         assert align_kernel(kernel, ndim, axes).shape == expected
 
     def test_axis_order_does_not_change_the_mapping(self):
-        """``axes`` selects axes, it does not permute them.
-        """
         kernel = np.arange(15.0).reshape(3, 5)
         increasing = align_kernel(kernel, 3, normalize_axes((1, 2), 3))
         reversed_spelling = align_kernel(kernel, 3, normalize_axes((2, 1), 3))
@@ -342,8 +354,6 @@ class TestKernelPreparation:
 
     @pytest.mark.parametrize("helper", [pad_kernel_to_odd, kernel_margin])
     def test_helpers_normalize_axes_themselves(self, helper):
-        """Each is safe to call on its own, so ``axes=None`` must work.
-        """
         kernel = np.ones((3, 5))
         assert helper(kernel) is not None
         assert np.array_equal(np.asarray(helper(kernel, None)), np.asarray(helper(kernel, (0, 1))))
@@ -372,18 +382,16 @@ class TestPlanGeometry:
         assert plan.output_shape == (50, 60)
         assert plan.source == (slice(0, 50), slice(0, 60))
         assert not plan.needs_padding
-        assert plan.window.tolist() == [[1, 50], [1, 60]] # window applied to the full output
+        assert plan.window.tolist() == [[1, 50], [1, 60]]  # window applied to the full output
 
     def test_interior_window_reads_real_neighbours(self):
         """A window away from the edges needs no synthetic samples at all."""
-        plan = build_plan(
-            (50, 60), DIRAC_KERNEL, ((10, 20), (30, 40)), boundary=BoundaryPad.REFLECT
-        )
+        plan = build_plan((50, 60), DIRAC_KERNEL, ((10, 20), (30, 40)), boundary="reflect")
         assert plan.source == (slice(9, 22), slice(29, 42))
         assert not plan.needs_padding
         assert plan.output_shape == (11, 11)
 
-    @pytest.mark.parametrize("boundary", list(BoundaryPad), ids=lambda p: p.name)
+    @pytest.mark.parametrize("boundary", list(BOUNDARY_MODES))
     def test_no_policy_ever_applies_away_from_the_array_edge(self, boundary):
         """A boundary condition describes the edge of the array, never a seam.
 
@@ -397,11 +405,11 @@ class TestPlanGeometry:
         assert plan.per_axis[1].source == slice(28, 43)
         assert plan.output_shape == (11, 11)
 
-    @pytest.mark.parametrize("boundary", list(BoundaryPad), ids=lambda p: p.name)
+    @pytest.mark.parametrize("boundary", list(BOUNDARY_MODES))
     def test_interior_window_gives_the_same_samples_whatever_the_policy(self, raster, boundary):
         """The same statement, checked on the values rather than on the plan."""
         reference = fft_array_filter(
-            raster, ASYMMETRIC_KERNEL, ((10, 20), (30, 40)), boundary=BoundaryPad.SYMMETRIC
+            raster, ASYMMETRIC_KERNEL, ((10, 20), (30, 40)), boundary="symmetric"
         ).data
         produced = fft_array_filter(
             raster, ASYMMETRIC_KERNEL, ((10, 20), (30, 40)), boundary=boundary
@@ -410,22 +418,22 @@ class TestPlanGeometry:
 
     def test_none_still_synthesises_nothing_at_the_array_edge(self):
         """``NONE`` reads what exists and adds nothing where nothing exists."""
-        plan = build_plan((50, 60), ASYMMETRIC_KERNEL, boundary=BoundaryPad.NONE)
+        plan = build_plan((50, 60), ASYMMETRIC_KERNEL, boundary="none")
         assert not plan.needs_padding
         assert plan.per_axis[0].source == slice(0, 50)
         assert plan.per_axis[0].origin == ASYMMETRIC_KERNEL.shape[0] // 2
 
     def test_edge_window_is_padded_on_the_touching_side_only(self):
-        plan = build_plan((50, 60), DIRAC_KERNEL, ((0, 20), (30, 40)), boundary=BoundaryPad.REFLECT)
+        plan = build_plan((50, 60), DIRAC_KERNEL, ((0, 20), (30, 40)), boundary="reflect")
         assert plan.per_axis[0].pad_width == (1, 0)
         assert plan.per_axis[1].pad_width == (0, 0)
 
     @pytest.mark.parametrize(
         ("out_mode", "expected"),
         [
-            (ConvolutionOutputMode.SAME, (50, 60)),
-            (ConvolutionOutputMode.FULL, (52, 62)),
-            (ConvolutionOutputMode.VALID, (48, 58)),
+            ("same", (50, 60)),
+            ("full", (52, 62)),
+            ("valid", (48, 58)),
         ],
     )
     def test_output_modes(self, out_mode, expected):
@@ -447,7 +455,7 @@ class TestPlanGeometry:
             plan.kernel = None  # type: ignore[misc]
 
     @pytest.mark.parametrize("q", [2, 3, 5, 50])
-    @pytest.mark.parametrize("origin", list(DecimationOrigin))
+    @pytest.mark.parametrize("origin", list(DECIMATION_ORIGINS))
     def test_decimated_shape_matches_manual_slicing(self, q, origin):
         undecimated = build_plan((50, 60), DIRAC_KERNEL, ((10, 20), (30, 42))).output_shape
         decimated = build_plan(
@@ -465,12 +473,10 @@ class TestPlanGeometry:
             ({"zoom": 1.5}, TypeError),
             ({"axes": (0, 0)}, ValueError),
             ({"axes": 5}, ValueError),
-            ({"out_mode": "same"}, TypeError),  # a string is not the enum
-            ({"boundary": "reflect"}, TypeError),
             ({"win": ((0, 100), (0, 10))}, ValueError),  # window outside the array
             ({"win": ((0, 10),)}, ValueError),  # wrong window rank
             ({"win": ((None, None), (0, 10))}, TypeError),  # None is not an index
-            ({"method": "fft"}, TypeError),
+            ({"method": "FFT"}, ValueError),
             ({"decimation": True}, TypeError),
         ],
     )
@@ -481,8 +487,8 @@ class TestPlanGeometry:
     @pytest.mark.parametrize(
         "boundary",
         [
-            ((BoundaryPad.WRAP, BoundaryPad.EDGE), (BoundaryPad.NONE, BoundaryPad.NONE)),
-            ((BoundaryPad.REFLECT, BoundaryPad.NONE), (BoundaryPad.ZERO, BoundaryPad.NONE)),
+            (("wrap", "edge"), ("none", "none")),
+            (("reflect", "none"), ("constant", "none")),
         ],
         ids=["same-axis", "across-axes"],
     )
@@ -498,20 +504,18 @@ class TestPlanGeometry:
 
     def test_one_policy_on_a_subset_of_sides_is_fine(self):
         boundary = (
-            (BoundaryPad.REFLECT, BoundaryPad.NONE),
-            (BoundaryPad.NONE, BoundaryPad.REFLECT),
+            ("reflect", "none"),
+            ("none", "reflect"),
         )
         plan = build_plan((50, 60), DIRAC_KERNEL, boundary=boundary)
-        assert plan.pad_mode is BoundaryPad.REFLECT
+        assert plan.pad_mode == "reflect"
         assert plan.pad_width == ((1, 0), (0, 1))
         assert plan.needs_padding
 
     def test_pad_mode_is_none_when_nothing_is_synthesised(self):
-        plan = build_plan(
-            (50, 60), DIRAC_KERNEL, ((10, 20), (30, 40)), boundary=BoundaryPad.REFLECT
-        )
+        plan = build_plan((50, 60), DIRAC_KERNEL, ((10, 20), (30, 40)), boundary="reflect")
         assert not plan.needs_padding
-        assert plan.pad_mode is BoundaryPad.NONE
+        assert plan.pad_mode == "none"
         assert plan.conv_shape == (13, 13)
         assert plan.src_win == (slice(0, 13), slice(0, 13))
 
@@ -520,41 +524,57 @@ class TestPlanGeometry:
     def test_pad_mode_and_needs_padding_agree(self, boundary, win):
         """The invariant that makes ``pad_mode`` readable without cross-checking."""
         plan = build_plan((50, 60), ASYMMETRIC_KERNEL, win, boundary=boundary)
-        assert (plan.pad_mode is BoundaryPad.NONE) == (not plan.needs_padding)
+        assert (plan.pad_mode == "none") == (not plan.needs_padding)
 
     @pytest.mark.parametrize(
         ("boundary", "exc", "match"),
         [
             (
-                ((BoundaryPad.NONE, BoundaryPad.NONE),) * 3,
+                (("none", "none"),) * 3,
                 ValueError,
                 "3 pairs for a 2-d array",
             ),
             (
-                ((BoundaryPad.NONE, BoundaryPad.NONE, BoundaryPad.NONE), (0, 0)),
+                (("none", "none", "none"), (0, 0)),
                 ValueError,
                 "before, after",
             ),
-            (((1, 2), (3, 4)), TypeError, "must be a BoundaryPad"),
+            (((1, 2), (3, 4)), TypeError, "must be a string"),
+            (42, TypeError, "mode string, None, or a sequence"),
         ],
-        ids=["too-many-pairs", "not-a-pair", "not-a-policy"],
+        ids=["too-many-pairs", "not-a-pair", "not-a-policy", "not-a-sequence"],
     )
     def test_malformed_boundary(self, boundary, exc, match):
         with pytest.raises(exc, match=match):
             build_plan((50, 60), DIRAC_KERNEL, boundary=boundary)
 
+    def test_wrap_needs_the_window_to_span_the_axis(self):
+        with pytest.raises(ValueError, match="'wrap' boundary needs the window to span axis 1"):
+            build_plan((50, 60), ASYMMETRIC_KERNEL, ((0, 49), (0, 40)), boundary="wrap")
+
+    def test_wrap_is_fine_when_the_window_spans_the_axis(self):
+        plan = build_plan((50, 60), ASYMMETRIC_KERNEL, ((10, 20), (0, 59)), boundary="wrap")
+        assert plan.pad_mode == "wrap"
+        assert plan.per_axis[1].pad_width == (2, 2)
+
+    def test_wrap_on_an_interior_window_never_pads_so_never_raises(self):
+        """No margin is synthesised, so the policy simply does not apply."""
+        plan = build_plan((50, 60), ASYMMETRIC_KERNEL, ((10, 20), (30, 40)), boundary="wrap")
+        assert not plan.needs_padding
+        assert plan.pad_mode == "none"
+
     def test_valid_mode_needs_room(self):
         with pytest.raises(ValueError, match="VALID output is empty"):
-            build_plan((3, 3), np.ones((5, 5)), out_mode=ConvolutionOutputMode.VALID)
+            build_plan((3, 3), np.ones((5, 5)), out_mode="valid")
 
 
 class TestPredictedShape:
     """``fft_array_filter_output_shape`` must agree with the produced array."""
 
     @pytest.mark.parametrize("boundary", BOUNDARY_MATRIX, ids=BOUNDARY_IDS)
-    @pytest.mark.parametrize("out_mode", list(ConvolutionOutputMode))
+    @pytest.mark.parametrize("out_mode", list(OUTPUT_MODES))
     @pytest.mark.parametrize("zoom", [1, (1, 2), (1, 3), (1, 5), (1, 50)])
-    @pytest.mark.parametrize("origin", list(DecimationOrigin))
+    @pytest.mark.parametrize("origin", list(DECIMATION_ORIGINS))
     def test_prediction_matches_production(self, raster, boundary, out_mode, zoom, origin):
         kwargs = {
             "win": ((10, 20), (30, 42)),
@@ -577,7 +597,7 @@ class TestPredictedShape:
 class TestAgainstReference:
     """Compare the `fft_array_filter` with :mod:`scipy.ndimage`."""
 
-    @pytest.mark.parametrize("boundary", list(PAD_TO_NDIMAGE), ids=lambda b: b.name)
+    @pytest.mark.parametrize("boundary", list(PAD_TO_NDIMAGE))
     def test_whole_raster_matches_ndimage(self, raster, boundary):
         expected = ndimage.convolve(raster, ASYMMETRIC_KERNEL, mode=PAD_TO_NDIMAGE[boundary])
         produced = fft_array_filter(raster, ASYMMETRIC_KERNEL, boundary=boundary).data
@@ -585,7 +605,7 @@ class TestAgainstReference:
 
     def test_kernel_is_convolved_not_correlated(self, raster):
         """Guards the orientation: a symmetric kernel cannot detect a flip."""
-        convolved = fft_array_filter(raster, ASYMMETRIC_KERNEL, boundary=BoundaryPad.ZERO).data
+        convolved = fft_array_filter(raster, ASYMMETRIC_KERNEL, boundary="constant").data
         correlated = ndimage.correlate(raster, ASYMMETRIC_KERNEL, mode="constant")
         assert not np.allclose(convolved, correlated), "the two must differ for this kernel"
         assert_array(
@@ -597,17 +617,17 @@ class TestAgainstReference:
 
     def test_stack_is_filtered_plane_by_plane(self, stack):
         produced = fft_array_filter(
-            stack, ASYMMETRIC_KERNEL, boundary=BoundaryPad.SYMMETRIC, axes=(1, 2)
+            stack, ASYMMETRIC_KERNEL, boundary="symmetric", axes=(1, 2)
         ).data
         for index, plane in enumerate(stack):
             expected = ndimage.convolve(plane, ASYMMETRIC_KERNEL, mode="reflect")
             assert_array(produced[index], expected, rtol=0, atol=1e-9, err_msg=f"plane {index}")
 
-    @pytest.mark.parametrize("method", list(ConvolutionMethod))
+    @pytest.mark.parametrize("method", list(CONVOLUTION_METHODS))
     def test_backends_agree(self, raster, method):
-        reference = fft_array_filter(raster, ASYMMETRIC_KERNEL, boundary=BoundaryPad.SYMMETRIC).data
+        reference = fft_array_filter(raster, ASYMMETRIC_KERNEL, boundary="symmetric").data
         produced = fft_array_filter(
-            raster, ASYMMETRIC_KERNEL, boundary=BoundaryPad.SYMMETRIC, method=method
+            raster, ASYMMETRIC_KERNEL, boundary="symmetric", method=method
         ).data
         assert_array(produced, reference, rtol=0, atol=1e-9)
 
@@ -631,9 +651,7 @@ class TestProperties:
         direction convolution dictates."""
         kernel = np.zeros((3, 3))
         kernel[row, col] = 1.0
-        produced = fft_array_filter(
-            raster, kernel, ((10, 20), (30, 42)), boundary=BoundaryPad.SYMMETRIC
-        ).data
+        produced = fft_array_filter(raster, kernel, ((10, 20), (30, 42)), boundary="symmetric").data
         shift_row, shift_col = 1 - row, 1 - col
         expected = raster[10 + shift_row : 21 + shift_row, 30 + shift_col : 43 + shift_col]
         assert_array(produced, expected, rtol=0, atol=1e-12)
@@ -644,7 +662,7 @@ class TestProperties:
         alpha, beta = 2.5, -0.75
 
         def filtered(array):
-            return fft_array_filter(array, ASYMMETRIC_KERNEL, boundary=BoundaryPad.ZERO).data
+            return fft_array_filter(array, ASYMMETRIC_KERNEL, boundary="constant").data
 
         assert_array(
             filtered(alpha * raster + beta * other),
@@ -658,9 +676,9 @@ class TestProperties:
         cols = np.array([1.0, 2.0, 1.0]) / 4.0
         separable = np.outer(rows, cols)
 
-        one_pass = fft_array_filter(raster, separable, boundary=BoundaryPad.ZERO).data
-        first = fft_array_filter(raster, rows[:, None], boundary=BoundaryPad.ZERO).data
-        two_passes = fft_array_filter(first, cols[None, :], boundary=BoundaryPad.ZERO).data
+        one_pass = fft_array_filter(raster, separable, boundary="constant").data
+        first = fft_array_filter(raster, rows[:, None], boundary="constant").data
+        two_passes = fft_array_filter(first, cols[None, :], boundary="constant").data
         assert_array(one_pass, two_passes, rtol=0, atol=1e-9)
 
     @pytest.mark.parametrize(
@@ -669,10 +687,8 @@ class TestProperties:
     def test_tile_matches_whole_raster(self, raster, window):
         """The point of the whole module: filtering a tile with real margins
         must give exactly what filtering the full raster would give there."""
-        whole = fft_array_filter(raster, ASYMMETRIC_KERNEL, boundary=BoundaryPad.SYMMETRIC).data
-        tile = fft_array_filter(
-            raster, ASYMMETRIC_KERNEL, window, boundary=BoundaryPad.SYMMETRIC
-        ).data
+        whole = fft_array_filter(raster, ASYMMETRIC_KERNEL, boundary="symmetric").data
+        tile = fft_array_filter(raster, ASYMMETRIC_KERNEL, window, boundary="symmetric").data
         (first_row, last_row), (first_col, last_col) = window
         assert_array(
             tile,
@@ -682,9 +698,9 @@ class TestProperties:
         )
 
     @pytest.mark.parametrize("q", [2, 3, 5])
-    @pytest.mark.parametrize("origin", list(DecimationOrigin))
+    @pytest.mark.parametrize("origin", list(DECIMATION_ORIGINS))
     def test_decimation_equals_filter_then_subsample(self, raster, q, origin):
-        kwargs = {"win": ((10, 20), (30, 42)), "boundary": BoundaryPad.SYMMETRIC}
+        kwargs = {"win": ((10, 20), (30, 42)), "boundary": "symmetric"}
         decimated = fft_array_filter(
             raster, ASYMMETRIC_KERNEL, zoom=(1, q), decimation=origin, **kwargs
         ).data
@@ -707,12 +723,8 @@ class TestFilterContract:
 
     def test_window_locates_the_production_area_in_full_output(self, raster):
         window_spec = ((10, 20), (30, 42))
-        full = fft_array_filter(
-            raster, ASYMMETRIC_KERNEL, window_spec, out_mode=ConvolutionOutputMode.FULL
-        )
-        same = fft_array_filter(
-            raster, ASYMMETRIC_KERNEL, window_spec, out_mode=ConvolutionOutputMode.SAME
-        )
+        full = fft_array_filter(raster, ASYMMETRIC_KERNEL, window_spec, out_mode="full")
+        same = fft_array_filter(raster, ASYMMETRIC_KERNEL, window_spec, out_mode="same")
         (first_row, last_row), (first_col, last_col) = full.window
         assert_array(
             full.data[first_row : last_row + 1, first_col : last_col + 1],
@@ -734,7 +746,7 @@ class TestFilterContract:
         import gridr.core.convolution.fft_filtering as module
 
         plan = build_plan(raster.shape, ASYMMETRIC_KERNEL, dtype=raster.dtype)
-        assert plan.pad_mode is BoundaryPad.NONE
+        assert plan.pad_mode == "none"
         assert np.shares_memory(module._make_convolution_input(raster, plan), raster)
 
     def test_padded_input_is_built_without_numpy_pad(self, raster, monkeypatch):
@@ -746,7 +758,7 @@ class TestFilterContract:
         """
         import gridr.core.convolution.fft_filtering as module
 
-        plan = build_plan(raster.shape, ASYMMETRIC_KERNEL, boundary=BoundaryPad.SYMMETRIC)
+        plan = build_plan(raster.shape, ASYMMETRIC_KERNEL, boundary="symmetric")
         monkeypatch.setattr(
             module.np, "pad", lambda *a, **k: pytest.fail("numpy.pad must not be used here")
         )
@@ -758,14 +770,14 @@ class TestFilterContract:
         """The in-place fill must be indistinguishable from ``numpy.pad``."""
         import gridr.core.convolution.fft_filtering as module
 
-        plan = build_plan(raster.shape, ASYMMETRIC_KERNEL, boundary=BoundaryPad.WRAP)
+        plan = build_plan(raster.shape, ASYMMETRIC_KERNEL, boundary="wrap")
         produced = module._make_convolution_input(raster, plan)
         expected = np.pad(raster[plan.source], plan.pad_width, mode="wrap")
         assert_array(produced, expected, rtol=0, atol=0)
 
     def test_input_is_never_modified(self, raster):
         original = raster.copy()
-        fft_array_filter(raster, ASYMMETRIC_KERNEL, boundary=BoundaryPad.SYMMETRIC)
+        fft_array_filter(raster, ASYMMETRIC_KERNEL, boundary="symmetric")
         assert_array(raster, original, rtol=0, atol=0)
 
     def test_even_kernel_is_padded_to_odd(self, raster):
@@ -773,15 +785,15 @@ class TestFilterContract:
         padded = np.zeros((5, 5))
         padded[:4, :4] = even
         assert_array(
-            fft_array_filter(raster, even, boundary=BoundaryPad.ZERO).data,
-            fft_array_filter(raster, padded, boundary=BoundaryPad.ZERO).data,
+            fft_array_filter(raster, even, boundary="constant").data,
+            fft_array_filter(raster, padded, boundary="constant").data,
             rtol=0,
             atol=1e-12,
         )
 
     def test_a_plan_can_be_reused_across_tiles(self, raster):
         """Tiled processing builds the geometry once and applies it many times."""
-        plan = build_plan(raster.shape, ASYMMETRIC_KERNEL, boundary=BoundaryPad.SYMMETRIC)
+        plan = build_plan(raster.shape, ASYMMETRIC_KERNEL, boundary="symmetric")
         first = fft_array_filter(raster, ASYMMETRIC_KERNEL, plan=plan).data
         second = fft_array_filter(raster * 2.0, ASYMMETRIC_KERNEL, plan=plan).data
         assert_array(second, 2.0 * first, rtol=0, atol=1e-9)
@@ -797,12 +809,11 @@ class TestFilterContract:
 
 
 # --------------------------------------------------------------------------- #
-# Exhaustive coverage of the small integer domains
+# Exhaustive coverage of the small integer domains (Q, size, offset, kernel size)
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize("q", range(1, 18))
 @pytest.mark.parametrize("size", [0, 1, 2, 3, 7, 16, 33, 200])
 def test_decimated_size_over_every_offset(size, q):
-    """Swept exhaustively rather than sampled: the domain is small enough."""
     for offset in range(size + 3):
         assert decimated_size(size, q, offset) == len(range(size)[offset::q])
 
@@ -813,5 +824,5 @@ def test_decimated_size_over_every_offset(size, q):
 def test_same_mode_always_returns_the_window(rows, cols, half_rows, half_cols):
     """``SAME`` returns the production window whatever the kernel size."""
     kernel = np.ones((2 * half_rows + 1, 2 * half_cols + 1))
-    shape = fft_array_filter_output_shape((rows, cols), kernel, boundary=BoundaryPad.SYMMETRIC)
+    shape = fft_array_filter_output_shape((rows, cols), kernel, boundary="symmetric")
     assert shape == (rows, cols)

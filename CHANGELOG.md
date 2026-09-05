@@ -2,13 +2,105 @@
 
 ## Unreleased
 
+### ⚠️ Breaking Changes
+
+#### FFT Filtering — Boundary Semantics
+
+*Module: `core.convolution.fft_filtering.py`*
+
+- At most one non-`NONE` policy per call: sides declare *whether* they are padded, not *how*.
+  Mixing two now raises `ValueError` instead of depending on set iteration order.
+
+#### FFT Filtering — API
+
+*Module: `core.convolution.fft_filtering.py`*
+
+- **Options are plain strings, not enumerations.** `BoundaryPad` and `ConvolutionOutputMode` 
+  are removed. Boundary policies are now the `numpy.pad` mode strings — the ones 
+  `array_grid_resampling` already takes — and output modes those of
+  `scipy.signal.convolve`: `boundary="reflect"`, `out_mode="same"`. `None` is accepted for no
+  boundary synthesis.
+  The zero-padding policy is spelled `"constant"`, as in NumPy, not `ZERO`.
+- `fft_array_filter` and `fft_array_filter_output_shape`: `fil` renamed `kernel`, every option
+  beyond `arr`/`kernel`/`win` is keyword-only, and `fft_array_filter_output_shape` returns a
+  `tuple[int, ...]` instead of an `np.ndarray`.
+- `axes` is normalized as a set and returned sorted, consistent with `scipy.signal.oaconvolve`;
+  repeated axes are rejected.
+- `win` no longer accepts per-axis `None` bounds.
+- Renames: `fft_odd_filter` → `pad_kernel_to_odd`, `get_filter_margin` → `kernel_margin`.
+ `fft_array_filter_check_data` and `pad_array` are superseded by `build_plan`.
+
+
+*Module: `chain.fft_filtering_chain.py`*
+- `check_oa_strip_size` takes the number of produced rows (`nrow`) instead of the input array.
+
 ### Added
+
+#### FFT Filtering
+
+##### FFT Filtering — Decimation
+
+*Module: `core.convolution.fft_filtering.py`*
+
+- Implemented rational decimation `zoom = (1, Q)`, previously guarded by `assert zoom == 1`.
+  Subsampling is fused into the output slicing, so no full-resolution intermediate is
+  materialised. `decimation` selects which sample of each block of `Q` is kept (`"centered"` or
+  `"leading"`), with the `decimation_offset` and `decimated_size` helpers.
+
+*Module: `chain.fft_filtering_chain.py`*
+
+- **Chain:** the overlap-add reconstruction stays at full resolution and only the writes are
+  decimated, from the *global* index of each block.
+
+##### FFT Filtering — Production Window in the Chain
+
+*Module: `chain.fft_filtering_chain.py`*
+
+- `fft_filtering_oa_strip_chain` accepts `win`. Strips are cut over the window, not the raster
+  height, and each read is restricted to the window extended by the kernel margins on both axes.
+
+##### FFT Filtering — Filter Plan
+
+*Module: `core.convolution.fft_filtering.py`*
+
+- `build_plan` derives the whole geometry — source slices, padding widths, output slices, output
+  shape and production window — from the input *shape* alone, without allocating data, and
+  returns an immutable `FilterPlan`. `fft_array_filter` accepts a `plan=` argument so that one
+  plan can be applied to many tiles.
+
+##### FFT Filtering — Boundary, Output Mode and Backend Options
+
+*Modules: `core.convolution.fft_filtering.py`, `chain.fft_filtering_chain.py`*
+
+- Added the `"symmetric"`, `"edge"`, `"wrap"` and `"constant"` boundary policies alongside
+  `"reflect"`.
+- `"wrap"` needs the production window to span the axis it wraps:  a window stopping short of an
+  edge has no periodic neighbour to bring in and raises rather than wrapping around itself. It is
+  also refused on the row axis by the strip chain, which cannot see the opposite end of the window.
+- The `"valid"` output mode is implemented; it previously raised `NotImplementedError`.
+- Added `dtype`, so a `float32` raster convolved with a `float64` kernel can be pinned to
+  `float32` instead of silently doubling its memory footprint
+- Added `method` to pick the backend convolution method.
+
+##### FFT Filtering — In-place Boundary Padding
+
+- Padding delegates to `array_pad.pad_inplace` to avoid unnecessary allocations.
 
 #### Documentation
 
 - Added a new `Standards` section in the HTML documentation
 
 ### Changed
+
+#### FFT Filtering — Module Restructuring
+
+- The core module is reorganised into pure integer helpers, plan construction and execution.
+  `fft_array_filter` and `fft_array_filter_output_shape` are thin consumers of the same plan, so
+  the predicted and produced shapes have one implementation instead of two kept in agreement by
+  a test. Validation happens once, in `build_plan`, instead of across multiple helpers.
+- One vocabulary for boundary handling across GridR: the strings accepted here are those
+  `array_grid_resampling` already takes.
+- The test suites have been refactored (and created for the *chain* module).
 
 #### Workspace Architecture — Cargo Workspace Split
 - Refactored the codebase to split the single Rust crate into a two-member Cargo workspace:
@@ -25,6 +117,16 @@
 - Upgraded Rust code to be compliant with edition 2024 (requires rust 1.85.1)
 
 ### Fixed
+
+#### FFT Filtering
+
+- **Crash on `win=None` with an `axes` subset** — non-target axes were filled with `(None, None)`,
+  producing an object-dtype window that failed later with a `TypeError`.
+- **Cross-enumeration equality** — `BoundaryPad.REFLECT == ConvolutionOutputMode.FULL` evaluated
+  to `True`, both being `IntEnum` members of value 2. The enumerations are gone.
+- **Strip shorter than the kernel** — `check_oa_strip_size` did not force the monolithic path,
+  leaving the overlap-add buffer under-sized. Strip margins now derive from the odd-padded
+  kernel, not the raw filter, which was off by one row for an even-sized filter.
 
 #### Workspace Architecture — Rust Doctests
 - Fixed doctests compilation errors resulting from the workspace migration - doctests were previously ignored.

@@ -66,8 +66,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from enum import Enum
-from typing import NamedTuple, SupportsIndex
+from typing import Literal, NamedTuple, SupportsIndex
 
 import numpy as np
 from numpy.typing import ArrayLike, DTypeLike, NDArray
@@ -77,13 +76,17 @@ from gridr.core.utils.array_pad import pad_inplace
 from gridr.core.utils.array_window import window_check
 
 __all__ = [
+    "BOUNDARY_MODES",
+    "CONVOLUTION_METHODS",
+    "DECIMATION_ORIGINS",
+    "OUTPUT_MODES",
     "AxisPlan",
-    "BoundaryPad",
+    "BoundaryMode",
     "ConvolutionMethod",
-    "ConvolutionOutputMode",
     "DecimationOrigin",
     "FilterPlan",
     "FilterResult",
+    "OutputMode",
     "Zoom",
     "align_kernel",
     "build_plan",
@@ -99,92 +102,76 @@ __all__ = [
 
 
 # --------------------------------------------------------------------------- #
-# Enumerations
+# Option vocabularies
 # --------------------------------------------------------------------------- #
-class BoundaryPad(Enum):
-    """Whether a given side is padded, and how padding is done when it is.
+# Plain strings rather than enums: these are the :func:`numpy.pad` modes and the
+# :func:`scipy.signal.convolve` output modes, and
+# :func:`~gridr.core.grid.grid_resampling.array_grid_resampling` already takes
+# the same spellings.
 
-    The specification carries two separable pieces of information, and they are
-    not on the same footing. **Where** to pad is a per-side decision: a tile in
-    the middle of a raster reads real neighbours on every side, a tile in a
-    corner has to synthesise two of them. **How** to pad is a property of the
-    signal, not of the side: a raster is reflective, or periodic, or bounded by
-    zeros. Mixing ``REFLECT`` on one edge with ``WRAP`` on another is rejected.
+#: Padding policy for one side. ``"none"``, or ``None``, synthesises nothing
+#: there; the other values are :func:`numpy.pad` modes.
+#:
+#: A specification may name any number of sides but only one non-``"none"``
+#: policy: sides say whether they are padded, not how. ``"reflect"`` on one edge
+#: and ``"wrap"`` on another is rejected.
+#:
+#: The policy applies outside the array only. The kernel margin is always read
+#: from real neighbours where they exist, so a window in the middle of a raster
+#: is never padded.
+#:
+#: ``"wrap"`` is the only one that needs the whole axis: a production window
+#: that stops short of an edge has no periodic neighbour to bring in, so it is
+#: rejected rather than wrapped around the window itself.
+BoundaryMode = Literal["none", "reflect", "symmetric", "edge", "wrap", "constant"]
 
-    Consequently a specification may name any number of sides, but at most one
-    non-``NONE`` policy overall. ``NONE`` means "do not extend on that side";
-    every other member names the single padding rule in force.
+#: Part of the convolution returned, as in :func:`scipy.signal.convolve`.
+OutputMode = Literal["same", "full", "valid"]
 
-    The policy only describes what happens *outside* the input array. Inside
-    it, the kernel margin is always read from the real neighbouring samples.
+#: Convolution backend. ``"overlap_add"`` and ``"fft"`` map to
+#: :func:`scipy.signal.oaconvolve` and :func:`scipy.signal.fftconvolve`, the
+#: other two to :func:`scipy.signal.convolve`. Overlap-add is the default but
+#: loses to a plain FFT on small kernels.
+ConvolutionMethod = Literal["overlap_add", "fft", "direct", "auto"]
+
+#: Sample kept in each block of ``Q``: the first one, or the one at offset
+#: ``(Q - 1) // 2``.
+DecimationOrigin = Literal["centered", "leading"]
+
+BOUNDARY_MODES: tuple[str, ...] = ("none", "reflect", "symmetric", "edge", "wrap", "constant")
+OUTPUT_MODES: tuple[str, ...] = ("same", "full", "valid")
+CONVOLUTION_METHODS: tuple[str, ...] = ("overlap_add", "fft", "direct", "auto")
+DECIMATION_ORIGINS: tuple[str, ...] = ("centered", "leading")
+
+#: ``"none"`` is the only boundary mode with no :func:`numpy.pad` equivalent;
+#: every other one is spelled exactly as the mode it selects.
+NO_BOUNDARY: BoundaryMode = "none"
+
+
+def _normalize_choice(value: object, allowed: tuple[str, ...], name: str) -> str:
+    """Validate one of the string vocabularies above.
+
+    A wrong type raises :class:`TypeError`, a wrong value :class:`ValueError`,
+    consistently with the rest of the module.
     """
-
-    #: No margin at all on that side; the production window is used as-is.
-    NONE = "none"
-    #: Mirror without repeating the edge sample (``numpy`` ``"reflect"``).
-    REFLECT = "reflect"
-    #: Mirror repeating the edge sample (``numpy`` ``"symmetric"``).
-    SYMMETRIC = "symmetric"
-    #: Repeat the edge sample (``numpy`` ``"edge"``).
-    EDGE = "edge"
-    #: Periodic continuation, e.g. longitude wrap-around (``numpy`` ``"wrap"``).
-    WRAP = "wrap"
-    #: Fill with zeros (``numpy`` ``"constant"``).
-    ZERO = "zero"
-
-    @property
-    def numpy_mode(self) -> str:
-        """The corresponding :func:`numpy.pad` mode."""
-        if self is BoundaryPad.NONE:
-            raise ValueError("BoundaryPad.NONE has no numpy.pad equivalent")
-        return _NUMPY_PAD_MODE[self]
+    if not isinstance(value, str):
+        raise TypeError(f"{name} must be a string, got {type(value).__name__}")
+    if value not in allowed:
+        spellings = ", ".join(repr(item) for item in allowed)
+        raise ValueError(f"unknown {name} {value!r}; expected one of {spellings}")
+    return value
 
 
-_NUMPY_PAD_MODE: dict[BoundaryPad, str] = {
-    BoundaryPad.REFLECT: "reflect",
-    BoundaryPad.SYMMETRIC: "symmetric",
-    BoundaryPad.EDGE: "edge",
-    BoundaryPad.WRAP: "wrap",
-    BoundaryPad.ZERO: "constant",
-}
-
-
-class ConvolutionOutputMode(Enum):
-    """Which part of the convolution result is returned."""
-
-    #: The production window, at the same sampling as the input (before zoom).
-    SAME = "same"
-    #: The whole convolution support, margins and padding included.
-    FULL = "full"
-    #: Only the samples that saw no implicit zero padding from the convolution.
-    VALID = "valid"
-
-
-class ConvolutionMethod(Enum):
-    """Backend used for the convolution itself."""
-
-    #: :func:`scipy.signal.oaconvolve` — overlap-add, best for large kernels.
-    OVERLAP_ADD = "overlap_add"
-    #: :func:`scipy.signal.fftconvolve` — single FFT over the whole array.
-    FFT = "fft"
-    #: :func:`scipy.signal.convolve` with ``method="direct"``.
-    DIRECT = "direct"
-    #: Let SciPy pick between direct and FFT (:func:`scipy.signal.convolve`).
-    AUTO = "auto"
-
-
-class DecimationOrigin(Enum):
-    """Which sample of each decimation block of ``Q`` samples is kept."""
-
-    #: First sample of the block (offset 0).
-    LEADING = "leading"
-    #: Centre of the block, i.e. offset ``(Q - 1) // 2``. For even ``Q`` there
-    #: is no exact centre and the lower of the two central samples is kept.
-    CENTERED = "centered"
+def _normalize_boundary_mode(value: object) -> str:
+    """Same as :func:`_normalize_choice`, plus ``None`` as an accepted spelling
+    of ``"none"``."""
+    if value is None:
+        return NO_BOUNDARY
+    return _normalize_choice(value, BOUNDARY_MODES, "boundary mode")
 
 
 # --------------------------------------------------------------------------- #
-# Scalar helpers — pure integer arithmetic, no arrays involved
+# Scalar helpers
 # --------------------------------------------------------------------------- #
 class Zoom(NamedTuple):
     """A rational zoom factor ``P / Q`` in lowest terms."""
@@ -203,13 +190,7 @@ class Zoom(NamedTuple):
 
 
 def _is_scalar(value: object) -> bool:
-    """``True`` for a single value, ``False`` for anything with an axis.
-
-    ``isinstance(x, SupportsIndex)`` is not usable here: every
-    :class:`numpy.ndarray` exposes ``__index__`` regardless of its size, so a
-    one-element array would be mistaken for a scalar and a two-element one
-    would raise from inside the conversion.
-    """
+    """``True`` for a single value, ``False`` for anything with an axis."""
     try:
         return np.ndim(value) == 0
     except (TypeError, ValueError):
@@ -272,10 +253,10 @@ def normalize_zoom(zoom: int | tuple[int, int]) -> Zoom:
     return Zoom(p // gcd, q // gcd)
 
 
-def decimation_offset(q: int, origin: DecimationOrigin = DecimationOrigin.CENTERED) -> int:
+def decimation_offset(q: int, origin: DecimationOrigin = "centered") -> int:
     """Index of the sample kept inside each block of ``q`` samples.
 
-    ``DecimationOrigin.CENTERED`` yields ``(q - 1) // 2`` — the exact centre for
+    ``"centered"`` yields ``(q - 1) // 2`` — the exact centre for
     odd ``q``, the lower of the two central samples for even ``q``.
 
     Raises
@@ -285,7 +266,7 @@ def decimation_offset(q: int, origin: DecimationOrigin = DecimationOrigin.CENTER
     """
     if q <= 0:
         raise ValueError(f"q must be strictly positive, got {q}")
-    return 0 if origin is DecimationOrigin.LEADING else (q - 1) // 2
+    return 0 if origin == "leading" else (q - 1) // 2
 
 
 def decimated_size(size: int, q: int, offset: int = 0) -> int:
@@ -499,10 +480,10 @@ class FilterPlan:
     per_axis: tuple[AxisPlan, ...]
     #: The rule actually applied to the margins, ``NONE`` when this particular
     #: window needs no synthetic sample. Invariant:
-    #: ``(pad_mode is BoundaryPad.NONE) == (not needs_padding)``.
-    pad_mode: BoundaryPad
+    #: ``(pad_mode == "none") == (not needs_padding)``.
+    pad_mode: BoundaryMode
     #: Requested output mode.
-    out_mode: ConvolutionOutputMode
+    out_mode: OutputMode
     #: Normalized zoom factor.
     zoom: Zoom
     #: Working dtype of the convolution.
@@ -572,12 +553,12 @@ class FilterResult(NamedTuple):
     window: NDArray[np.int64]
 
 
-BoundarySpec = BoundaryPad | Sequence[Sequence[BoundaryPad]]
+BoundarySpec = BoundaryMode | None | Sequence[Sequence[BoundaryMode | None]]
 
 
 def _normalize_boundary(
     boundary: BoundarySpec, ndim: int, axes: tuple[int, ...]
-) -> tuple[tuple[tuple[bool, bool], ...], BoundaryPad]:
+) -> tuple[tuple[tuple[bool, bool], ...], BoundaryMode]:
     """Split a boundary specification into *where* to pad and *how*.
 
     Returns one ``(before, after)`` pair of booleans per axis, plus the single
@@ -591,16 +572,17 @@ def _normalize_boundary(
     Raises
     ------
     ValueError
-        If two different non-``NONE`` policies appear. See :class:`BoundaryPad`
+        If two different non-``NONE`` policies appear. See :data:`BoundaryMode`
         for why that combination is refused rather than implemented.
     """
-    if isinstance(boundary, BoundaryPad):
-        pairs = [(boundary, boundary)] * ndim
+    if boundary is None or isinstance(boundary, str):
+        scalar = _normalize_boundary_mode(boundary)
+        pairs = [(scalar, scalar)] * ndim
     else:
-        if isinstance(boundary, (str, bytes)) or not isinstance(boundary, Iterable):
+        if not isinstance(boundary, Iterable):
             raise TypeError(
-                "boundary must be a BoundaryPad or a sequence of (before, after) "
-                f"pairs, got {boundary!r}"
+                "boundary must be a mode string, None, or a sequence of "
+                f"(before, after) pairs, got {boundary!r}"
             )
         given = [tuple(pair) for pair in boundary]
         if len(given) > ndim:
@@ -610,30 +592,22 @@ def _normalize_boundary(
                 raise ValueError(
                     f"each boundary entry must be a (before, after) pair, got {pair!r}"
                 )
-        pairs = [(BoundaryPad.NONE, BoundaryPad.NONE)] * (ndim - len(given)) + given  # type: ignore[assignment]
+        pairs = [("none", "none")] * (ndim - len(given)) + given  # type: ignore[assignment]
 
-    for axis, pair in enumerate(pairs):
-        for side in pair:
-            if not isinstance(side, BoundaryPad):
-                raise TypeError(f"boundary on axis {axis} must be a BoundaryPad, got {side!r}")
+    pairs = [tuple(_normalize_boundary_mode(side) for side in pair) for pair in pairs]
 
-    effective = [
-        pair if axis in axes else (BoundaryPad.NONE, BoundaryPad.NONE)
-        for axis, pair in enumerate(pairs)
-    ]
+    effective = [pair if axis in axes else ("none", "none") for axis, pair in enumerate(pairs)]
 
-    policies = {side for pair in effective for side in pair if side is not BoundaryPad.NONE}
+    policies = {side for pair in effective for side in pair if side is not NO_BOUNDARY}
     if len(policies) > 1:
-        names = ", ".join(sorted(policy.name for policy in policies))
+        names = ", ".join(sorted(repr(policy) for policy in policies))
         raise ValueError(
             f"a single padding policy must apply to the whole array, got {names}. "
             "Sides choose whether they are padded, not how."
         )
 
-    where = tuple(
-        (pair[0] is not BoundaryPad.NONE, pair[1] is not BoundaryPad.NONE) for pair in effective
-    )
-    return where, policies.pop() if policies else BoundaryPad.NONE
+    where = tuple((pair[0] is not NO_BOUNDARY, pair[1] is not NO_BOUNDARY) for pair in effective)
+    return where, policies.pop() if policies else NO_BOUNDARY
 
 
 def _normalize_window(win: ArrayLike | None, shape: tuple[int, ...]) -> NDArray[np.int64]:
@@ -653,7 +627,7 @@ def _normalize_window(win: ArrayLike | None, shape: tuple[int, ...]) -> NDArray[
 
 
 def _axis_output(
-    out_mode: ConvolutionOutputMode,
+    out_mode: OutputMode,
     *,
     full_size: int,
     origin: int,
@@ -661,11 +635,11 @@ def _axis_output(
     kernel_size: int,
 ) -> slice:
     """Slice selecting the requested region inside the ``"full"`` result."""
-    if out_mode is ConvolutionOutputMode.FULL:
+    if out_mode == "full":
         return slice(0, full_size)
-    if out_mode is ConvolutionOutputMode.SAME:
+    if out_mode == "same":
         return slice(origin, origin + window_size)
-    if out_mode is ConvolutionOutputMode.VALID:
+    if out_mode == "valid":
         trim = kernel_size - 1
         stop = full_size - trim
         if stop <= trim:
@@ -675,8 +649,8 @@ def _axis_output(
             )
         return slice(trim, stop)
 
-    # Unreachable: build_plan validates the enum type and every member is handled
-    # above. Kept so that adding a member fails loudly instead of silently
+    # Unreachable: build_plan validates the value and every mode is handled
+    # above. Kept so that adding a mode fails loudly instead of silently
     # returning None.
     raise ValueError(f"unsupported output mode {out_mode!r}")  # pragma: no cover
 
@@ -686,13 +660,13 @@ def build_plan(
     kernel: ArrayLike,
     win: ArrayLike | None = None,
     *,
-    boundary: BoundarySpec = BoundaryPad.NONE,
-    out_mode: ConvolutionOutputMode = ConvolutionOutputMode.SAME,
+    boundary: BoundarySpec = "none",
+    out_mode: OutputMode = "same",
     zoom: int | tuple[int, int] = 1,
-    decimation: DecimationOrigin = DecimationOrigin.CENTERED,
+    decimation: DecimationOrigin = "centered",
     axes: int | Iterable[int] | None = None,
     dtype: DTypeLike | None = None,
-    method: ConvolutionMethod = ConvolutionMethod.OVERLAP_ADD,
+    method: ConvolutionMethod = "overlap_add",
 ) -> FilterPlan:
     """Compute the full geometry of a filtering operation without touching data.
 
@@ -710,17 +684,17 @@ def build_plan(
     win : array_like or None, optional
         Production window as ``(ndim, 2)`` **inclusive** bounds. ``None`` means
         the whole array.
-    boundary : BoundaryPad or sequence of pairs, optional
+    boundary : str, None, or sequence of pairs, optional
         Policy applied on each side when the kernel margin falls outside the
         array. A scalar applies everywhere. Default
-        :attr:`BoundaryPad.NONE`, i.e. no margin at all.
-    out_mode : ConvolutionOutputMode, optional
+        ``"none"``, i.e. no margin at all.
+    out_mode : str, optional
         Region of the convolution to return. Default
-        :attr:`ConvolutionOutputMode.SAME`.
+        ``"same"``.
     zoom : int or tuple of two ints, optional
         Rational resampling factor ``P/Q``. Only ``P == 1`` is implemented;
         ``Q > 1`` decimates the output. Default ``1``.
-    decimation : DecimationOrigin, optional
+    decimation : str, optional
         Which sample of each block of ``Q`` is kept, on every target axis. The
         phase is counted in the **output** frame, not in the input one, so what
         it lands on depends on ``out_mode``. With ``SAME``, index 0 of the
@@ -733,15 +707,15 @@ def build_plan(
         origin lands on the window's first sample. Moving ``win`` therefore
         moves the sampling grid with it: this decimates the window, it does not
         resample the array on a grid anchored at index 0. Default
-        :attr:`DecimationOrigin.CENTERED`.
+        ``"centered"``.
     axes : int, iterable of int, or None, optional
         Axes along which to convolve. Other axes are passed through untouched.
         Default ``None``, i.e. every axis.
     dtype : data-type, optional
         Working dtype. Default ``np.result_type(kernel, ...)`` resolved by
         :func:`fft_array_filter` against the input array.
-    method : ConvolutionMethod, optional
-        Convolution backend. Default :attr:`ConvolutionMethod.OVERLAP_ADD`.
+    method : str, optional
+        Convolution backend. Default ``"overlap_add"``.
 
     Returns
     -------
@@ -762,12 +736,9 @@ def build_plan(
             f"zoom P/Q = {zoom_pq.p}/{zoom_pq.q} is not supported; "
             "only pure decimation (P == 1) is implemented"
         )
-    if not isinstance(out_mode, ConvolutionOutputMode):
-        raise TypeError(f"out_mode must be a ConvolutionOutputMode, got {out_mode!r}")
-    if not isinstance(method, ConvolutionMethod):
-        raise TypeError(f"method must be a ConvolutionMethod, got {method!r}")
-    if not isinstance(decimation, DecimationOrigin):
-        raise TypeError(f"decimation must be a DecimationOrigin, got {decimation!r}")
+    out_mode = _normalize_choice(out_mode, OUTPUT_MODES, "out_mode")
+    method = _normalize_choice(method, CONVOLUTION_METHODS, "method")
+    decimation = _normalize_choice(decimation, DECIMATION_ORIGINS, "decimation")
 
     kernel = align_kernel(kernel, ndim, axes)
     kernel = pad_kernel_to_odd(kernel, axes)
@@ -813,6 +784,14 @@ def build_plan(
         pad_before = margin - real_before if synthesise_before else 0
         pad_after = margin - real_after if synthesise_after else 0
 
+        if pad_mode == "wrap" and (pad_before or pad_after) and not (first == 0 and last == size - 1):
+            # Periodic continuation only means something when the window covers
+            # the whole axis.
+            raise ValueError(
+                f"the 'wrap' boundary needs the window to span axis {axis}, but it "
+                f"covers {first}..{last} of {size}"
+            )
+
         source = slice(first - real_before, last + real_after + 1)
         lead = real_before + pad_before
         trail = real_after + pad_after
@@ -849,7 +828,7 @@ def build_plan(
     # A declared policy that ends up padding nothing — an interior tile reading
     # real neighbours on every side — is not the rule executed for this plan.
     if not any(any(axis.pad_width) for axis in per_axis):
-        pad_mode = BoundaryPad.NONE
+        pad_mode = NO_BOUNDARY
 
     return FilterPlan(
         kernel=kernel,
@@ -883,25 +862,21 @@ def _make_convolution_input(arr: NDArray, plan: FilterPlan) -> NDArray:
     in place.
     """
     source = arr[plan.source]
-    if plan.pad_mode is BoundaryPad.NONE:
+    if plan.pad_mode == NO_BOUNDARY:
         return np.asarray(source, dtype=plan.dtype)
 
     buffer = np.empty(plan.conv_shape, dtype=plan.dtype)
     src_win = plan.src_win
     buffer[src_win] = source
-    pad_inplace(buffer, src_win, plan.pad_width, mode=plan.pad_mode.numpy_mode)
+    pad_inplace(buffer, src_win, plan.pad_width, mode=plan.pad_mode)
     return buffer
 
 
 _CONVOLVERS = {
-    ConvolutionMethod.OVERLAP_ADD: lambda a, k, axes: signal.oaconvolve(
-        a, k, mode="full", axes=axes
-    ),
-    ConvolutionMethod.FFT: lambda a, k, axes: signal.fftconvolve(a, k, mode="full", axes=axes),
-    ConvolutionMethod.DIRECT: lambda a, k, axes: signal.convolve(
-        a, k, mode="full", method="direct"
-    ),
-    ConvolutionMethod.AUTO: lambda a, k, axes: signal.convolve(a, k, mode="full", method="auto"),
+    "overlap_add": lambda a, k, axes: signal.oaconvolve(a, k, mode="full", axes=axes),
+    "fft": lambda a, k, axes: signal.fftconvolve(a, k, mode="full", axes=axes),
+    "direct": lambda a, k, axes: signal.convolve(a, k, mode="full", method="direct"),
+    "auto": lambda a, k, axes: signal.convolve(a, k, mode="full", method="auto"),
 }
 
 
@@ -910,13 +885,13 @@ def fft_array_filter(
     kernel: ArrayLike,
     win: ArrayLike | None = None,
     *,
-    boundary: BoundarySpec = BoundaryPad.NONE,
-    out_mode: ConvolutionOutputMode = ConvolutionOutputMode.SAME,
+    boundary: BoundarySpec = "none",
+    out_mode: OutputMode = "same",
     zoom: int | tuple[int, int] = 1,
-    decimation: DecimationOrigin = DecimationOrigin.CENTERED,
+    decimation: DecimationOrigin = "centered",
     axes: int | Iterable[int] | None = None,
     dtype: DTypeLike | None = None,
-    method: ConvolutionMethod = ConvolutionMethod.OVERLAP_ADD,
+    method: ConvolutionMethod = "overlap_add",
     plan: FilterPlan | None = None,
 ) -> FilterResult:
     """Convolve ``arr`` with ``kernel`` over a production window.
@@ -979,16 +954,16 @@ def fft_array_filter_output_shape(
     kernel: ArrayLike,
     win: ArrayLike | None = None,
     *,
-    boundary: BoundarySpec = BoundaryPad.NONE,
-    out_mode: ConvolutionOutputMode = ConvolutionOutputMode.SAME,
+    boundary: BoundarySpec = "none",
+    out_mode: OutputMode = "same",
     zoom: int | tuple[int, int] = 1,
-    decimation: DecimationOrigin = DecimationOrigin.CENTERED,
+    decimation: DecimationOrigin = "centered",
     axes: int | Iterable[int] | None = None,
 ) -> tuple[int, ...]:
     """Shape :func:`fft_array_filter` would return, without doing the work.
 
     Accepts either an array or a plain shape, so a scheduler can size its
-    outputs before any pixel exists.
+    outputs before any array exists.
 
     Examples
     --------

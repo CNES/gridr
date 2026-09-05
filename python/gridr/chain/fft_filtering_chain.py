@@ -134,10 +134,11 @@ from numpy.typing import DTypeLike
 from rasterio.windows import Window
 
 from gridr.core.convolution.fft_filtering import (
-    BoundaryPad,
+    BoundarySpec,
     ConvolutionMethod,
-    ConvolutionOutputMode,
     DecimationOrigin,
+    OutputMode,
+    _normalize_boundary_mode,
     align_kernel,
     build_plan,
     decimated_size,
@@ -244,6 +245,14 @@ def extended_extent(
     return max(0, low), min(size - 1, high)
 
 
+def _normalize_boundary_pairs(boundary: BoundarySpec) -> tuple[tuple[str, str], ...]:
+    """Expand a boundary specification to one validated ``(before, after)`` pair per axis."""
+    return tuple(
+        tuple(_normalize_boundary_mode(side) for side in pair)
+        for pair in tuplify(boundary, ndim=2, fill=None, strict=True)
+    )
+
+
 def check_oa_strip_size(nrow: int, kernel: np.ndarray, strip_size: int) -> int:
     """Check the strip size against the production window and kernel heights.
 
@@ -348,7 +357,7 @@ def decimated_block(
         raise ValueError(f"offset must lie in [0, {q}), got {offset}")
     if count <= 0:
         return None, 0
-    #if q == 1:
+    # if q == 1:
     #    return slice(0, count), global_start - offset
 
     first = max(offset, global_start)
@@ -380,20 +389,17 @@ def fft_array_filter_fallback(
     band: int,
     kernel: np.ndarray,
     win: np.ndarray,
-    boundary: BoundaryPad,
-    out_mode: ConvolutionOutputMode,
+    boundary: BoundarySpec,
+    out_mode: OutputMode,
     binary: bool = False,
     binary_threshold: float = 1e-3,
     zoom: int | tuple[int, int] = 1,
-    decimation: DecimationOrigin = DecimationOrigin.CENTERED,
-    method: ConvolutionMethod = ConvolutionMethod.OVERLAP_ADD,
+    decimation: DecimationOrigin = "centered",
+    method: ConvolutionMethod = "overlap_add",
     dtype: DTypeLike = None,
     round_out: bool = True,
 ) -> NoReturn:
     """Wrapper to the `fft_array_filter` core method in case of no strip.
-
-    Only the production window extended by the kernel margins is read, so a
-    small window on a large raster costs a small read.
 
     Parameters
     ----------
@@ -413,12 +419,14 @@ def fft_array_filter_fallback(
         The production window given as ``(2, 2)`` inclusive ``(first, last)``
         bounds, in the input frame.
 
-    boundary : BoundaryPad
-        The edge management rule, as a single value or as
-        ``((top, bottom), (left, right))``.
+    boundary : str, None, or sequence of pairs
+        The edge management rule, as a single mode string — ``"reflect"``,
+        ``"symmetric"``, ``"edge"``, ``"wrap"``, ``"constant"``, or ``None`` /
+        ``"none"`` for no synthesis — or as ``((top, bottom), (left, right))``.
 
-    out_mode : ConvolutionOutputMode
-        The output mode for the returned array.
+    out_mode : str
+        The output mode for the returned array: ``"same"``, ``"full"`` or
+        ``"valid"``.
 
     binary : bool, optional
         Option to save output as binary (0 or 1). Defaults to False.
@@ -440,7 +448,7 @@ def fft_array_filter_fallback(
         is the first sample of the convolution support, which sits ahead of the
         window by the kernel margin plus whatever was read or synthesised around
         it, so neither origin lands on the window's first pixel. Defaults to
-        :attr:`~gridr.core.convolution.fft_filtering.DecimationOrigin.CENTERED`.
+        ``"centered"``.
 
     method : ConvolutionMethod, optional
         Convolution backend.
@@ -498,15 +506,15 @@ def fft_filtering_oa_strip_chain(
     ds_out: rasterio.io.DatasetWriter,
     band: int,
     fil: np.ndarray,
-    boundary: BoundaryPad,
-    out_mode: ConvolutionOutputMode,
+    boundary: BoundarySpec,
+    out_mode: OutputMode,
     win: np.ndarray | None = None,
     strip_size: int = 512,
     binary: bool = False,
     binary_threshold: float = 1e-3,
     zoom: int | tuple[int, int] = 1,
-    decimation: DecimationOrigin = DecimationOrigin.CENTERED,
-    method: ConvolutionMethod = ConvolutionMethod.OVERLAP_ADD,
+    decimation: DecimationOrigin = "centered",
+    method: ConvolutionMethod = "overlap_add",
     dtype: DTypeLike = None,
     round_out: bool = True,
     logger=None,
@@ -535,12 +543,15 @@ def fft_filtering_oa_strip_chain(
         The filter given as an array in the spatial domain. An even-sized
         filter is zero-padded to an odd size, as in the core module.
 
-    boundary : BoundaryPad
-        The edge management rule as a single value (similar for each side) or a
-        tuple ``((top, bottom), (left, right))``.
+    boundary : str, None, or sequence of pairs
+        The edge management rule as a single mode string applying to every side
+        — ``"reflect"``, ``"symmetric"``, ``"edge"``, ``"wrap"``, ``"constant"``,
+        or ``None`` / ``"none"`` for no synthesis — or as
+        ``((top, bottom), (left, right))``.
 
-    out_mode : ConvolutionOutputMode
-        The output mode for the returned array. ``VALID`` is not supported by
+    out_mode : str
+        The output mode for the returned array: ``"same"``, ``"full"`` or
+        ``"valid"``. ``VALID`` is not supported by
         this chain.
 
     win : numpy.ndarray, optional
@@ -598,8 +609,7 @@ def fft_filtering_oa_strip_chain(
     Raises
     ------
     NotImplementedError
-        If `out_mode` is ``VALID``, or if `boundary` requests
-        :attr:`~gridr.core.convolution.fft_filtering.BoundaryPad.WRAP` on the
+        If `out_mode` is ``VALID``, or if `boundary` requests ``"wrap"`` on the
         row axis. ``WRAP`` is the only non-local policy: the top margin of the
         first strip comes from the bottom of the window, which a strip-wise
         reader does not have in hand. It is supported on the column axis, where
@@ -639,17 +649,17 @@ def fft_filtering_oa_strip_chain(
     if logger is None:
         logger = logging.getLogger(__name__)
 
-    if out_mode is ConvolutionOutputMode.VALID:
+    if out_mode == "valid":
         raise NotImplementedError("the overlap-add chain does not support the VALID output mode")
 
-    boundary_pairs = tuplify(boundary, ndim=2, fill=None, strict=True)
-    if BoundaryPad.WRAP in boundary_pairs[0]:
+    boundary_pairs = _normalize_boundary_pairs(boundary)
+    if "wrap" in boundary_pairs[0]:
         # WRAP is the only non-local policy: the top margin of the first strip
         # is taken from the bottom of the *window*, which a strip-wise reader
         # does not have in hand. Along the column axis every strip spans the
         # full window width, so WRAP is honoured there.
         raise NotImplementedError(
-            "BoundaryPad.WRAP is not supported on the row axis by the strip chain, "
+            "the 'wrap' boundary is not supported on the row axis by the strip chain, "
             "because a strip cannot see the opposite end of the window; it is "
             "supported on the column axis"
         )
@@ -736,7 +746,7 @@ def fft_filtering_oa_strip_chain(
     # Origin of the global full-resolution frame, expressed as the local FULL
     # output row holding the window's first row. In SAME mode the frame starts
     # at that row; in FULL mode it starts `origin` rows earlier.
-    base_row = inner_plan.per_axis[0].origin if out_mode is ConvolutionOutputMode.FULL else 0
+    base_row = inner_plan.per_axis[0].origin if out_mode == "full" else 0
 
     # Column geometry is identical for every strip, since a strip spans the
     # full window width: one read extent, one local window, one decimated
@@ -774,8 +784,8 @@ def fft_filtering_oa_strip_chain(
         # Adapt the chunk boundary mode to the overlap-add algorithm: internal
         # seams must not be extended, so that the natural extension of the
         # convolution provides the partial sums to carry over.
-        top = boundary_pairs[0][0] if chunk_idx == 0 else BoundaryPad.NONE
-        bottom = boundary_pairs[0][1] if chunk_idx == last_idx else BoundaryPad.NONE
+        top = boundary_pairs[0][0] if chunk_idx == 0 else "none"
+        bottom = boundary_pairs[0][1] if chunk_idx == last_idx else "none"
         cboundary = ((top, bottom), boundary_pairs[1])
 
         # Read the strip extended by the kernel margins at the window edges,
@@ -812,7 +822,7 @@ def fft_filtering_oa_strip_chain(
             kernel,
             local_win,
             boundary=cboundary,
-            out_mode=ConvolutionOutputMode.FULL,
+            out_mode="full",
             zoom=1,
             axes=None,
             dtype=work_dtype,
@@ -824,7 +834,7 @@ def fft_filtering_oa_strip_chain(
             # Full-resolution column window inside the local FULL output, then
             # the decimated slice inside it. Global column c maps to local
             # column col_fullres.start + c.
-            if out_mode is ConvolutionOutputMode.SAME:
+            if out_mode == "same":
                 col_fullres = slice(int(cwin_same[1, 0]), int(cwin_same[1, 1]) + 1)
             else:
                 col_fullres = slice(0, carr_out.shape[1])
@@ -880,13 +890,9 @@ def fft_filtering_oa_strip_chain(
         noa_stop = oa_b
 
         if chunk_idx == 0:
-            noa_start = int(cwin_same[0, 0]) if out_mode is ConvolutionOutputMode.SAME else 0
+            noa_start = int(cwin_same[0, 0]) if out_mode == "same" else 0
         if chunk_idx == last_idx:
-            noa_stop = (
-                int(cwin_same[0, 1]) + 1
-                if out_mode is ConvolutionOutputMode.SAME
-                else carr_out.shape[0]
-            )
+            noa_stop = int(cwin_same[0, 1]) + 1 if out_mode == "same" else carr_out.shape[0]
 
         row_slice, dst_row = decimated_block(
             row_phase + noa_start, noa_stop - noa_start, zoom_pq.q, offset
