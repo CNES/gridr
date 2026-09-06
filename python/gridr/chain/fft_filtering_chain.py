@@ -191,6 +191,7 @@ def extended_extent(
     (0, 23)
     >>> extended_extent(10, 20, 100, 3, extend_after=False)
     (7, 20)
+
     """
     low = first - margin if extend_before else first
     high = last + margin if extend_after else last
@@ -238,6 +239,7 @@ def check_oa_strip_size(nrow: int, kernel: np.ndarray, strip_size: int) -> int:
     -------
     int
         The original `strip_size`, or ``0``.
+
     """
     if nrow / 2 < strip_size:
         strip_size = 0
@@ -302,6 +304,7 @@ def decimated_block(
     (None, 0)
     >>> decimated_block(7, 4, 1, 0)
     (slice(0, 4, 1), 7)
+
     """
     if q <= 0:
         raise ValueError(f"q must be strictly positive, got {q}")
@@ -351,7 +354,7 @@ def fft_array_filter_fallback(
     dtype: DTypeLike = None,
     round_out: bool = True,
 ) -> NoReturn:
-    """Wrapper to the `fft_array_filter` core method in case of no strip.
+    """Wrap the `fft_array_filter` core method in case of no strip.
 
     This function acts as a fallback when strip processing is not required or
     not applicable, directly calling the core `fft_array_filter` method. The
@@ -424,6 +427,7 @@ def fft_array_filter_fallback(
     NoReturn
         This function performs an operation on `ds_out` and does not return any
         value.
+
     """
     margins = kernel_margin(kernel, axes=(0, 1))
     row_low, row_high = extended_extent(int(win[0, 0]), int(win[0, 1]), ds_in.height, margins[0])
@@ -598,6 +602,7 @@ def fft_filtering_oa_strip_chain(
     floating-point tolerance and not bit for bit.
 
     This method limits the processing to 2D arrays only.
+
     """
     if logger is None:
         logger = logging.getLogger(__name__)

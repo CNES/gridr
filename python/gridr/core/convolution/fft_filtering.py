@@ -144,7 +144,7 @@ def _normalize_choice(value: object, allowed: tuple[str, ...], name: str) -> str
 
 
 def _normalize_boundary_mode(value: object) -> str:
-    """Same, plus ``None`` as an accepted spelling of ``"none"``."""
+    """Wrap _normalize_choice, add ``None`` as an accepted spelling of ``"none"``."""
     if value is None:
         return NO_BOUNDARY
     return _normalize_choice(value, BOUNDARY_MODES, "boundary mode")
@@ -170,7 +170,7 @@ class Zoom(NamedTuple):
 
 
 def _is_scalar(value: object) -> bool:
-    """``True`` for a single value, ``False`` for anything with an axis."""
+    """Return ``True`` for a single value, ``False`` for anything with an axis."""
     try:
         return np.ndim(value) == 0
     except (TypeError, ValueError):
@@ -214,6 +214,7 @@ def normalize_zoom(zoom: int | tuple[int, int]) -> Zoom:
     Zoom(p=2, q=1)
     >>> normalize_zoom((2, 6))
     Zoom(p=1, q=3)
+
     """
     if _is_scalar(zoom):
         p, q = _as_index(zoom, "zoom"), 1
@@ -243,6 +244,7 @@ def decimation_offset(q: int, origin: DecimationOrigin = "centered") -> int:
     ------
     ValueError
         If ``q`` is not strictly positive.
+
     """
     if q <= 0:
         raise ValueError(f"q must be strictly positive, got {q}")
@@ -265,6 +267,7 @@ def decimated_size(size: int, q: int, offset: int = 0) -> int:
     ------
     ValueError
         If any argument is out of domain.
+
     """
     if size < 0:
         raise ValueError(f"size must be >= 0, got {size}")
@@ -279,15 +282,6 @@ def decimated_size(size: int, q: int, offset: int = 0) -> int:
 
 def normalize_axes(axes: int | Iterable[int] | None, ndim: int) -> tuple[int, ...]:
     """Normalize an axis specification to distinct non-negative indices.
-
-    Parameters
-    ----------
-    ``axes`` is a set, not a permutation: it selects the axes taking part in
-    the operation and says nothing about their order, as in
-    :func:`scipy.signal.oaconvolve` where ``(1, 2)`` and ``(2, 1)`` give the
-    same result. The returned axes are sorted, so a kernel of reduced rank maps
-    positionally onto increasing array axes. Transpose the kernel for another
-    mapping.
 
     Parameters
     ----------
@@ -315,6 +309,7 @@ def normalize_axes(axes: int | Iterable[int] | None, ndim: int) -> tuple[int, ..
     (0, 2)
     >>> normalize_axes(None, 2)
     (0, 1)
+
     """
     if ndim < 0:
         raise ValueError(f"ndim must be >= 0, got {ndim}")
@@ -361,6 +356,7 @@ def align_kernel(kernel: ArrayLike, ndim: int, axes: int | Iterable[int] | None 
     ValueError
         If the rank matches neither reading, or if a full-rank kernel is not
         singleton outside ``axes``.
+
     """
     kernel = np.asarray(kernel)
     axes = normalize_axes(axes, ndim)
@@ -550,6 +546,7 @@ def _normalize_boundary(
     ------
     ValueError
         If two different non-``"none"`` policies appear. See :data:`BoundaryMode`.
+
     """
     if boundary is None or isinstance(boundary, str):
         scalar = _normalize_boundary_mode(boundary)
@@ -637,22 +634,28 @@ def build_plan(
     ----------
     shape : tuple of int
         Shape of the array that will be filtered.
+
     kernel : array_like
         Filter taps in the spatial domain. Even-sized axes are right-padded
         with zeros so that the kernel has a well-defined centre.
+
     win : array_like or None, optional
         Production window as ``(ndim, 2)`` inclusive bounds. ``None`` means
         the whole array.
+
     boundary : str, None, or sequence of pairs, optional
         Policy applied on each side when the kernel margin falls outside the
         array. A scalar applies everywhere. Default
         ``"none"``, i.e. no margin at all.
+
     out_mode : str, optional
         Region of the convolution to return. Default
         ``"same"``.
+
     zoom : int or tuple of two ints, optional
         Rational resampling factor ``P/Q``. Only ``P == 1`` is implemented;
         ``Q > 1`` decimates the output. Default ``1``.
+
     decimation : str, optional
         Which sample of each block of ``Q`` is kept, on every target axis. The
         phase is counted in the output frame and not in the input one, so what
@@ -667,12 +670,15 @@ def build_plan(
         moves the sampling grid with it: this decimates the window, it does not
         resample the array on a grid anchored at index 0. Default
         ``"centered"``.
+
     axes : int, iterable of int, or None, optional
         Axes along which to convolve. Other axes are passed through untouched.
         Default ``None``, i.e. every axis.
+
     dtype : data-type, optional
         Working dtype. Default ``np.result_type(kernel, ...)`` resolved by
         :func:`fft_array_filter` against the input array.
+
     method : str, optional
         Convolution backend. Default ``"overlap_add"``.
 
@@ -686,6 +692,7 @@ def build_plan(
     ValueError
         If the options are inconsistent, if the window is not contained in the
         array, or if the requested zoom is not supported.
+
     """
     ndim = len(shape)
     axes = normalize_axes(axes, ndim)
@@ -855,6 +862,54 @@ def fft_array_filter(
     ----------
     arr : numpy.ndarray
         Input array.
+
+    kernel : array_like
+        Filter taps in the spatial domain. Even-sized axes are right-padded
+        with zeros so that the kernel has a well-defined centre.
+
+    win : array_like or None, optional
+        Production window as ``(ndim, 2)`` inclusive bounds. ``None`` means
+        the whole array.
+
+    boundary : str, None, or sequence of pairs, optional
+        Policy applied on each side when the kernel margin falls outside the
+        array. A scalar applies everywhere. Default
+        ``"none"``, i.e. no margin at all.
+
+    out_mode : str, optional
+        Region of the convolution to return. Default
+        ``"same"``.
+
+    zoom : int or tuple of two ints, optional
+        Rational resampling factor ``P/Q``. Only ``P == 1`` is implemented;
+        ``Q > 1`` decimates the output. Default ``1``.
+
+    decimation : str, optional
+        Which sample of each block of ``Q`` is kept, on every target axis. The
+        phase is counted in the output frame and not in the input one, so what
+        it lands on depends on ``out_mode``. With ``"same"``, index 0 of the
+        output is the first sample of ``win``, hence ``"leading"`` keeps the
+        window's own first sample and ``"centered"`` keeps the one
+        ``(Q - 1) // 2`` samples further in. With ``"full"``, index 0 is the first
+        sample of the convolution support, which sits :attr:`AxisPlan.origin`
+        samples ahead of the window's first one; with ``"valid"`` it sits
+        ``kernel_size - 1`` samples into that support. In both of those, neither
+        origin lands on the window's first sample. Moving ``win`` therefore
+        moves the sampling grid with it: this decimates the window, it does not
+        resample the array on a grid anchored at index 0. Default
+        ``"centered"``.
+
+    axes : int, iterable of int, or None, optional
+        Axes along which to convolve. Other axes are passed through untouched.
+        Default ``None``, i.e. every axis.
+
+    dtype : data-type, optional
+        Working dtype. Default ``np.result_type(kernel, ...)`` resolved by
+        :func:`fft_array_filter` against the input array.
+
+    method : str, optional
+        Convolution backend. Default ``"overlap_add"``.
+
     plan : FilterPlan, optional
         A plan built beforehand by :func:`build_plan`. When given, every other
         option is ignored. Reuse one across the tiles of a raster to skip
@@ -876,6 +931,7 @@ def fft_array_filter(
     (5, 5)
     >>> window.tolist()  # inclusive bounds, in the "full" convolution frame
     [[1, 5], [1, 5]]
+
     """
     arr = np.asarray(arr)
     if plan is None:
@@ -921,6 +977,7 @@ def fft_array_filter_output_shape(
     --------
     >>> fft_array_filter_output_shape((50, 60), np.ones((3, 3)), zoom=(1, 5))
     (10, 12)
+
     """
     shape = (
         tuple(arr_or_shape.shape)
