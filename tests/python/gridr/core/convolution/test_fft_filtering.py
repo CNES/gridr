@@ -22,21 +22,20 @@
 Run:
 PYTHONPATH=$PWD/python:$PYTHONPATH pytest tests/python/gridr/core/convolution/test_fft_filtering.py
 
-The suite is organised around three levels of confidence:
+Three levels of confidence:
 
 ``TestPlan*``
-    Pure integer geometry, asserted against hand-written expectations. No
-    array is allocated, so a failure points straight at the arithmetic.
+    Pure integer geometry against hand-written expectations. No array is
+    allocated, so a failure points at the arithmetic.
 
 ``TestAgainstReference``
-    The whole pipeline compared with :mod:`scipy.ndimage`, an *independent*
-    implementation. This is the only place where a systematic sign, offset or
-    axis-order error can actually be caught.
+    The whole pipeline against :mod:`scipy.ndimage`, an independent
+    implementation. A systematic sign, offset or axis-order error shows up
+    here and nowhere else.
 
 ``TestProperties``
-    Algebraic invariants (linearity, translation by a shifted Dirac,
-    separability, tile/whole-raster equivalence) that must hold whatever the
-    kernel.
+    Algebraic invariants that hold whatever the kernel: linearity, translation
+    by a shifted Dirac, separability, tile against whole raster.
 """
 
 from __future__ import annotations
@@ -165,10 +164,10 @@ class TestNormalizeZoom:
 
     @pytest.mark.parametrize("zoom", [1.0, True, "2", (1.5, 2), (True, 1), None])
     def test_non_integral_is_type_error(self, zoom):
-        """A wrong *type* raises ``TypeError``, a wrong *value* raises ``ValueError``.
+        """A wrong type raises ``TypeError``, a wrong value ``ValueError``.
 
-        Booleans are integers to Python but never a meaningful zoom, so they
-        are rejected rather than silently read as ``1``.
+        Booleans are integers to Python, so ``zoom=True`` would otherwise be
+        read as ``1``.
         """
         with pytest.raises(TypeError):
             normalize_zoom(zoom)
@@ -393,11 +392,10 @@ class TestPlanGeometry:
 
     @pytest.mark.parametrize("boundary", list(BOUNDARY_MODES))
     def test_no_policy_ever_applies_away_from_the_array_edge(self, boundary):
-        """A boundary condition describes the edge of the array, never a seam.
+        """A boundary condition describes the edge of the array, not a seam.
 
-        For a window whose margins all exist in the array, every policy —
-        ``NONE`` included — must read those real samples and synthesise
-        nothing, so all of them produce the very same plan.
+        When the margins all exist in the array, every policy including
+        ``"none"`` reads them and synthesises nothing, so the plans match.
         """
         plan = build_plan((50, 60), ASYMMETRIC_KERNEL, ((10, 20), (30, 40)), boundary=boundary)
         assert not plan.needs_padding
@@ -493,12 +491,6 @@ class TestPlanGeometry:
         ids=["same-axis", "across-axes"],
     )
     def test_mixed_policies_are_refused(self, boundary):
-        """Sides say whether they are padded, not how.
-
-        A raster is reflective, or periodic, or bounded by zeros; combining two
-        of those describes nothing physical, so it is an error rather than a
-        feature.
-        """
         with pytest.raises(ValueError, match="single padding policy"):
             build_plan((50, 60), DIRAC_KERNEL, boundary=boundary)
 
@@ -564,7 +556,7 @@ class TestPlanGeometry:
         assert plan.pad_mode == "none"
 
     def test_valid_mode_needs_room(self):
-        with pytest.raises(ValueError, match="VALID output is empty"):
+        with pytest.raises(ValueError, match=r"the 'valid' output is empty"):
             build_plan((3, 3), np.ones((5, 5)), out_mode="valid")
 
 
@@ -647,8 +639,7 @@ class TestProperties:
 
     @pytest.mark.parametrize(("row", "col"), [(0, 1), (2, 1), (1, 0), (1, 2)])
     def test_shifted_dirac_translates(self, raster, row, col):
-        """A Dirac off-centre must translate by exactly one sample, in the
-        direction convolution dictates."""
+        """A Dirac off-centre translates by one sample"""
         kernel = np.zeros((3, 3))
         kernel[row, col] = 1.0
         produced = fft_array_filter(raster, kernel, ((10, 20), (30, 42)), boundary="symmetric").data
@@ -685,8 +676,8 @@ class TestProperties:
         "window", [((0, 24), (0, 29)), ((25, 49), (30, 59)), ((10, 20), (5, 8))]
     )
     def test_tile_matches_whole_raster(self, raster, window):
-        """The point of the whole module: filtering a tile with real margins
-        must give exactly what filtering the full raster would give there."""
+        """Filtering a tile with real margins gives what filtering the full
+        raster gives at the same place."""
         whole = fft_array_filter(raster, ASYMMETRIC_KERNEL, boundary="symmetric").data
         tile = fft_array_filter(raster, ASYMMETRIC_KERNEL, window, boundary="symmetric").data
         (first_row, last_row), (first_col, last_col) = window
@@ -750,12 +741,6 @@ class TestFilterContract:
         assert np.shares_memory(module._make_convolution_input(raster, plan), raster)
 
     def test_padded_input_is_built_without_numpy_pad(self, raster, monkeypatch):
-        """The buffer is written once in place, not rebuilt once per side.
-
-        Chaining :func:`numpy.pad` calls would allocate a full-size array per
-        padded side — up to ``2 * ndim`` copies of the tile to synthesise a few
-        rows of margin.
-        """
         import gridr.core.convolution.fft_filtering as module
 
         plan = build_plan(raster.shape, ASYMMETRIC_KERNEL, boundary="symmetric")

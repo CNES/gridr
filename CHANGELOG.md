@@ -75,9 +75,8 @@
 - Added the `"symmetric"`, `"edge"`, `"wrap"` and `"constant"` boundary policies alongside
   `"reflect"`.
 - `"wrap"` needs the production window to span the axis it wraps:  a window stopping short of an
-  edge has no periodic neighbour to bring in and raises rather than wrapping around itself. It is
-  also refused on the row axis by the strip chain, which cannot see the opposite end of the window.
-- The `"valid"` output mode is implemented; it previously raised `NotImplementedError`.
+  edge has no periodic neighbour to bring in and raises rather than wrapping around itself.
+- The `"valid"` output mode is now implemented; it previously raised `NotImplementedError`.
 - Added `dtype`, so a `float32` raster convolved with a `float64` kernel can be pinned to
   `float32` instead of silently doubling its memory footprint
 - Added `method` to pick the backend convolution method.

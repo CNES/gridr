@@ -1,6 +1,4 @@
-# coding: utf8
-#
-# Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
+# Copyright (c) 2024-2026 Centre National d'Etudes Spatiales (CNES).
 #
 # This file is part of GRIDR
 # (see https://github.com/CNES/gridr).
@@ -779,3 +777,69 @@ def compose_slice(outer: slice, inner: slice, N: int) -> slice:
         stop_c = None
 
     return slice(start_c, stop_c, step_c)
+
+
+def window_normalize(
+        win: Optional[np.ndarray], shape: Tuple[int, ...]
+) -> np.ndarray:
+    """Normalize a window to inclusive integer bounds, defaulting to the whole array.
+
+    This is the entry point to use when a window is optional: it turns `None`
+    into the full extent of `shape` and validates anything else, so that callers
+    hold a well-formed window instead of carrying the `None` case around.
+
+    Unlike :func:`window_check`, it works from a shape rather than an array, and
+    raises instead of returning a status: a function that returns the window
+    cannot also return a boolean.
+
+    Parameters
+    ----------
+    win : numpy.ndarray or None
+        The window as ``(ndim, 2)`` inclusive ``(min_idx, max_idx)`` bounds per
+        dimension, following the module's window convention, or None for the
+        whole array.
+
+    shape : tuple of int
+        Shape of the array the window refers to.
+
+    Returns
+    -------
+    numpy.ndarray
+        The window, as int64, of shape ``(len(shape), 2)``.
+
+    Raises
+    ------
+    TypeError
+        If the bounds are not integers.
+
+    ValueError
+        If the window has the wrong shape, has an inverted range on an axis, or
+        is not contained in `shape`.
+
+    Examples
+    --------
+    >>> window_normalize(None, (50, 60)).tolist()
+    [[0, 49], [0, 59]]
+
+    >>> window_normalize(((10, 20), (30, 40)), (50, 60)).tolist()
+    [[10, 20], [30, 40]]
+    """
+    if win is None:
+        return np.asarray([(0, size - 1) for size in shape], dtype=np.int64)
+
+    window = np.asarray(win)
+    if window.dtype == object or not np.issubdtype(window.dtype, np.integer):
+        raise TypeError(
+            "win must contain integers only; use the full extent of an axis "
+            "instead of None to leave it untouched"
+        )
+    if window.shape != (len(shape), 2):
+        raise ValueError(f"win must have shape ({len(shape)}, 2), got {window.shape}")
+
+    window = window.astype(np.int64, copy=False)
+    for axis, (min_idx, max_idx) in enumerate(window):
+        if min_idx > max_idx:
+            raise ValueError(f"win is empty on axis {axis}: ({min_idx}, {max_idx})")
+        if min_idx < 0 or max_idx >= shape[axis]:
+            raise ValueError(f"win {window.tolist()} is not contained in a {shape} array")
+    return window

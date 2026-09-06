@@ -1,6 +1,4 @@
-# coding: utf8
-#
-# Copyright (c) 2024 Centre National d'Etudes Spatiales (CNES).
+# Copyright (c) 2024-2026 Centre National d'Etudes Spatiales (CNES).
 #
 # This file is part of GRIDR
 # (see https://gitlab.cnes.fr/gridr/gridr).
@@ -27,6 +25,7 @@ from gridr.core.utils.array_window import (
     window_overflow,
     window_shape,
     compose_slice,
+    window_normalize,
 )
 
 ARRAY_00 = np.arange(4 * 7).reshape(4, 7)
@@ -509,3 +508,42 @@ class TestArrayWindow:
                 f"N={N}, outer={outer}, inner={inner} "
                 f"-> expected={expected}, got={got}, combined={combined}"
             )
+
+
+class TestWindowNormalize:
+
+    def test_none_is_the_whole_array(self):
+        assert window_normalize(None, (50, 60)).tolist() == [[0, 49], [0, 59]]
+
+    def test_bounds_are_inclusive_and_integer(self):
+        window = window_normalize(((10, 20), (30, 40)), (50, 60))
+        assert window.tolist() == [[10, 20], [30, 40]]
+        assert np.issubdtype(window.dtype, np.integer)
+
+    @pytest.mark.parametrize("ndim", [1, 2, 3, 4])
+    def test_any_rank(self, ndim):
+        shape = tuple(range(10, 10 + ndim))
+        assert window_normalize(None, shape).shape == (ndim, 2)
+
+    @pytest.mark.parametrize(
+        ("win", "match"),
+        [
+            (((10, 20),), "shape"),
+            (((10, 20), (30, 40), (0, 1)), "shape"),
+            (((20, 10), (30, 40)), "empty"),
+            (((-1, 20), (30, 40)), "not contained"),
+            (((10, 50), (30, 40)), "not contained"),
+            (((10, 20), (30, 60)), "not contained"),
+        ],
+        ids=["too-few", "too-many", "empty", "negative", "past-rows", "past-cols"],
+    )
+    def test_malformed(self, win, match):
+        with pytest.raises(ValueError, match=match):
+            window_normalize(win, (50, 60))
+
+    @pytest.mark.parametrize(
+        "win", [((10.0, 20.0), (30.0, 40.0)), ((None, None), (30, 40))], ids=["float", "none"]
+    )
+    def test_non_integer_bounds_are_a_type_error(self, win):
+        with pytest.raises(TypeError, match="integers only"):
+            window_normalize(win, (50, 60))

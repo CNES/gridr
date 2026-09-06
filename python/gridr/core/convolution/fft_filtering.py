@@ -17,48 +17,29 @@
 #
 """Windowed N-d convolution with explicit boundary and decimation control.
 
-This module wraps :mod:`scipy.signal` convolution with the extra machinery
-GridR needs for tiled raster processing:
+Wraps :mod:`scipy.signal` convolution and adds what tiled raster processing
+needs: a production window, per-side boundary policies, and decimation fused
+into the output slicing.
 
-* a **production window** so that only the requested region is produced, while
-  the margins needed by the kernel are read from the surrounding data when it
-  exists;
-* **per-side boundary policies**, so that a tile in the middle of a raster uses
-  real neighbouring data while a tile on the raster edge is padded;
-* **decimation** (zoom ``P/Q`` with ``P == 1``) fused into the output slicing,
-  so no intermediate full-resolution array is materialised beyond the
-  convolution result itself.
-
-Design
-------
-All the geometry is computed once, without touching the pixels, by
-:func:`build_plan`, which returns an immutable :class:`FilterPlan`. Both
-:func:`fft_array_filter` and :func:`fft_array_filter_output_shape` are thin
-consumers of that plan, so the predicted shape and the produced shape cannot
-drift apart: they are the same code path.
+:func:`build_plan` computes the geometry from the input shape alone and returns
+an immutable :class:`FilterPlan`. :func:`fft_array_filter` and
+:func:`fft_array_filter_output_shape` both consume that plan, so a predicted
+shape and a produced shape come from the same code.
 
 Conventions
 -----------
 Window
-    A window is an integer array of shape ``(ndim, 2)`` holding
-    ``(first, last)`` **inclusive** indices per axis, following
-    :mod:`gridr.core.utils.array_window`.
-
-Convolution, not correlation
-    The kernel is *convolved*, i.e. flipped, consistently with
-    :func:`scipy.signal.convolve` and :func:`scipy.ndimage.convolve`. Pass a
-    pre-flipped kernel if you want correlation. This is invisible for symmetric
-    kernels and very visible for asymmetric ones.
+    An integer array of shape ``(ndim, 2)`` holding ``(first, last)``
+    inclusive indices per axis, as in :mod:`gridr.core.utils.array_window`.
 
 Data type
-    The working dtype defaults to ``np.result_type(arr, kernel)``. An integer
-    or ``float64`` kernel applied to a ``float32`` raster therefore doubles the
-    memory footprint; pass ``dtype=np.float32`` to pin it down.
+    The working dtype defaults to ``np.result_type(arr, kernel)``, so an
+    integer or ``float64`` kernel on a ``float32`` raster doubles the memory.
+    Pass ``dtype=np.float32`` to pin it.
 
 Non-finite values
-    FFT convolution is global: a single ``NaN`` in the input contaminates the
-    whole output. Mask or fill nodata before calling, or use a direct method
-    with an explicit nodata strategy.
+    FFT convolution is global: one ``NaN`` in the input contaminates the whole
+    output. Mask or fill nodata beforehand.
 """
 
 from __future__ import annotations
@@ -73,7 +54,7 @@ from numpy.typing import ArrayLike, DTypeLike, NDArray
 from scipy import signal
 
 from gridr.core.utils.array_pad import pad_inplace
-from gridr.core.utils.array_window import window_check
+from gridr.core.utils.array_window import window_normalize
 
 __all__ = [
     "BOUNDARY_MODES",
@@ -151,8 +132,8 @@ NO_BOUNDARY: BoundaryMode = "none"
 def _normalize_choice(value: object, allowed: tuple[str, ...], name: str) -> str:
     """Validate one of the string vocabularies above.
 
-    A wrong type raises :class:`TypeError`, a wrong value :class:`ValueError`,
-    consistently with the rest of the module.
+    Wrong type raises :class:`TypeError`, wrong value :class:`ValueError`, as
+    elsewhere in the module. The message lists the accepted spellings.
     """
     if not isinstance(value, str):
         raise TypeError(f"{name} must be a string, got {type(value).__name__}")
@@ -163,8 +144,7 @@ def _normalize_choice(value: object, allowed: tuple[str, ...], name: str) -> str
 
 
 def _normalize_boundary_mode(value: object) -> str:
-    """Same as :func:`_normalize_choice`, plus ``None`` as an accepted spelling
-    of ``"none"``."""
+    """Same, plus ``None`` as an accepted spelling of ``"none"``."""
     if value is None:
         return NO_BOUNDARY
     return _normalize_choice(value, BOUNDARY_MODES, "boundary mode")
@@ -198,7 +178,7 @@ def _is_scalar(value: object) -> bool:
 
 
 def _as_index(value: object, name: str) -> int:
-    """Coerce to a Python ``int``, rejecting ``bool`` and non-integral input."""
+    """Coerce to a Python ``int``. ``bool`` and non-integral input are refused."""
     if isinstance(value, bool):
         raise TypeError(f"{name} must be an integer, got a bool")
     if not isinstance(value, SupportsIndex):
@@ -256,8 +236,8 @@ def normalize_zoom(zoom: int | tuple[int, int]) -> Zoom:
 def decimation_offset(q: int, origin: DecimationOrigin = "centered") -> int:
     """Index of the sample kept inside each block of ``q`` samples.
 
-    ``"centered"`` yields ``(q - 1) // 2`` — the exact centre for
-    odd ``q``, the lower of the two central samples for even ``q``.
+    ``"centered"`` yields ``(q - 1) // 2``: the exact centre for odd ``q``, the
+    lower of the two central samples for even ``q``.
 
     Raises
     ------
@@ -302,12 +282,12 @@ def normalize_axes(axes: int | Iterable[int] | None, ndim: int) -> tuple[int, ..
 
     Parameters
     ----------
-    ``axes`` is a **set** of axes, not a permutation: it selects which axes take
-    part in the operation and says nothing about their order. This matches
-    :func:`scipy.signal.oaconvolve`, whose result is identical for ``(1, 2)``
-    and ``(2, 1)``. The returned axes are therefore sorted, so that a kernel of
-    reduced rank always maps positionally onto increasing array axes. Transpose
-    the kernel if you need a different mapping.
+    ``axes`` is a set, not a permutation: it selects the axes taking part in
+    the operation and says nothing about their order, as in
+    :func:`scipy.signal.oaconvolve` where ``(1, 2)`` and ``(2, 1)`` give the
+    same result. The returned axes are sorted, so a kernel of reduced rank maps
+    positionally onto increasing array axes. Transpose the kernel for another
+    mapping.
 
     Parameters
     ----------
@@ -372,10 +352,9 @@ def align_kernel(kernel: ArrayLike, ndim: int, axes: int | Iterable[int] | None 
     When both readings apply (``len(axes) == ndim``) the second one wins: a
     full-rank kernel is assumed to be already expressed in array axis order.
 
-    ``axes`` is normalized here rather than assumed to be already sorted, so the
-    function is safe to call on its own. The mapping is positional against the
-    sorted axes and never reorders the kernel samples; pass a transposed kernel
-    if you need a different assignment.
+    ``axes`` is normalized here, so the function is safe to call on its own.
+    The mapping is positional against the sorted axes and does not reorder the
+    kernel samples; pass a transposed kernel for another assignment.
 
     Raises
     ------
@@ -410,11 +389,10 @@ def align_kernel(kernel: ArrayLike, ndim: int, axes: int | Iterable[int] | None 
 def pad_kernel_to_odd(kernel: NDArray, axes: int | Iterable[int] | None = None) -> NDArray:
     """Right-pad the kernel with zeros so its size is odd along every target axis.
 
-    An odd size gives the kernel an unambiguous centre, which is what makes the
-    ``SAME`` output alignment well defined.
+    An odd size gives the kernel an unambiguous centre, without which the
+    ``"same"`` output alignment is not well defined.
 
-    ``axes`` is normalized here rather than assumed to be already normalized,
-    so the function is safe to call on its own.
+    ``axes`` is normalized here, so the function is safe to call on its own.
     """
     axes = normalize_axes(axes, kernel.ndim)
     widths = [(0, 0)] * kernel.ndim
@@ -466,10 +444,9 @@ class AxisPlan:
 class FilterPlan:
     """Everything :func:`fft_array_filter` needs, derived from shapes alone.
 
-    The plan is data-independent: it is a function of the input *shape*, the
-    kernel, and the options. It can be built and inspected without allocating
-    the raster, which is what makes tiled scheduling and shape prediction
-    exact rather than merely consistent.
+    A function of the input shape, the kernel and the options, so it can be
+    built and inspected without allocating the raster. Tiled schedulers use it
+    to size their outputs ahead of time.
     """
 
     #: Kernel aligned to the array rank and padded to an odd size.
@@ -478,7 +455,7 @@ class FilterPlan:
     axes: tuple[int, ...]
     #: Per-axis geometry, one entry per array dimension.
     per_axis: tuple[AxisPlan, ...]
-    #: The rule actually applied to the margins, ``NONE`` when this particular
+    #: The rule actually applied to the margins, ``"none"`` when this particular
     #: window needs no synthetic sample. Invariant:
     #: ``(pad_mode == "none") == (not needs_padding)``.
     pad_mode: BoundaryMode
@@ -559,21 +536,20 @@ BoundarySpec = BoundaryMode | None | Sequence[Sequence[BoundaryMode | None]]
 def _normalize_boundary(
     boundary: BoundarySpec, ndim: int, axes: tuple[int, ...]
 ) -> tuple[tuple[tuple[bool, bool], ...], BoundaryMode]:
-    """Split a boundary specification into *where* to pad and *how*.
+    """Split a boundary specification into where to pad and how.
 
     Returns one ``(before, after)`` pair of booleans per axis, plus the single
-    declared policy (``NONE`` when no side asks to be extended).
+    declared policy (``"none"`` when no side asks to be extended).
 
     A scalar applies to every side. A sequence of pairs shorter than ``ndim``
-    is right-aligned and the leading axes default to ``NONE``, so that a 2-D
-    ``((top, bottom), (left, right))`` specification keeps working on a stacked
+    is right-aligned and the leading axes default to ``"none"``, so a 2-D
+    ``((top, bottom), (left, right))`` specification still works on a stacked
     3-D array.
 
     Raises
     ------
     ValueError
-        If two different non-``NONE`` policies appear. See :data:`BoundaryMode`
-        for why that combination is refused rather than implemented.
+        If two different non-``"none"`` policies appear. See :data:`BoundaryMode`.
     """
     if boundary is None or isinstance(boundary, str):
         scalar = _normalize_boundary_mode(boundary)
@@ -610,22 +586,6 @@ def _normalize_boundary(
     return where, policies.pop() if policies else NO_BOUNDARY
 
 
-def _normalize_window(win: ArrayLike | None, shape: tuple[int, ...]) -> NDArray[np.int64]:
-    """Return an integer ``(ndim, 2)`` inclusive window, defaulting to the full array."""
-    if win is None:
-        return np.asarray([(0, size - 1) for size in shape], dtype=np.int64)
-
-    window = np.asarray(win)
-    if window.dtype == object or not np.issubdtype(window.dtype, np.integer):
-        raise TypeError(
-            "win must contain integers only; use the full extent of an axis "
-            "instead of None to leave it untouched"
-        )
-    if window.shape != (len(shape), 2):
-        raise ValueError(f"win must have shape ({len(shape)}, 2), got {window.shape}")
-    return window.astype(np.int64, copy=False)
-
-
 def _axis_output(
     out_mode: OutputMode,
     *,
@@ -644,7 +604,7 @@ def _axis_output(
         stop = full_size - trim
         if stop <= trim:
             raise ValueError(
-                f"VALID output is empty: kernel of size {kernel_size} does not fit "
+                f"the 'valid' output is empty: a kernel of size {kernel_size} does not fit "
                 f"in a convolution input of size {full_size - trim}"
             )
         return slice(trim, stop)
@@ -670,9 +630,8 @@ def build_plan(
 ) -> FilterPlan:
     """Compute the full geometry of a filtering operation without touching data.
 
-    This is the single source of truth for shapes, slices and padding: both
-    :func:`fft_array_filter` and :func:`fft_array_filter_output_shape` consume
-    the plan it returns.
+    Shapes, slices and padding are settled here. Both :func:`fft_array_filter`
+    and :func:`fft_array_filter_output_shape` consume the plan it returns.
 
     Parameters
     ----------
@@ -682,7 +641,7 @@ def build_plan(
         Filter taps in the spatial domain. Even-sized axes are right-padded
         with zeros so that the kernel has a well-defined centre.
     win : array_like or None, optional
-        Production window as ``(ndim, 2)`` **inclusive** bounds. ``None`` means
+        Production window as ``(ndim, 2)`` inclusive bounds. ``None`` means
         the whole array.
     boundary : str, None, or sequence of pairs, optional
         Policy applied on each side when the kernel margin falls outside the
@@ -696,13 +655,13 @@ def build_plan(
         ``Q > 1`` decimates the output. Default ``1``.
     decimation : str, optional
         Which sample of each block of ``Q`` is kept, on every target axis. The
-        phase is counted in the **output** frame, not in the input one, so what
-        it lands on depends on ``out_mode``. With ``SAME``, index 0 of the
-        output is the first sample of ``win``, hence ``LEADING`` keeps the
-        window's own first sample and ``CENTERED`` keeps the one
-        ``(Q - 1) // 2`` samples further in. With ``FULL``, index 0 is the first
+        phase is counted in the output frame and not in the input one, so what
+        it lands on depends on ``out_mode``. With ``"same"``, index 0 of the
+        output is the first sample of ``win``, hence ``"leading"`` keeps the
+        window's own first sample and ``"centered"`` keeps the one
+        ``(Q - 1) // 2`` samples further in. With ``"full"``, index 0 is the first
         sample of the convolution support, which sits :attr:`AxisPlan.origin`
-        samples ahead of the window's first one; with ``VALID`` it sits
+        samples ahead of the window's first one; with ``"valid"`` it sits
         ``kernel_size - 1`` samples into that support. In both of those, neither
         origin lands on the window's first sample. Moving ``win`` therefore
         moves the sampling grid with it: this decimates the window, it does not
@@ -744,9 +703,7 @@ def build_plan(
     kernel = pad_kernel_to_odd(kernel, axes)
     margins = kernel_margin(kernel, axes)
 
-    window = _normalize_window(win, shape)
-    if not window_check(np.empty(shape, dtype=np.uint8), window, axes):
-        raise ValueError(f"production window {window.tolist()} is not contained in shape {shape}")
+    window = window_normalize(win, shape)
 
     pad_sides, pad_mode = _normalize_boundary(boundary, ndim, axes)
     offset = decimation_offset(zoom_pq.q, decimation)
@@ -784,9 +741,14 @@ def build_plan(
         pad_before = margin - real_before if synthesise_before else 0
         pad_after = margin - real_after if synthesise_after else 0
 
-        if pad_mode == "wrap" and (pad_before or pad_after) and not (first == 0 and last == size - 1):
+        if (
+            pad_mode == "wrap"
+            and (pad_before or pad_after)
+            and not (first == 0 and last == size - 1)
+        ):
             # Periodic continuation only means something when the window covers
-            # the whole axis.
+            # the whole axis: the samples to bring in are at the far end of the
+            # array, not at the far end of the requested extent.
             raise ValueError(
                 f"the 'wrap' boundary needs the window to span axis {axis}, but it "
                 f"covers {first}..{last} of {size}"
@@ -825,8 +787,8 @@ def build_plan(
             )
         )
 
-    # A declared policy that ends up padding nothing — an interior tile reading
-    # real neighbours on every side — is not the rule executed for this plan.
+    # A declared policy that ends up padding nothing (an interior tile reading
+    # real neighbours on every side) is not the rule executed for this plan.
     if not any(any(axis.pad_width) for axis in per_axis):
         pad_mode = NO_BOUNDARY
 
@@ -848,18 +810,9 @@ def build_plan(
 def _make_convolution_input(arr: NDArray, plan: FilterPlan) -> NDArray:
     """Build the padded, dtype-converted input of the convolution.
 
-    One allocation and one copy, whatever the number of padded sides: the
-    destination buffer is created at its final size, the real samples are
-    written into it — the assignment also performs the dtype conversion — and
-    the margins are filled in place by
-    :func:`gridr.core.utils.array_pad.pad_inplace`.
-
-    Padding side by side with :func:`numpy.pad` would allocate a full-size
-    array per side, up to ``2 * ndim`` copies of the tile to synthesise a few
-    rows of margin, and it would also be wrong for a non-local policy: a
-    ``WRAP`` applied second wraps around the already-extended array instead of
-    the original one. Both problems disappear once the buffer is written once,
-    in place.
+    One allocation and one copy whatever the number of padded sides. The buffer
+    is created at its final size, the real samples are written into it , and the
+    margins are filled in place by :func:`gridr.core.utils.array_pad.pad_inplace`.
     """
     source = arr[plan.source]
     if plan.pad_mode == NO_BOUNDARY:
@@ -896,8 +849,7 @@ def fft_array_filter(
 ) -> FilterResult:
     """Convolve ``arr`` with ``kernel`` over a production window.
 
-    See :func:`build_plan` for the meaning of every option; this function only
-    executes the plan it describes.
+    See :func:`build_plan` for the options; this function executes the plan.
 
     Parameters
     ----------
@@ -905,8 +857,8 @@ def fft_array_filter(
         Input array.
     plan : FilterPlan, optional
         A plan built beforehand by :func:`build_plan`. When given, every other
-        option is ignored. Reusing a plan across the tiles of a raster avoids
-        recomputing the geometry for each of them.
+        option is ignored. Reuse one across the tiles of a raster to skip
+        recomputing the geometry each time.
 
     Returns
     -------
@@ -962,8 +914,8 @@ def fft_array_filter_output_shape(
 ) -> tuple[int, ...]:
     """Shape :func:`fft_array_filter` would return, without doing the work.
 
-    Accepts either an array or a plain shape, so a scheduler can size its
-    outputs before any array exists.
+    Takes an array or a plain shape, so outputs can be sized before any pixel
+    is read.
 
     Examples
     --------

@@ -17,30 +17,29 @@
 #
 """FFT filtering chain with overlap-add strip management.
 
-Three frames coexist in this module and must not be confused.
+Three frames coexist here. Mixing them up is the main way to get this wrong.
 
 Input frame
-    Rows and columns of the source raster. The production window `win` is
-    expressed here, with inclusive bounds, and so is everything read from disk.
+    Rows and columns of the source raster. The production window `win` uses it,
+    with inclusive bounds, and so does everything read from disk.
 
 Full resolution
     The output a single
     :func:`~gridr.core.convolution.fft_filtering.fft_array_filter` call would
-    return for that window with ``zoom=1``. Strip boundaries, kernel margins,
-    the overlap-add buffer and the additions performed in it all live here.
-    Overlap-add is a partial-sum reconstruction: adding contributions that have
-    already been subsampled would sum samples belonging to different pixels.
+    return for that window with ``zoom=1``. Strip boundaries, kernel margins and
+    the overlap-add buffer all live here. Overlap-add sums partial results, so
+    the contributions have to be added before any subsampling.
 
 Decimated resolution
-    Only the writes are decimated, at the very last moment, from the global
-    index of the block being written. That index is what carries the
-    decimation phase across strips; a per-strip counter cannot, because the
-    number of rows a strip contributes depends on where it starts modulo ``Q``.
+    The writes, and only them. Which samples survive is decided from the global
+    index of the block being written, since only that index carries the
+    decimation phase across strips: how many rows a strip contributes depends on
+    where it starts modulo ``Q``.
 
 How overlap-add works here
 --------------------------
 Strips do not overlap on input. Each one is convolved as if the others did not
-exist, which leaves every sample near a cut holding a *partial* sum.
+exist, so every sample near a cut holds a partial sum.
 Overlap-add is what adds those partial sums back together.
 
 Take a 3-row kernel (margin ``m = 1``, so ``k = 3``) and two strips A and B cut
@@ -81,9 +80,9 @@ No row is written twice and none is skipped.
 With a production window
 ------------------------
 The window is what gets cut into strips, not the raster. Reads are extended by
-the kernel margin at the window edges — real neighbours are used wherever they
-exist — and *not* at the internal cuts, where the missing contributions are
-exactly the ones overlap-add carries over::
+the kernel margin at the window edges, using real neighbours wherever they
+exist, and not at the internal cuts, whose missing contributions are the ones
+overlap-add carries over::
 
       raster
       +---------------------------------------------------+
@@ -100,25 +99,15 @@ exactly the ones overlap-add carries over::
       |                                                   |     real samples
       +---------------------------------------------------+
 
-A boundary policy only ever applies where the extension leaves the raster, never
-in the middle of it. A window sitting in the interior is therefore filtered
-identically under every policy. With ``win=None`` each window edge is a raster
-edge.
+A boundary policy applies where the extension leaves the raster, not in the
+middle of it, so a window sitting in the interior is filtered identically under
+every policy. With ``win=None`` each window edge is a raster edge.
 
 Decimation
 ----------
 The reconstruction above happens at full resolution. Only the writes are
-decimated, and the samples kept are chosen from the *global* row index, not from
-a per-strip count::
-
-      full-resolution row   ...  9   10   11   12   13   14  ...
-      kept for Q=3, phase 1       ^              ^
-      destination row             3              4
-
-A strip contributing rows 9 to 14 keeps two of them here; a strip starting one
-row earlier would keep a different two. The count therefore depends on where the
-block sits modulo ``Q``, which a running destination counter cannot know. Every
-write goes through :func:`decimated_block` for that reason.
+decimated, and the samples kept are chosen from the global row index, not from
+a per-strip count.
 
 I/O is restricted to the window extended by the kernel margins, on both axes.
 A small window on a large raster therefore costs a small read, and falls back
@@ -150,45 +139,8 @@ from gridr.core.convolution.fft_filtering import (
 )
 from gridr.core.utils import chunks
 from gridr.core.utils.array_utils import ArrayProfile
+from gridr.core.utils.array_window import window_normalize
 from gridr.core.utils.parameters import tuplify
-
-
-def normalize_win(win: np.ndarray | None, shape: tuple[int, int]) -> np.ndarray:
-    """Normalize a production window to inclusive integer bounds.
-
-    Parameters
-    ----------
-    win : numpy.ndarray or None
-        The production window as ``(2, 2)`` inclusive ``(first, last)`` bounds
-        per axis, or ``None`` for the whole array.
-
-    shape : tuple of two ints
-        Shape of the input array.
-
-    Returns
-    -------
-    numpy.ndarray
-        An integer array of shape ``(2, 2)``.
-
-    Raises
-    ------
-    ValueError
-        If the window has the wrong shape, is empty, or is not contained in
-        `shape`.
-    """
-    if win is None:
-        return np.asarray([(0, shape[0] - 1), (0, shape[1] - 1)], dtype=np.int64)
-
-    window = np.asarray(win)
-    if window.shape != (2, 2) or not np.issubdtype(window.dtype, np.integer):
-        raise ValueError(f"win must be an integer array of shape (2, 2), got {window.shape}")
-    window = window.astype(np.int64, copy=False)
-    for axis, (first, last) in enumerate(window):
-        if first > last:
-            raise ValueError(f"win is empty on axis {axis}: ({first}, {last})")
-        if first < 0 or last >= shape[axis]:
-            raise ValueError(f"win {window.tolist()} is not contained in a {shape} array")
-    return window
 
 
 def extended_extent(
@@ -202,14 +154,14 @@ def extended_extent(
     """Range to read so that the kernel margins come from real samples.
 
     The extension does not depend on the boundary policy. A boundary condition
-    describes the edge of the raster, never a seam in the middle of it, so real
-    neighbours are read whenever they exist and the policy only governs what is
-    synthesised beyond them. The extension is clipped to the array, which keeps
-    the I/O proportional to the window instead of to the raster.
+    describes the edge of the raster, not a seam in the middle of it, so real
+    neighbours are read wherever they exist and the policy only governs what is
+    synthesised beyond them. Clipping to the array keeps the I/O proportional to
+    the window and not to the raster.
 
-    The flags exist for the overlap-add seams, and only for them: a strip must
-    not see beyond itself at an internal cut, since the missing contributions
-    are exactly the ones overlap-add carries over.
+    The flags are there for the overlap-add seams: a strip must not see beyond
+    itself at an internal cut, whose missing contributions are the ones
+    overlap-add carries over.
 
     Parameters
     ----------
@@ -256,7 +208,7 @@ def _normalize_boundary_pairs(boundary: BoundarySpec) -> tuple[tuple[str, str], 
 def check_oa_strip_size(nrow: int, kernel: np.ndarray, strip_size: int) -> int:
     """Check the strip size against the production window and kernel heights.
 
-    The method returns ``0`` — meaning "process in a single chunk" — if any of
+    The method returns ``0``, meaning "process in a single chunk", if any of
     the following holds:
 
     - half the number of produced rows is lesser than the strip size;
@@ -274,7 +226,7 @@ def check_oa_strip_size(nrow: int, kernel: np.ndarray, strip_size: int) -> int:
         Number of rows produced, i.e. the height of the production window.
 
     kernel : numpy.ndarray
-        The kernel, **already padded to an odd size** by
+        The kernel, already padded to an odd size by
         :func:`~gridr.core.convolution.fft_filtering.pad_kernel_to_odd`. Using
         the raw filter here would under-estimate the margins by one row for an
         even-sized filter.
@@ -308,9 +260,9 @@ def decimated_block(
 
     A block of `count` consecutive samples starting at `global_start` in the
     full-resolution output frame keeps the samples whose global index is
-    congruent to `offset` modulo `q`. This is what carries the decimation phase
-    from one strip to the next: the answer depends on where the block sits in
-    the global frame, not on how many samples were written before it.
+    congruent to `offset` modulo `q`. The answer depends on where the block sits
+    in the global frame and not on how many samples were written before it,
+    which is how the decimation phase survives from one strip to the next.
 
     Parameters
     ----------
@@ -326,12 +278,12 @@ def decimated_block(
     offset : int
         Global index of the first sample kept by the decimation, as returned by
         :func:`~gridr.core.convolution.fft_filtering.decimation_offset`. It must
-        lie in ``[0, q)``, which is what that function guarantees.
+        lie in ``[0, q)``, as that function guarantees.
 
     Returns
     -------
     tuple of (slice or None, int)
-        A slice **relative to the block** selecting the samples to keep, and
+        A slice relative to the block selecting the samples to keep, and
         the destination index of the first of them. ``(None, 0)`` when the
         block keeps nothing.
 
@@ -401,6 +353,13 @@ def fft_array_filter_fallback(
 ) -> NoReturn:
     """Wrapper to the `fft_array_filter` core method in case of no strip.
 
+    This function acts as a fallback when strip processing is not required or
+    not applicable, directly calling the core `fft_array_filter` method. The
+    decimation is delegated to it, since there is no reconstruction to perform.
+
+    Only the production window extended by the kernel margins is read, so a
+    small window on a large raster costs a small read.
+
     Parameters
     ----------
     ds_in : rasterio.io.DatasetReader
@@ -420,9 +379,9 @@ def fft_array_filter_fallback(
         bounds, in the input frame.
 
     boundary : str, None, or sequence of pairs
-        The edge management rule, as a single mode string — ``"reflect"``,
-        ``"symmetric"``, ``"edge"``, ``"wrap"``, ``"constant"``, or ``None`` /
-        ``"none"`` for no synthesis — or as ``((top, bottom), (left, right))``.
+        The edge management rule, as a single mode string (``"reflect"``,
+        ``"symmetric"``, ``"edge"``, ``"wrap"``, ``"constant"``, or ``None`` and
+        ``"none"`` for no synthesis) or as ``((top, bottom), (left, right))``.
 
     out_mode : str
         The output mode for the returned array: ``"same"``, ``"full"`` or
@@ -441,10 +400,10 @@ def fft_array_filter_fallback(
 
     decimation : DecimationOrigin, optional
         Which sample of each block of ``Q`` is kept, on every axis. The phase is
-        counted in the **output** frame, not in the input one: with
-        ``out_mode=SAME`` index 0 of the output is the first sample of `win`, so
-        ``LEADING`` keeps the window's own first pixel and ``CENTERED`` keeps the
-        one ``(Q - 1) // 2`` samples further in. With ``out_mode=FULL`` index 0
+        counted in the output frame and not in the input one: with
+        ``out_mode="same"`` index 0 of the output is the first sample of `win`, so
+        ``"leading"`` keeps the window's own first pixel and ``"centered"`` keeps the
+        one ``(Q - 1) // 2`` samples further in. With ``out_mode="full"`` index 0
         is the first sample of the convolution support, which sits ahead of the
         window by the kernel margin plus whatever was read or synthesised around
         it, so neither origin lands on the window's first pixel. Defaults to
@@ -465,12 +424,6 @@ def fft_array_filter_fallback(
     NoReturn
         This function performs an operation on `ds_out` and does not return any
         value.
-
-    Notes
-    -----
-    This function acts as a fallback when strip processing is not required or
-    not applicable, directly calling the core `fft_array_filter` method. The
-    decimation is delegated to it, since there is no reconstruction to perform.
     """
     margins = kernel_margin(kernel, axes=(0, 1))
     row_low, row_high = extended_extent(int(win[0, 0]), int(win[0, 1]), ds_in.height, margins[0])
@@ -545,13 +498,13 @@ def fft_filtering_oa_strip_chain(
 
     boundary : str, None, or sequence of pairs
         The edge management rule as a single mode string applying to every side
-        — ``"reflect"``, ``"symmetric"``, ``"edge"``, ``"wrap"``, ``"constant"``,
-        or ``None`` / ``"none"`` for no synthesis — or as
+        (``"reflect"``, ``"symmetric"``, ``"edge"``, ``"wrap"``, ``"constant"``,
+        or ``None`` and ``"none"`` for no synthesis) or as
         ``((top, bottom), (left, right))``.
 
     out_mode : str
         The output mode for the returned array: ``"same"``, ``"full"`` or
-        ``"valid"``. ``VALID`` is not supported by
+        ``"valid"``. ``"valid"`` is not supported by
         this chain.
 
     win : numpy.ndarray, optional
@@ -575,10 +528,10 @@ def fft_filtering_oa_strip_chain(
 
     decimation : DecimationOrigin, optional
         Which sample of each block of ``Q`` is kept, on every axis. The phase is
-        counted in the **output** frame, not in the input one: with
-        ``out_mode=SAME`` index 0 of the output is the first sample of `win`, so
-        ``LEADING`` keeps the window's own first pixel and ``CENTERED`` keeps the
-        one ``(Q - 1) // 2`` samples further in. With ``out_mode=FULL`` index 0
+        counted in the output frame and not in the input one: with
+        ``out_mode="same"`` index 0 of the output is the first sample of `win`, so
+        ``"leading"`` keeps the window's own first pixel and ``"centered"`` keeps the
+        one ``(Q - 1) // 2`` samples further in. With ``out_mode="full"`` index 0
         is the first sample of the convolution support, which sits ahead of the
         window by the kernel margin plus whatever was read or synthesised around
         it, so neither origin lands on the window's first pixel. Moving `win`
@@ -609,11 +562,11 @@ def fft_filtering_oa_strip_chain(
     Raises
     ------
     NotImplementedError
-        If `out_mode` is ``VALID``, or if `boundary` requests ``"wrap"`` on the
-        row axis. ``WRAP`` is the only non-local policy: the top margin of the
-        first strip comes from the bottom of the window, which a strip-wise
-        reader does not have in hand. It is supported on the column axis, where
-        every strip spans the full window width.
+        If `out_mode` is ``"valid"``, or if `boundary` requests ``"wrap"`` on
+        the row axis while the window is actually striped. Striping is what
+        breaks it: the top margin of the first strip is periodic with the bottom
+        of the window, which a strip cannot see. A window processed in a single
+        chunk wraps correctly on either axis.
     ValueError
         If the zoom is not a pure decimation, if `win` is malformed or outside
         the raster, or if `ds_out` does not have the decimated output shape.
@@ -640,9 +593,9 @@ def fft_filtering_oa_strip_chain(
     and kernel shapes; see :func:`check_oa_strip_size`.
 
     Because the overlap-add reconstruction performs a different sequence of
-    floating-point operations than a single call — different FFT sizes, and
-    partial sums — the result matches the monolithic output to within
-    floating-point tolerance, not bit for bit.
+    floating-point operations than a single call, with different FFT sizes and
+    partial sums, the result matches the monolithic output to within
+    floating-point tolerance and not bit for bit.
 
     This method limits the processing to 2D arrays only.
     """
@@ -650,19 +603,9 @@ def fft_filtering_oa_strip_chain(
         logger = logging.getLogger(__name__)
 
     if out_mode == "valid":
-        raise NotImplementedError("the overlap-add chain does not support the VALID output mode")
+        raise NotImplementedError("the overlap-add chain does not support the 'valid' output mode")
 
     boundary_pairs = _normalize_boundary_pairs(boundary)
-    if "wrap" in boundary_pairs[0]:
-        # WRAP is the only non-local policy: the top margin of the first strip
-        # is taken from the bottom of the *window*, which a strip-wise reader
-        # does not have in hand. Along the column axis every strip spans the
-        # full window width, so WRAP is honoured there.
-        raise NotImplementedError(
-            "the 'wrap' boundary is not supported on the row axis by the strip chain, "
-            "because a strip cannot see the opposite end of the window; it is "
-            "supported on the column axis"
-        )
 
     zoom_pq = normalize_zoom(zoom)
     if not zoom_pq.is_supported:
@@ -679,7 +622,7 @@ def fft_filtering_oa_strip_chain(
 
     profile_in = ArrayProfile.from_dataset(ds_in)
     shape_in = (ds_in.height, ds_in.width)
-    win = normalize_win(win, shape_in)
+    win = window_normalize(win, shape_in)
     first_row, last_row = int(win[0, 0]), int(win[0, 1])
     nrow_win = last_row - first_row + 1
 
@@ -718,6 +661,17 @@ def fft_filtering_oa_strip_chain(
     chunk_boundaries = chunks.get_chunk_boundaries(
         nsize=nrow_win, chunk_size=strip_size, merge_last=True
     )
+
+    if len(chunk_boundaries) > 1 and "wrap" in boundary_pairs[0]:
+        # Striping is what breaks "wrap" on the row axis: the top margin of the
+        # first strip is periodic with the bottom of the window, which a strip
+        # cannot see. A single chunk reads the whole window at once, so the core
+        # wraps it correctly and the restriction does not apply there.
+        raise NotImplementedError(
+            f"the 'wrap' boundary is not supported on the row axis when the window is "
+            f"striped, and it is here in {len(chunk_boundaries)} chunks; pass "
+            "strip_size=0 to process it in one call"
+        )
 
     if len(chunk_boundaries) == 1:
         # Single chunk => fallback to the core method, decimation included.

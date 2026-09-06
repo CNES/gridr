@@ -17,13 +17,13 @@
 #
 """Tests for :mod:`gridr.chain.fft_filtering_chain`.
 
-The reference is the monolithic :func:`fft_array_filter` call: the chain exists
-to bound memory and I/O, not to compute something different. Every geometric
-test therefore ends in a comparison against that function.
+The reference is the monolithic :func:`fft_array_filter` call. The chain bounds
+memory and I/O, it does not compute something different, so every geometric
+test ends in a comparison against that call.
 
-Equality is to within floating-point tolerance, not bit for bit: overlap-add
-performs a different sequence of operations — other FFT sizes, and partial sums
-— so the two results may differ at the last bits.
+Equality is to floating-point tolerance and not bit for bit: overlap-add runs a
+different sequence of operations, with other FFT sizes and partial sums, so the
+two results differ at the last bits.
 """
 
 from __future__ import annotations
@@ -40,7 +40,6 @@ from gridr.chain.fft_filtering_chain import (
     decimated_block,
     extended_extent,
     fft_filtering_oa_strip_chain,
-    normalize_win,
 )
 from gridr.core.convolution.fft_filtering import (
     CONVOLUTION_METHODS,
@@ -68,9 +67,8 @@ WIDE_KERNEL = np.ones((7, 7)) / 49.0
 #: about it too.
 TRANSFORM = Affine.translation(300000.0, 4800000.0) @ Affine.scale(10.0, -10.0)
 
-#: Production windows exercised as an axis of the equivalence tests.
-#: Consider here the fixture size 300x137 with ``strip_size=64``.
-#: Three families matter and they test
+#: Production windows exercised as an axis of the equivalence tests, on the
+#: 300x137 fixture with ``strip_size=64``. Three families matter and they test
 #: different things:
 #:
 #: - **raster edges**, where a boundary policy actually has to synthesise;
@@ -105,7 +103,7 @@ SAMPLE_WINDOW_VALUES = [
     for name in SAMPLE_WINDOW_IDS
 ]
 
-#: Local policies only. ( ``WRAP`` is excluded )
+#: Local policies only. ``wrap`` is excluded by construction ; see ``TestChainContract``.
 LOCAL_POLICIES = [
     "none",
     "reflect",
@@ -287,6 +285,7 @@ class TestChainMatchesMonolithic:
     @pytest.mark.parametrize("out_mode", ["same", "full"])
     @pytest.mark.parametrize("q", [1, 3])
     def test_every_window_position(self, raster, tmp_path, win, out_mode, q):
+        """Raster edges, interior, and windows landing on a chunk cut."""
         path_in, data = raster()
         run_and_compare(
             path_in,
@@ -460,35 +459,6 @@ class TestChainMatchesMonolithic:
 # --------------------------------------------------------------------------- #
 # Production window
 # --------------------------------------------------------------------------- #
-class TestNormalizeWin:
-    """Window parsing, before any I/O happens."""
-
-    def test_none_is_the_whole_array(self):
-        assert normalize_win(None, (50, 60)).tolist() == [[0, 49], [0, 59]]
-
-    def test_bounds_are_inclusive_and_integer(self):
-        window = normalize_win(((10, 20), (30, 40)), (50, 60))
-        assert window.tolist() == [[10, 20], [30, 40]]
-        assert np.issubdtype(window.dtype, np.integer)
-
-    @pytest.mark.parametrize(
-        ("win", "match"),
-        [
-            (((10, 20),), "shape"),
-            (((10, 20), (30, 40), (0, 1)), "shape"),
-            (((10.0, 20.0), (30.0, 40.0)), "shape"),
-            (((20, 10), (30, 40)), "empty"),
-            (((-1, 20), (30, 40)), "not contained"),
-            (((10, 50), (30, 40)), "not contained"),
-            (((10, 20), (30, 60)), "not contained"),
-        ],
-        ids=["too-few", "too-many", "float", "empty", "negative", "past-rows", "past-cols"],
-    )
-    def test_malformed(self, win, match):
-        with pytest.raises(ValueError, match=match):
-            normalize_win(win, (50, 60))
-
-
 class TestExtendedExtent:
 
     @pytest.mark.parametrize(
@@ -567,8 +537,8 @@ class TestProductionWindow:
     def test_window_margins_come_from_real_neighbours(self, raster, tmp_path, boundary):
         """An interior window is padded on no side, whatever the policy.
 
-        The margins exist in the raster, so the policy never applies and every
-        policy must give the same numbers.
+        The margins exist in the raster, so no policy applies and all of them
+        give the same numbers.
         """
         path_in, data = raster()
         window = np.asarray(((50, 249), (30, 129)))
@@ -638,11 +608,7 @@ class TestProductionWindow:
         assert_matches_monolithic(produced, data, WIDE_KERNEL, win=window, **options)
 
     def test_reads_are_proportional_to_the_window(self, raster, tmp_path):
-        """The point of the whole thing: a small window costs a small read.
-
-        Reading whole strips of the raster would be correct and unusable on a
-        large image; this counts the pixels actually pulled from the dataset.
-        """
+        """A small window costs a small read."""
         path_in, data = raster(nrow=400, ncol=400)
         window = np.asarray(((150, 249), (200, 279)))
         options = {
@@ -710,13 +676,8 @@ class TestChainContract:
         ],
         ids=["scalar", "top-only", "bottom-only"],
     )
-    def test_row_axis_wrap_is_refused(self, raster, tmp_path, boundary):
-        """The only non-local policy, and the only one a strip cannot honour.
-
-        The top margin of the first strip comes from the bottom of the raster.
-        Padding each strip independently wraps it around the strip instead,
-        which is wrong by a wide margin rather than by a rounding error.
-        """
+    def test_row_axis_wrap_is_refused_when_striped(self, raster, tmp_path, boundary):
+        """The "wrap" policy is refused when striping."""
         path_in, data = raster(nrow=200, ncol=80)
         with pytest.raises(
             NotImplementedError, match="'wrap' boundary is not supported on the row axis"
@@ -733,14 +694,10 @@ class TestChainContract:
 
     @pytest.mark.parametrize(
         "win",
-        [
-            np.asarray(((0, 191), (0, 99))), # col stops before right border
-            np.asarray(((0, 191), (37, 136))) # col begins after left border
-        ],
+        [np.asarray(((0, 191), (0, 99))), np.asarray(((0, 191), (37, 136)))],
         ids=["stops-short-on-the-right", "stops-short-on-the-left"],
     )
-    def test_column_wrap_needs_the_full_width(self, raster, tmp_path, win):
-        """A window that stops short of an edge has no periodic neighbour."""
+    def test_wrap_needs_the_window_to_span_the_axis(self, raster, tmp_path, win):
         _, data = raster()
         with pytest.raises(ValueError, match="'wrap' boundary needs the window to span axis 1"):
             fft_array_filter_output_shape(
@@ -750,9 +707,25 @@ class TestChainContract:
                 boundary=(("none", "none"), ("wrap", "wrap")),
             )
 
+    @pytest.mark.parametrize("boundary", ["wrap", (("wrap", "wrap"), ("wrap", "wrap"))])
+    def test_row_axis_wrap_works_when_a_single_chunk_is_used(self, raster, tmp_path, boundary):
+        """The "wrap policy works when monolithic."""
+        path_in, data = raster(nrow=200, ncol=80)
+        run_and_compare(
+            path_in,
+            data,
+            tmp_path / "out.tif",
+            WIDE_KERNEL,
+            None,
+            strip_size=4,  # shorter than the kernel: forces the monolithic path
+            boundary=boundary,
+            out_mode="same",
+            zoom=(1, 2),
+        )
+
     def test_valid_output_mode_is_refused(self, raster, tmp_path):
         path_in, data = raster(nrow=200, ncol=80)
-        with pytest.raises(NotImplementedError, match="VALID"):
+        with pytest.raises(NotImplementedError, match="valid"):
             run_chain(
                 path_in,
                 tmp_path / "out.tif",
