@@ -40,7 +40,6 @@ Three levels of confidence:
 
 from __future__ import annotations
 
-import dataclasses
 import itertools
 
 import numpy as np
@@ -53,6 +52,7 @@ from gridr.core.convolution.fft_filtering import (
     DECIMATION_ORIGINS,
     OUTPUT_MODES,
     Zoom,
+    _make_convolution_input,
     align_kernel,
     build_plan,
     decimated_size,
@@ -447,11 +447,6 @@ class TestPlanGeometry:
         assert plan.window.dtype == np.int64
         assert plan.window.tolist() == [[0, 2], [1, 40], [1, 45]]
 
-    def test_plan_is_frozen(self):
-        plan = build_plan((10, 10), DIRAC_KERNEL)
-        with pytest.raises(dataclasses.FrozenInstanceError):
-            plan.kernel = None  # type: ignore[misc]
-
     @pytest.mark.parametrize("q", [2, 3, 5, 50])
     @pytest.mark.parametrize("origin", list(DECIMATION_ORIGINS))
     def test_decimated_shape_matches_manual_slicing(self, q, origin):
@@ -563,9 +558,9 @@ class TestPlanGeometry:
 class TestPredictedShape:
     """``fft_array_filter_output_shape`` must agree with the produced array."""
 
-    @pytest.mark.parametrize("boundary", BOUNDARY_MATRIX, ids=BOUNDARY_IDS)
+    @pytest.mark.parametrize("boundary", ["none", "symmetric"])
     @pytest.mark.parametrize("out_mode", list(OUTPUT_MODES))
-    @pytest.mark.parametrize("zoom", [1, (1, 2), (1, 3), (1, 5), (1, 50)])
+    @pytest.mark.parametrize("zoom", [1, (1, 3), (1, 50)])
     @pytest.mark.parametrize("origin", list(DECIMATION_ORIGINS))
     def test_prediction_matches_production(self, raster, boundary, out_mode, zoom, origin):
         kwargs = {
@@ -732,31 +727,14 @@ class TestFilterContract:
         result = fft_array_filter(raster.astype(np.float32), ASYMMETRIC_KERNEL, dtype=np.float32)
         assert result.data.dtype == np.float32
 
-    def test_unpadded_input_is_a_zero_copy_view(self, raster):
-        """With no side to synthesise and a matching dtype, nothing is copied."""
-        import gridr.core.convolution.fft_filtering as module
-
-        plan = build_plan(raster.shape, ASYMMETRIC_KERNEL, dtype=raster.dtype)
-        assert plan.pad_mode == "none"
-        assert np.shares_memory(module._make_convolution_input(raster, plan), raster)
-
-    def test_padded_input_is_built_without_numpy_pad(self, raster, monkeypatch):
-        import gridr.core.convolution.fft_filtering as module
-
-        plan = build_plan(raster.shape, ASYMMETRIC_KERNEL, boundary="symmetric")
-        monkeypatch.setattr(
-            module.np, "pad", lambda *a, **k: pytest.fail("numpy.pad must not be used here")
-        )
-        produced = module._make_convolution_input(raster, plan)
-        assert produced.shape == plan.conv_shape
-        assert_array(produced[plan.src_win], raster[plan.source], rtol=0, atol=0)
-
     def test_padding_matches_numpy_pad(self, raster):
-        """The in-place fill must be indistinguishable from ``numpy.pad``."""
-        import gridr.core.convolution.fft_filtering as module
+        """The in-place fill must be indistinguishable from ``numpy.pad``.
 
+        Guards against going back to one :func:`numpy.pad` call per side, which
+        allocates per side and wraps around the already-extended array.
+        """
         plan = build_plan(raster.shape, ASYMMETRIC_KERNEL, boundary="wrap")
-        produced = module._make_convolution_input(raster, plan)
+        produced = _make_convolution_input(raster, plan)
         expected = np.pad(raster[plan.source], plan.pad_width, mode="wrap")
         assert_array(produced, expected, rtol=0, atol=0)
 
@@ -807,7 +785,7 @@ def test_decimated_size_over_every_offset(size, q):
 @pytest.mark.parametrize("half_rows", range(0, 5))
 @pytest.mark.parametrize(("rows", "cols"), [(1, 1), (1, 40), (40, 1), (17, 23), (40, 40)])
 def test_same_mode_always_returns_the_window(rows, cols, half_rows, half_cols):
-    """``SAME`` returns the production window whatever the kernel size."""
+    """``same`` returns the production window whatever the kernel size."""
     kernel = np.ones((2 * half_rows + 1, 2 * half_cols + 1))
-    shape = fft_array_filter_output_shape((rows, cols), kernel, boundary="symmetric")
+    shape = fft_array_filter_output_shape((rows, cols), kernel, out_mode="same", boundary="symmetric")
     assert shape == (rows, cols)

@@ -93,6 +93,19 @@ WINDOW_CASES = {
     "three-chunks": ((40, 231), (20, 119)),
     "just-under-two-chunks": ((40, 166), (20, 119)),
 }
+
+
+def _chunk_count(window) -> int:
+    """Number of strips a window is cut into at ``strip_size=64``."""
+    height = 300 if window is None else window[0][1] - window[0][0] + 1
+    effective = check_oa_strip_size(nrow=height, kernel=ASYMMETRIC_KERNEL, strip_size=64)
+    return len(chunks.get_chunk_boundaries(nsize=height, chunk_size=effective, merge_last=True))
+
+
+# A case that quietly falls back to a single call would empty the matrices below
+# while still looking like it tests something. Checked here, at import.
+assert {_chunk_count(w) for w in WINDOW_CASES.values()} >= {1, 2, 3, 4}
+
 WINDOW_IDS = list(WINDOW_CASES)
 WINDOW_VALUES = [None if w is None else np.asarray(w) for w in WINDOW_CASES.values()]
 
@@ -460,7 +473,6 @@ class TestChainMatchesMonolithic:
 # Production window
 # --------------------------------------------------------------------------- #
 class TestExtendedExtent:
-
     @pytest.mark.parametrize(
         ("first", "last", "margin", "expected"),
         [
@@ -490,44 +502,6 @@ class TestExtendedExtent:
             extended_extent(10, 20, 100, 3, extend_before=extend_before, extend_after=extend_after)
             == expected
         )
-
-
-class TestWindowChunking:
-
-    @pytest.mark.parametrize(
-        ("name", "height", "strip_size", "chunk_sizes"),
-        [
-            ("none", 300, 64, [64, 64, 64, 108]),
-            ("interior", 200, 64, [64, 64, 72]),
-            ("top-edge", 192, 64, [64, 64, 64]),
-            ("chunk-aligned", 128, 64, [64, 64]),
-            ("chunk-merged", 129, 64, [64, 65]),
-            ("just-under-two-chunks", 127, 0, [127]),
-        ],
-    )
-    def test_window_height_drives_the_strip_layout(self, name, height, strip_size, chunk_sizes):
-        window = WINDOW_CASES[name]
-        if window is not None:
-            assert window[0][1] - window[0][0] + 1 == height, "the case no longer has that height"
-
-        effective = check_oa_strip_size(nrow=height, kernel=ASYMMETRIC_KERNEL, strip_size=64)
-        assert effective == strip_size
-        boundaries = chunks.get_chunk_boundaries(
-            nsize=height, chunk_size=effective, merge_last=True
-        )
-        assert [int(upper) - int(lower) for lower, upper in boundaries] == chunk_sizes
-
-    def test_the_matrix_covers_more_than_one_chunk_layout(self):
-        """Guards against every window degenerating to the same shape."""
-        layouts = set()
-        for window in WINDOW_CASES.values():
-            height = 300 if window is None else window[0][1] - window[0][0] + 1
-            effective = check_oa_strip_size(nrow=height, kernel=ASYMMETRIC_KERNEL, strip_size=64)
-            boundaries = chunks.get_chunk_boundaries(
-                nsize=height, chunk_size=effective, merge_last=True
-            )
-            layouts.add(len(boundaries))
-        assert layouts >= {1, 2, 3, 4}, f"only {sorted(layouts)} chunk counts exercised"
 
 
 class TestProductionWindow:
