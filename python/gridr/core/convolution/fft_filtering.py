@@ -597,14 +597,13 @@ def _axis_output(
     if out_mode == "same":
         return slice(origin, origin + window_size)
     if out_mode == "valid":
-        trim = kernel_size - 1
-        stop = full_size - trim
-        if stop <= trim:
+        margin = kernel_size // 2
+        if window_size <= 2 * margin:
             raise ValueError(
                 f"the 'valid' output is empty: a kernel of size {kernel_size} does not fit "
-                f"in a convolution input of size {full_size - trim}"
+                f"in a window of size {window_size}"
             )
-        return slice(trim, stop)
+        return slice(origin + margin, origin + window_size - margin)
 
     # Unreachable: build_plan validates the value and every mode is handled
     # above. Kept so that adding a mode fails loudly instead of silently

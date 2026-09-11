@@ -44,7 +44,7 @@ import itertools
 
 import numpy as np
 import pytest
-from scipy import ndimage
+from scipy import ndimage, signal
 
 from gridr.core.convolution.fft_filtering import (
     BOUNDARY_MODES,
@@ -553,6 +553,12 @@ class TestPlanGeometry:
     def test_valid_mode_needs_room(self):
         with pytest.raises(ValueError, match=r"the 'valid' output is empty"):
             build_plan((3, 3), np.ones((5, 5)), out_mode="valid")
+            
+    @pytest.mark.parametrize("boundary", list(BOUNDARY_MODES))
+    def test_valid_shape_does_not_depend_on_the_boundary(self, boundary):
+        plan = build_plan((50, 60), ASYMMETRIC_KERNEL, boundary=boundary, out_mode="valid")
+        margins = kernel_margin(ASYMMETRIC_KERNEL)
+        assert plan.output_shape == (50 - 2 * margins[0], 60 - 2 * margins[1])
 
 
 class TestPredictedShape:
@@ -617,6 +623,14 @@ class TestAgainstReference:
             raster, ASYMMETRIC_KERNEL, boundary="symmetric", method=method
         ).data
         assert_array(produced, reference, rtol=0, atol=1e-9)
+    
+    @pytest.mark.parametrize("boundary", list(BOUNDARY_MODES))
+    def test_valid_matches_scipy(self, raster, boundary):
+        expected = signal.convolve(raster, ASYMMETRIC_KERNEL, mode="valid")
+        produced = fft_array_filter(
+            raster, ASYMMETRIC_KERNEL, boundary=boundary, out_mode="valid"
+        ).data
+        assert_array(produced, expected, rtol=0, atol=1e-9)
 
 
 # --------------------------------------------------------------------------- #
@@ -694,6 +708,32 @@ class TestProperties:
         offset = decimation_offset(q, origin)
         assert_array(decimated, full_rate[offset::q, offset::q], rtol=0, atol=1e-12)
 
+    @pytest.mark.parametrize("boundary", list(BOUNDARY_MODES))
+    @pytest.mark.parametrize("out_mode", list(OUTPUT_MODES))
+    @pytest.mark.parametrize("win", [None, ((10, 40), (10, 50))], ids=["whole", "interior"])
+    def test_validity_window_stability(self, raster, boundary, out_mode, win):
+        """Checks the validity window is the same whatever the boundary and out_mode"""
+        reference = fft_array_filter(
+            raster, ASYMMETRIC_KERNEL, win, boundary=None, out_mode="valid", dtype=np.float64
+        ).data
+        produced = fft_array_filter(
+            raster,
+            ASYMMETRIC_KERNEL,
+            win,
+            boundary=boundary,
+            out_mode=out_mode,
+            dtype=np.float64,
+        ).data
+        
+        plan = build_plan(
+            raster.shape, ASYMMETRIC_KERNEL, win, boundary=boundary, out_mode=out_mode
+        )
+        margins = kernel_margin(ASYMMETRIC_KERNEL)
+        inside = []
+        for axis, geometry in enumerate(plan.per_axis):
+            start = geometry.origin + margins[axis] - geometry.output.start
+            inside.append(slice(start, start + reference.shape[axis]))
+        assert_array(produced[tuple(inside)], reference, rtol=0, atol=1e-9)
 
 # --------------------------------------------------------------------------- #
 # Contracts of the public entry point
