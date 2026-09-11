@@ -80,3 +80,17 @@ max-complexity = 27
 max-line-length = 100
 select = ["E", "F", "W", "C", "B9", "C4", "B"]
 
+[tool.ruff]
+line-length = 100 
+target-version = "py310"
+
+[tool.ruff.lint]
+# E : pycodestyle errors (Flake8)
+# F : Pyflakes (Flake8)
+# I : isort
+# UP : pyupgrade
+select = ["E", "F", "I", "UP", "D"]
+ignore = []
+
+[tool.ruff.lint.isort]
+known-first-party = ["gridr"]
