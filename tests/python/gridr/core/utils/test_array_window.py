@@ -9,23 +9,25 @@ Tests for the gridr.core.utils.array_window module
 
 Command to run test :
 PYTHONPATH=${PWD}/python/:$PYTHONPATH pytest tests/python/gridr/core/utils/test_array_window.py
-"""
+"""  # noqa: E501
+
+import random
+
 import numpy as np
 import pytest
-import random
 import rasterio
 
 from gridr.core.utils.array_window import (
     as_rio_window,
     complementary_window_indices,
+    compose_slice,
     window_apply,
     window_check,
     window_extend,
     window_indices,
+    window_normalize,
     window_overflow,
     window_shape,
-    compose_slice,
-    window_normalize,
 )
 
 ARRAY_00 = np.arange(4 * 7).reshape(4, 7)
@@ -113,7 +115,9 @@ class TestArrayWindow:
         else:
             try:
                 if issubclass(expected, BaseException):
-                    raise Exception(f"The test should have raised an exceptionof type {expected}")
+                    raise Exception(
+                        f"The test should have raised an exceptionof type {expected}"
+                    )
             except Exception:
                 pass
 
@@ -185,7 +189,9 @@ class TestArrayWindow:
             (1, [0, 2]),
         ],
     )
-    def test_complementary_window_indices_free_axes_unconstrained(self, axes, free_axes):
+    def test_complementary_window_indices_free_axes_unconstrained(
+        self, axes, free_axes
+    ):
         shape = (4, 5, 6)
         win = np.array([[1, 2], [1, 3], [2, 4]])
         comp = complementary_window_indices(win, shape, axes=axes)
@@ -239,7 +245,9 @@ class TestArrayWindow:
         else:
             try:
                 if issubclass(expected, BaseException):
-                    raise Exception(f"The test should have raised an exceptionof type {expected}")
+                    raise Exception(
+                        f"The test should have raised an exceptionof type {expected}"
+                    )
             except Exception:
                 pass
 
@@ -264,7 +272,9 @@ class TestArrayWindow:
         else:
             try:
                 if issubclass(expected, BaseException):
-                    raise Exception(f"The test should have raised an exceptionof type {expected}")
+                    raise Exception(
+                        f"The test should have raised an exceptionof type {expected}"
+                    )
             except Exception:
                 pass
 
@@ -273,13 +283,41 @@ class TestArrayWindow:
     @pytest.mark.parametrize(
         "data, expected, testing_decimal",
         [
-            ((ARRAY_00, WIN_00_01, AXES_00_01), (WIN_ARRAY_00_01, NOCHECK_EXPECT_00_01), 6),
-            ((ARRAY_00, WIN_00_02, AXES_00_02), (WIN_ARRAY_00_02, NOCHECK_EXPECT_00_02), 6),
-            ((ARRAY_00, WIN_00_03, AXES_00_03), (WIN_ARRAY_00_03, NOCHECK_EXPECT_00_03), 6),
-            ((ARRAY_00, WIN_00_04, AXES_00_04), (WIN_ARRAY_00_04, NOCHECK_EXPECT_00_04), 6),
-            ((ARRAY_00, WIN_00_05, AXES_00_05), (WIN_ARRAY_00_05, NOCHECK_EXPECT_00_05), 6),
-            ((ARRAY_00, WIN_00_06, AXES_00_06), (WIN_ARRAY_00_06, NOCHECK_EXPECT_00_06), 6),
-            ((ARRAY_00, WIN_00_07, AXES_00_07), (WIN_ARRAY_00_07, NOCHECK_EXPECT_00_07), 6),
+            (
+                (ARRAY_00, WIN_00_01, AXES_00_01),
+                (WIN_ARRAY_00_01, NOCHECK_EXPECT_00_01),
+                6,
+            ),
+            (
+                (ARRAY_00, WIN_00_02, AXES_00_02),
+                (WIN_ARRAY_00_02, NOCHECK_EXPECT_00_02),
+                6,
+            ),
+            (
+                (ARRAY_00, WIN_00_03, AXES_00_03),
+                (WIN_ARRAY_00_03, NOCHECK_EXPECT_00_03),
+                6,
+            ),
+            (
+                (ARRAY_00, WIN_00_04, AXES_00_04),
+                (WIN_ARRAY_00_04, NOCHECK_EXPECT_00_04),
+                6,
+            ),
+            (
+                (ARRAY_00, WIN_00_05, AXES_00_05),
+                (WIN_ARRAY_00_05, NOCHECK_EXPECT_00_05),
+                6,
+            ),
+            (
+                (ARRAY_00, WIN_00_06, AXES_00_06),
+                (WIN_ARRAY_00_06, NOCHECK_EXPECT_00_06),
+                6,
+            ),
+            (
+                (ARRAY_00, WIN_00_07, AXES_00_07),
+                (WIN_ARRAY_00_07, NOCHECK_EXPECT_00_07),
+                6,
+            ),
         ],
     )
     @pytest.mark.parametrize("check", [True, False])
@@ -288,7 +326,6 @@ class TestArrayWindow:
         array, win, axes = data
         expected_array, expected_nocheck = expected
         try:
-
             win_array = window_apply(array, win, axes, check=check)
         except Exception as e:
             if check:
@@ -304,7 +341,8 @@ class TestArrayWindow:
                 try:
                     if issubclass(expected_array, BaseException):
                         raise Exception(
-                            f"The test should have raised an exceptionof type {expected_array}"
+                            "The test should have raised an exception of "
+                            f"type {expected_array}"
                         )
                 except TypeError:
                     pass
@@ -319,7 +357,8 @@ class TestArrayWindow:
                 try:
                     if issubclass(expected_nocheck, BaseException):
                         raise Exception(
-                            f"The test should have raised an exceptionof type {expected_nocheck}. "
+                            f"The test should have raised an exception of "
+                            f"type {expected_nocheck}. "
                             f"Instead it returns {win_array}"
                         )
                 except TypeError:
@@ -371,10 +410,16 @@ class TestArrayWindow:
 
         assert window_check(data2d, win=[(0, 3), (0, 6)], axes=None)
         assert window_check(data2d, win=[(1, 2), (3, 3)], axes=None)
-        assert ~window_check(data2d, win=[(1, 2), (3, 7)], axes=None)  # overflow on axe 1
+        assert ~window_check(
+            data2d, win=[(1, 2), (3, 7)], axes=None
+        )  # overflow on axe 1
         assert window_check(data2d, win=[(1, 2), (3, 7)], axes=0)  # check only on axe 0
-        assert window_check(data2d, win=[(1, 2), (3, 7)], axes=(0,))  # check only on axe 0
-        assert ~window_check(data2d, win=[(1, 2), (3, 7)], axes=1)  # check only on axe 1
+        assert window_check(
+            data2d, win=[(1, 2), (3, 7)], axes=(0,)
+        )  # check only on axe 0
+        assert ~window_check(
+            data2d, win=[(1, 2), (3, 7)], axes=1
+        )  # check only on axe 1
 
         # test empty arrays
         assert ~window_check(np.empty((0, 0)), win=([0, 0]), axes=None)  # empty array
@@ -393,11 +438,14 @@ class TestArrayWindow:
         """Test the window_extent method"""
         # Test outer extent
         np.testing.assert_equal(
-            window_extend(win=[(0, 30), (0, 60)], extent=[[1, 2], [3, 4]]), [(-1, 32), (-3, 64)]
+            window_extend(win=[(0, 30), (0, 60)], extent=[[1, 2], [3, 4]]),
+            [(-1, 32), (-3, 64)],
         )
         # Test inner extent
         np.testing.assert_equal(
-            window_extend(win=[(0, 30), (0, 60)], extent=[[1, 2], [3, 4]], reverse=True),
+            window_extend(
+                win=[(0, 30), (0, 60)], extent=[[1, 2], [3, 4]], reverse=True
+            ),
             [(1, 28), (3, 56)],
         )
 
@@ -408,28 +456,34 @@ class TestArrayWindow:
         data2d = np.arange(nrow * ncol, dtype=np.float32).reshape((nrow, ncol))
         # test case : window covers all data
         np.testing.assert_equal(
-            window_overflow(arr=data2d, win=[(0, 3), (0, 6)], axes=None), [(0, 0), (0, 0)]
+            window_overflow(arr=data2d, win=[(0, 3), (0, 6)], axes=None),
+            [(0, 0), (0, 0)],
         )
-        # test case : window 1st dimension is greater (right) than the data 1st dimension
+        # test case : window 1st dimension is greater (right) than the data 1st
+        # dimension
         np.testing.assert_equal(
-            window_overflow(arr=data2d, win=[(0, 4), (0, 6)], axes=None), [(0, 1), (0, 0)]
+            window_overflow(arr=data2d, win=[(0, 4), (0, 6)], axes=None),
+            [(0, 1), (0, 0)],
         )
         # test case :
         #    - window 1st dimension is greater (right) than the data 1st dimension and
-        #    - window 2nd dimension is greater (left and right) than the data 2nd dimension
+        #    - window 2nd dimension is greater (left and right) than the data 2nd
+        #      dimension
         #    - test performed on all axes
         np.testing.assert_equal(
-            window_overflow(arr=data2d, win=[(0, 4), (-4, 15)], axes=None), [(0, 1), (4, 9)]
+            window_overflow(arr=data2d, win=[(0, 4), (-4, 15)], axes=None),
+            [(0, 1), (4, 9)],
         )
         # test case :
         #    - window 1st dimension is greater (right) than the data 1st dimension and
-        #    - window 2nd dimension is greater (left and right) than the data 2nd dimension
+        #    - window 2nd dimension is greater (left and right) than the data 2nd
+        #      dimension
         #    - test performed on 1st axe only => expect 0 overflow on second axe.
         np.testing.assert_equal(
-            window_overflow(arr=data2d, win=[(0, 4), (-4, 15)], axes=0), [[0, 1], [0, 0]]
+            window_overflow(arr=data2d, win=[(0, 4), (-4, 15)], axes=0),
+            [[0, 1], [0, 0]],
         )
 
-    
     # -------------------------------------------------------------------------
     # Test compose_slice
     # -------------------------------------------------------------------------
@@ -437,42 +491,35 @@ class TestArrayWindow:
         "N, outer, inner",
         [
             # --- simple / nominal cases ---
-            (10, slice(1, None, 2), slice(0, None, 3)), # pure decimation
-            (10, slice(2, 8), slice(1, None, 2)), # windowing + decimation
-            (10, slice(None), slice(None)), # two no-op slices
-            (10, slice(None), slice(2, None, 2)), # no-op outer
-            (10, slice(2, 8), slice(None)), # no-op inner
-
+            (10, slice(1, None, 2), slice(0, None, 3)),  # pure decimation
+            (10, slice(2, 8), slice(1, None, 2)),  # windowing + decimation
+            (10, slice(None), slice(None)),  # two no-op slices
+            (10, slice(None), slice(2, None, 2)),  # no-op outer
+            (10, slice(2, 8), slice(None)),  # no-op inner
             # --- N == 0 / empty lists ---
             (0, slice(None), slice(None)),
             (0, slice(1, 5), slice(0, None, 2)),
-
             # --- N == 1 (negative steps) ---
             (1, slice(None), slice(None)),
             (1, slice(1, -20, -2), slice(-20, 20, None)),
             (1, slice(0, 1), slice(0, None, -1)),
-
             # --- outer/inner that yield an empty result ---
-            (10, slice(5, 5), slice(None)), # outer already empty
-            (10, slice(2, 8), slice(3, 3)), # empty inner
-            (10, slice(8, 2), slice(None)), # empty outer (reversed bounds, +step)
-            (10, slice(None), slice(5, 2)), # empty inner (reversed bounds, +step)
-
+            (10, slice(5, 5), slice(None)),  # outer already empty
+            (10, slice(2, 8), slice(3, 3)),  # empty inner
+            (10, slice(8, 2), slice(None)),  # empty outer (reversed bounds, +step)
+            (10, slice(None), slice(5, 2)),  # empty inner (reversed bounds, +step)
             # --- out-of-bounds offset/factor ---
-            (10, slice(100, None), slice(None)), # outer start > N
-            (10, slice(None, None, 3), slice(100, None)), # inner start > L_o
-            (10, slice(-100, -1), slice(None)), # outer start very negative
-
+            (10, slice(100, None), slice(None)),  # outer start > N
+            (10, slice(None, None, 3), slice(100, None)),  # inner start > L_o
+            (10, slice(-100, -1), slice(None)),  # outer start very negative
             # --- combined negative steps ---
-            (10, slice(None, None, -1), slice(None, None, -1)), # double reversal
+            (10, slice(None, None, -1), slice(None, None, -1)),  # double reversal
             (10, slice(8, 2, -1), slice(1, None, 2)),
             (10, slice(None), slice(None, None, -1)),
             (5, slice(-2, -20, -2), slice(0, None, 1)),
             (3, slice(2, -100, -2), slice(-100, 2, 1)),
-
             # --- combined steps producing a large step_c ---
             (100, slice(1, None, 3), slice(2, None, 5)),
-
             # --- explicit None everywhere ---
             (10, slice(None, None, None), slice(None, None, None)),
         ],
@@ -482,7 +529,6 @@ class TestArrayWindow:
         expected = arr[outer][inner]
         combined = compose_slice(outer, inner, N)
         assert arr[combined] == expected
-
 
     def test_compose_slice_random_exhaustive_domain_positive_and_negative(self):
         """Large random sweep, including negative and out-of-bounds offsets/steps."""
@@ -495,10 +541,14 @@ class TestArrayWindow:
             N = random.choice(Ns)
             arr = list(range(N))
 
-            outer = slice(random.choice(vals), random.choice(vals), random.choice(steps))
+            outer = slice(
+                random.choice(vals), random.choice(vals), random.choice(steps)
+            )
             expected_after_outer = arr[outer]
 
-            inner = slice(random.choice(vals), random.choice(vals), random.choice(steps))
+            inner = slice(
+                random.choice(vals), random.choice(vals), random.choice(steps)
+            )
             expected = expected_after_outer[inner]
 
             combined = compose_slice(outer, inner, N)
@@ -511,7 +561,6 @@ class TestArrayWindow:
 
 
 class TestWindowNormalize:
-
     def test_none_is_the_whole_array(self):
         assert window_normalize(None, (50, 60)).tolist() == [[0, 49], [0, 59]]
 
@@ -542,7 +591,9 @@ class TestWindowNormalize:
             window_normalize(win, (50, 60))
 
     @pytest.mark.parametrize(
-        "win", [((10.0, 20.0), (30.0, 40.0)), ((None, None), (30, 40))], ids=["float", "none"]
+        "win",
+        [((10.0, 20.0), (30.0, 40.0)), ((None, None), (30, 40))],
+        ids=["float", "none"],
     )
     def test_non_integer_bounds_are_a_type_error(self, win):
         with pytest.raises(TypeError, match="integers only"):

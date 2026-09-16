@@ -45,7 +45,6 @@ follows Python's standard slicing, where the `start_index` is inclusive but the
 for its expected input/output convention to avoid off-by-one errors.
 
 """
-from typing import List, Optional, Tuple, Union
 
 import numpy as np
 from rasterio.windows import Window
@@ -96,10 +95,7 @@ def window_expand_ndim(win: np.ndarray, insert: np.ndarray, pos: int = 0) -> np.
     insert = np.copy(np.asarray(insert))
     win = np.copy(win)
 
-    if pos == 0:
-        win = np.vstack((insert, win[:]))
-    else:
-        win = np.vstack((win[:], insert))
+    win = np.vstack((insert, win[:])) if pos == 0 else np.vstack((win[:], insert))
     return win
 
 
@@ -157,7 +153,7 @@ def window_shift(
 
 def window_from_chunk(
     chunk: np.ndarray,
-    origin: Optional[np.ndarray] = None,
+    origin: np.ndarray | None = None,
 ) -> np.ndarray:
     """Returns a window from a chunk definition.
 
@@ -201,8 +197,8 @@ def window_from_chunk(
 def window_indices(
     win: np.ndarray,
     reset_origin: bool = False,
-    axes: Optional[Union[int, Tuple[int, ...], np.ndarray]] = None,
-) -> Tuple[slice]:
+    axes: int | tuple[int, ...] | np.ndarray | None = None,
+) -> tuple[slice]:
     """Get slicing indices for an array from a window definition.
 
     This function converts a window definition (using the module's inclusive
@@ -249,19 +245,19 @@ def window_indices(
         win = win - np.vstack(win[:, 0])
 
     indices = tuple(
-        (
-            slice(None, None) if i not in axes else slice(int(win[i][0]), int(win[i][1] + 1))
-            for i in range(win.shape[0])
-        )
+        slice(None, None)
+        if i not in axes
+        else slice(int(win[i][0]), int(win[i][1] + 1))
+        for i in range(win.shape[0])
     )
     return indices
 
 
 def complementary_window_indices(
     win: np.ndarray,
-    shape: Tuple[int, ...],
-    axes: Optional[Union[int, Tuple[int, ...], np.ndarray]] = None,
-) -> List[Tuple[slice]]:
+    shape: tuple[int, ...],
+    axes: int | tuple[int, ...] | np.ndarray | None = None,
+) -> list[tuple[slice]]:
     """Get slicing indices for the complement of a window in an array.
 
     Parameters
@@ -287,7 +283,9 @@ def complementary_window_indices(
     inside = window_indices(win, axes=axes)
     base = [slice(None)] * len(shape)
 
-    resolved_axes = np.atleast_1d(axes) if axes is not None else np.arange(np.asarray(win).shape[0])
+    resolved_axes = (
+        np.atleast_1d(axes) if axes is not None else np.arange(np.asarray(win).shape[0])
+    )
 
     slices = []
     for ax in resolved_axes:
@@ -310,9 +308,9 @@ def complementary_window_indices(
 
 
 def window_from_indices(
-    indices: Tuple[slice],
-    original_shape: Tuple[int, ...],
-    axes: Optional[Union[int, Tuple[int, ...], np.ndarray]] = None,
+    indices: tuple[slice],
+    original_shape: tuple[int, ...],
+    axes: int | tuple[int, ...] | np.ndarray | None = None,
 ) -> np.ndarray:
     """Reconstructs a window (``win`` convention) from slicing indices.
 
@@ -379,7 +377,7 @@ def window_from_indices(
 def window_apply(
     arr: np.ndarray,
     win: np.ndarray,
-    axes: Optional[Union[int, Tuple[int, ...], np.ndarray]] = None,
+    axes: int | tuple[int, ...] | np.ndarray | None = None,
     check: bool = True,
 ) -> np.ndarray:
     """Applies a window to an array and returns the windowed view.
@@ -435,16 +433,17 @@ def window_apply(
     win = np.asarray(win)
     ret = arr
 
-    if check:
-        if not window_check(arr, win, axes):
-            raise ValueError("window check fails : check window/array " "consistency")
+    if check and not window_check(arr, win, axes):
+        raise ValueError("window check fails : check window/array consistency")
     indices = window_indices(win, reset_origin=False, axes=axes)
     ret = arr[indices]
     return ret
 
 
 def window_check(
-    arr: np.ndarray, win: np.ndarray, axes: Optional[Union[int, Tuple[int, ...], np.ndarray]] = None
+    arr: np.ndarray,
+    win: np.ndarray,
+    axes: int | tuple[int, ...] | np.ndarray | None = None,
 ) -> bool:
     """Checks if a window lies entirely within an array's shape.
 
@@ -501,7 +500,8 @@ def window_check(
         raise ValueError("at least one input array is a scalar")
     elif arr.ndim != win.shape[0]:
         raise ValueError(
-            "array's number of dimension should be equal to the " "window's first dimension length"
+            "array's number of dimension should be equal to the "
+            "window's first dimension length"
         )
     elif arr.size == 0 or win.size == 0:  # empty arrays
         ret = False
@@ -512,10 +512,12 @@ def window_check(
         axes = np.atleast_1d(axes)  # pylint: disable=R0204
 
         # check that first index is greater or equal the last index
-        order_test = [np.nan if i not in axes else win[i][1] - win[i][0] >= 0 for i in axes]
+        order_test = [
+            np.nan if i not in axes else win[i][1] - win[i][0] >= 0 for i in axes
+        ]
         # please note here that nan number are considered as True in np.all
         if ~np.all(order_test):
-            raise IndexError("At least one window's dimension range has invalid " "order")
+            raise IndexError("At least one window's dimension range has invalid order")
 
         # the order is ok ; now check that the window lies in the array
         within_test = [
@@ -526,7 +528,9 @@ def window_check(
     return ret
 
 
-def window_extend(win: np.ndarray, extent: np.ndarray, reverse: bool = False) -> np.ndarray:
+def window_extend(
+    win: np.ndarray, extent: np.ndarray, reverse: bool = False
+) -> np.ndarray:
     """Extends or shrinks a window by a specified extent.
 
     This function adjusts the boundaries of an N-dimensional window by adding
@@ -575,7 +579,9 @@ def window_extend(win: np.ndarray, extent: np.ndarray, reverse: bool = False) ->
 
 
 def window_overflow(
-    arr: np.ndarray, win: np.ndarray, axes: Optional[Union[int, Tuple[int, ...], np.ndarray]] = None
+    arr: np.ndarray,
+    win: np.ndarray,
+    axes: int | tuple[int, ...] | np.ndarray | None = None,
 ) -> np.ndarray:
     """Computes the overflow of a window relative to an array's shape.
 
@@ -622,7 +628,9 @@ def window_overflow(
     axes = np.atleast_1d(axes)  # pylint: disable=R0204
 
     overflow = [
-        [0, 0] if i not in axes else [abs(min(0, win[i][0])), max(0, win[i][1] - arr.shape[i] + 1)]
+        [0, 0]
+        if i not in axes
+        else [abs(min(0, win[i][0])), max(0, win[i][1] - arr.shape[i] + 1)]
         for i in range(arr.ndim)
     ]
 
@@ -630,8 +638,8 @@ def window_overflow(
 
 
 def window_shape(
-    win: np.ndarray, axes: Optional[Union[int, Tuple[int, ...], np.ndarray]] = None
-) -> Tuple[int, ...]:
+    win: np.ndarray, axes: int | tuple[int, ...] | np.ndarray | None = None
+) -> tuple[int, ...]:
     """Computes the shape of a given window.
 
     This function calculates the length of each dimension defined by a window,
@@ -672,7 +680,10 @@ def window_shape(
     axes = np.atleast_1d(axes)  # pylint: disable=R0204
 
     shape = tuple(
-        [None if i not in axes else win[i, 1] - win[i, 0] + 1 for i in range(win.shape[0])]
+        [
+            None if i not in axes else win[i, 1] - win[i, 0] + 1
+            for i in range(win.shape[0])
+        ]
     )
     return shape
 
@@ -742,18 +753,18 @@ def compose_slice(outer: slice, inner: slice, N: int) -> slice:
     """
     Composes two successive slices (arr[outer][inner]) into a single
     equivalent slice, directly applicable to arr (of length N on this axis).
-    
+
     Parameters
     ----------
     outer: slice
         Outer slice
-    
+
     inner: slice
         Inner slice
-        
+
     N: int
         Length of the target axis
-    
+
     Returns
     -------
     slice
@@ -779,9 +790,7 @@ def compose_slice(outer: slice, inner: slice, N: int) -> slice:
     return slice(start_c, stop_c, step_c)
 
 
-def window_normalize(
-        win: Optional[np.ndarray], shape: Tuple[int, ...]
-) -> np.ndarray:
+def window_normalize(win: np.ndarray | None, shape: tuple[int, ...]) -> np.ndarray:
     """Normalize a window to inclusive integer bounds, defaulting to the whole array.
 
     This is the entry point to use when a window is optional: it turns `None`
@@ -841,5 +850,7 @@ def window_normalize(
         if min_idx > max_idx:
             raise ValueError(f"win is empty on axis {axis}: ({min_idx}, {max_idx})")
         if min_idx < 0 or max_idx >= shape[axis]:
-            raise ValueError(f"win {window.tolist()} is not contained in a {shape} array")
+            raise ValueError(
+                f"win {window.tolist()} is not contained in a {shape} array"
+            )
     return window

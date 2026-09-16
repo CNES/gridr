@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -23,12 +22,13 @@ Classes
 -------
 Filter2d : Two-dimensional filter class for frequency domain processing
 """
+
 import numpy as np
 
 from gridr.core.utils import fft
 
 
-class Filter2d(object):
+class Filter2d:
     """Two-dimensional filter class for frequency domain processing.
 
     This class represents a 2D filter with methods for computing spatial kernels

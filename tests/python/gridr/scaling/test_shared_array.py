@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2026 Centre National d'Etudes Spatiales (CNES).
 #
@@ -22,21 +21,21 @@ Covers:
 Run with:
 
 PYTHONPATH=${PWD}/python/:$PYTHONPATH pytest tests/python/gridr/scaling/test_shared_array.py
-"""
+"""  # noqa: E501
 
 from __future__ import annotations
 
+import contextlib
 import multiprocessing as mp
 import os
 import sys
-from typing import Tuple
 
 import numpy as np
 import pytest
 
 # Import module under test
 # Adjust path if the module is named differently in your tree
-from gridr.scaling.shared_array import (  # noqa: E402
+from gridr.scaling.shared_array import (
     SharedArray,
     _has_memfd,
     _MemfdBackend,
@@ -56,7 +55,9 @@ IS_WIN = sys.platform.startswith("win")
 HAS_FORK = "fork" in mp.get_all_start_methods()
 HAS_MEMFD = _has_memfd()
 
-requires_fork = pytest.mark.skipif(not HAS_FORK, reason="fork start method not available")
+requires_fork = pytest.mark.skipif(
+    not HAS_FORK, reason="fork start method not available"
+)
 requires_memfd = pytest.mark.skipif(not HAS_MEMFD, reason="memfd_create not available")
 requires_linux = pytest.mark.skipif(not IS_LINUX, reason="Linux only")
 
@@ -72,7 +73,9 @@ def _worker_fork_write(sa: SharedArray, value: float) -> None:
     sa.array[:] = value
 
 
-def _worker_fork_write_region(sa: SharedArray, region: Tuple[slice, ...], value: float) -> None:
+def _worker_fork_write_region(
+    sa: SharedArray, region: tuple[slice, ...], value: float
+) -> None:
     sa.load()
     sa.array[region] = value
 
@@ -144,10 +147,8 @@ def sa(backend):
     arr.create()
     arr.array[:] = 0.0
     yield arr
-    try:
+    with contextlib.suppress(Exception):
         arr.destroy()
-    except Exception:
-        pass
 
 
 # ===========================================================================
@@ -156,7 +157,6 @@ def sa(backend):
 
 
 class TestBackendResolution:
-
     def test_set_backend_explicit(self):
         set_backend("mmap")
         assert get_backend() == "mmap"
@@ -207,7 +207,6 @@ class TestBackendResolution:
 
 
 class TestLifecycle:
-
     def test_create_exposes_array(self, sa):
         assert sa.array is not None
         assert sa.array.shape == (8, 8)
@@ -249,9 +248,10 @@ class TestLifecycle:
 
 
 class TestArraySemantics:
-
     def test_shape_preserved(self, backend):
-        sa = SharedArray(shape=(3, 5, 7), dtype=np.float64, name=SharedArray.build_name())
+        sa = SharedArray(
+            shape=(3, 5, 7), dtype=np.float64, name=SharedArray.build_name()
+        )
         sa.create()
         assert sa.array.shape == (3, 5, 7)
         sa.destroy()
@@ -422,7 +422,6 @@ class TestSpawnIPC:
 
 
 class TestPayload:
-
     def test_payload_shape_dtype(self, sa, backend):
         payload = sa.get_passing_payload()
         assert payload["kind"] == backend
@@ -459,7 +458,6 @@ class TestPayload:
 
 
 class TestClone:
-
     def test_clone_preserves_attributes(self, sa):
         clone = SharedArray.clone(sa)
         assert clone.shape == sa.shape
@@ -492,7 +490,6 @@ class TestClone:
 
 
 class TestSharedArrayWrap:
-
     def test_replaces_shared_array_with_ndarray(self, sa):
         sa.array[:] = 4.0
 
@@ -546,7 +543,6 @@ class TestSharedArrayWrap:
 
 
 class TestRegistry:
-
     def test_create_and_register_appends(self, backend):
         reg = []
         sa = create_and_register((4, 4), np.float32, reg, prefix="reg")
@@ -584,7 +580,6 @@ class TestRegistry:
 
 
 class TestBuildName:
-
     def test_unique_across_calls(self):
         names = {SharedArray.build_name("x") for _ in range(100)}
         assert len(names) == 100
@@ -604,7 +599,6 @@ class TestBuildName:
 
 
 class TestBackendEdgeCases:
-
     def test_shm_name_collision_raises(self):
         set_backend("shm")
         name = SharedArray.build_name(prefix="dup")
@@ -663,7 +657,9 @@ class TestPickle:
     def test_pool_starmap_fork(self, backend):
         """End-to-end: Pool.starmap pickles arguments — must not raise."""
         sa = SharedArray(
-            shape=(20,), dtype=np.float32, name=SharedArray.build_name(f"pool-{backend}")
+            shape=(20,),
+            dtype=np.float32,
+            name=SharedArray.build_name(f"pool-{backend}"),
         )
         sa.create()
         sa.array[:] = 0.0

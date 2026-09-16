@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -22,8 +21,9 @@
 Module for common IO definitions
 # @doc
 """
+
 from enum import IntEnum
-from typing import Any, Optional, Type
+from typing import Any
 
 import rasterio
 
@@ -32,8 +32,8 @@ class GridRIOMode(IntEnum):
     """
     Defines input/output (I/O) modes for computations.
 
-    This enumeration is used to specify whether a particular operation or data
-    context pertains to input or output.
+    This enumeration is used to specify whether a particular operation
+    or data context pertains to input or output.
 
     Members
     -------
@@ -49,9 +49,9 @@ class GridRIOMode(IntEnum):
 
 class SafeContext:
     """
-    A context manager designed to safely wrap another resource, especially
-    useful for optional resources or those whose context manager status is
-    uncertain.
+    A context manager designed to safely wrap another resource,
+    especially useful for optional resources or those whose context
+    manager status is uncertain.
 
     This context manager provides flexible behavior based on the wrapped
     `resource`:
@@ -60,8 +60,8 @@ class SafeContext:
         * `__enter__` will return `None`.
         * `__exit__` will perform no action.
 
-    2.  If `resource` is a valid context manager (i.e., it implements both
-        `__enter__` and `__exit__` methods):
+    2.  If `resource` is a valid context manager (i.e., it implements
+        both `__enter__` and `__exit__` methods):
         * `SafeContext` will delegate to that resource's `__enter__` and
         `__exit__` methods, effectively behaving just like the wrapped
         resource's own context manager.
@@ -70,9 +70,9 @@ class SafeContext:
         * `__enter__` will simply return the `resource` itself.
         * `__exit__` will perform no action.
 
-    This class ensures that operations within a `with` statement are performed
-    safely without errors even if the underlying resource is `None` or not
-    a proper context manager.
+    This class ensures that operations within a `with` statement are
+    performed safely without errors even if the underlying resource is
+    `None` or not a proper context manager.
 
     Examples
     --------
@@ -80,6 +80,7 @@ class SafeContext:
     ...     def __init__(self, name):
     ...         self.name = name
     ...         print(f"Resource {self.name} created")
+    ...
     ...     def close(self):
     ...         print(f"Resource {self.name} closed")
     >>>
@@ -102,7 +103,8 @@ class SafeContext:
     ...         print(f"Resource name: {res.name}")
     ... # Output: Resource Test created
     ... # Output: Resource name: Test
-    >>> # MyResource.close() is NOT called automatically as it's not a context manager
+    >>> # MyResource.close() is NOT called automatically as it's not
+    a context manager
     """
 
     def __init__(self, resource: Any):
@@ -112,11 +114,12 @@ class SafeContext:
         Parameters
         ----------
         resource : any
-            The resource to be managed by this context manager. This can be:
+            The resource to be managed by this context manager. This can
+            be:
 
               - `None` (no operation will be performed).
-              - An object that implements `__enter__` and `__exit__` methods
-                (a context manager, e.g., a file object, a
+              - An object that implements `__enter__` and `__exit__`
+                methods (a context manager, e.g., a file object, a
                 `rasterio.DatasetReader`).
               - Any other arbitrary Python object.
 
@@ -127,20 +130,20 @@ class SafeContext:
         """
         Enters the runtime context.
 
-        This method determines the behavior based on the type of the wrapped
-        resource:
+        This method determines the behavior based on the type of the
+        wrapped resource:
 
         -   If `self._resource` is `None`, it returns `None`.
-        -   If `self._resource` has an `__enter__` method, it calls and returns
-            the result of `self._resource.__enter__()`.
-        -   Otherwise (if `self._resource` is not `None` but not a context
-            manager), it returns `self._resource` directly.
+        -   If `self._resource` has an `__enter__` method, it calls and
+            returns the result of `self._resource.__enter__()`.
+        -   Otherwise (if `self._resource` is not `None` but not a
+            context manager), it returns `self._resource` directly.
 
         Returns
         -------
         any
-            The managed resource (or its `__enter__` return value), or `None` if
-            the initial resource was `None`.
+            The managed resource (or its `__enter__` return value), or
+            `None` if the initial resource was `None`.
         """
         if self._resource is not None:
             # If the resource has an __enter__ method, call it
@@ -153,59 +156,64 @@ class SafeContext:
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[Any],
-    ) -> Optional[bool]:
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: Any | None,
+    ) -> bool | None:
         """
         Exits the runtime context.
 
-        This method is responsible for cleaning up the wrapped resource if it
-        is a context manager.
+        This method is responsible for cleaning up the wrapped resource
+        if it is a context manager.
 
         -   If `self._resource` is `None`, no action is performed.
         -   If `self._resource` has an `__exit__` method, it calls
-            `self._resource.__exit__(exc_type, exc_val, exc_tb)`. The return
-            value of this delegated `__exit__` method is propagated.
-        -   Otherwise (if `self._resource` is not `None` but does not have
-            an `__exit__` method), no action is performed.
+            `self._resource.__exit__(exc_type, exc_val, exc_tb)`. The
+            return value of this delegated `__exit__` method is
+            propagated.
+        -   Otherwise (if `self._resource` is not `None` but does not
+            have an `__exit__` method), no action is performed.
 
         Parameters
         ----------
         exc_type : type or None
-            The exception type, if an exception was raised inside the `with`
-            block; `None` otherwise.
+            The exception type, if an exception was raised inside the
+            `with` block; `None` otherwise.
 
         exc_val : BaseException or None
-            The exception value, if an exception was raised; `None` otherwise.
+            The exception value, if an exception was raised; `None`
+            otherwise.
 
         exc_tb : traceback or None
-            The traceback object, if an exception was raised; `None` otherwise.
+            The traceback object, if an exception was raised; `None`
+            otherwise.
 
         Returns
         -------
         bool or None
-            `True` if the exception (if any) was handled, `False` if not.
-            Returns `None` if no exception occurred or if the wrapped resource
-            is not a context manager.
+            `True` if the exception (if any) was handled, `False` if
+            not. Returns `None` if no exception occurred or if the
+            wrapped resource is not a context manager.
         """
         if self._resource is not None and hasattr(self._resource, "__exit__"):
             # If the resource has an __exit__ method, call it
             return self._resource.__exit__(exc_type, exc_val, exc_tb)
         # Otherwise, do nothing for None resources or non-context managers
-        return None  # Explicitly return None if no exception was handled by the wrapped resource
+        # Explicitly return None if no exception was handled by the wrapped resource
+        return None
 
 
 def open_raster_or_none(
-    apath: Optional[str], *args: Any, **kwargs: Any
-) -> Optional[rasterio.io.DatasetReader]:
+    apath: str | None, *args: Any, **kwargs: Any
+) -> rasterio.io.DatasetReader | None:
     """
-    Opens a raster file with Rasterio, or returns None if the path is None.
+    Opens a raster file with Rasterio, or returns None if the path is
+    None.
 
-    This utility function provides a convenient way to attempt opening a raster
-    file. If `apath` is `None`, it directly returns `None` without attempting
-    to open a file, which is useful for optional inputs. Otherwise, it
-    delegates to `rasterio.open()`.
+    This utility function provides a convenient way to attempt opening a
+    raster file. If `apath` is `None`, it directly returns `None`
+    without attempting to open a file, which is useful for optional
+    inputs. Otherwise, it delegates to `rasterio.open()`.
 
     Parameters
     ----------
@@ -222,8 +230,9 @@ def open_raster_or_none(
     Returns
     -------
     rasterio.io.DatasetReader or None
-        A `rasterio.io.DatasetReader` object if `apath` is a valid path and
-        the file is successfully opened. Returns `None` if `apath` is `None`.
+        A `rasterio.io.DatasetReader` object if `apath` is a valid path
+        and the file is successfully opened. Returns `None` if `apath`
+        is `None`.
 
     """
     if apath is None:
@@ -232,16 +241,18 @@ def open_raster_or_none(
         return rasterio.open(apath, *args, **kwargs)
 
 
-def safe_raster_open(apath: Optional[str], *args: Any, **kwargs: Any) -> SafeContext:
+def safe_raster_open(apath: str | None, *args: Any, **kwargs: Any) -> SafeContext:
     """
-    Provides a safe context manager for opening raster files, or handling None
-    paths.
+    Provides a safe context manager for opening raster files, or
+    handling None paths.
 
-    This function acts as a convenient alias, streamlining the pattern of
-    using `SafeContext` with the `open_raster_or_none` helper. It creates
-    a `SafeContext` instance, passing it the result of `open_raster_or_none`.
-    This allows for clean `with` statements where the resource can be either
-    an opened `rasterio` dataset or `None` if the path was `None`.
+    This function acts as a convenient alias, streamlining the pattern
+    of using `SafeContext` with the `open_raster_or_none` helper. It
+    creates a `SafeContext` instance, passing it the result of
+    `open_raster_or_none`.
+    This allows for clean `with` statements where the resource can be
+    either an opened `rasterio` dataset or `None` if the path was
+    `None`.
 
     Parameters
     ----------
@@ -250,36 +261,43 @@ def safe_raster_open(apath: Optional[str], *args: Any, **kwargs: Any) -> SafeCon
         will yield `None` when entered.
 
     *args
-        Additional positional arguments to pass through to `rasterio.open()`
-        via `open_raster_or_none`.
+        Additional positional arguments to pass through to
+        `rasterio.open()` via `open_raster_or_none`.
 
     **kwargs
-        Additional keyword arguments to pass through to `rasterio.open()`
-        via `open_raster_or_none`.
+        Additional keyword arguments to pass through to
+        `rasterio.open()` via `open_raster_or_none`.
 
     Returns
     -------
     SafeContext
-        An instance of `SafeContext` that will manage the safe opening and
-        closing of the raster file (or `None` handling) within a `with`
-        statement.
+        An instance of `SafeContext` that will manage the safe opening
+        and closing of the raster file (or `None` handling) within a
+        `with` statement.
 
     Examples
     --------
     >>> # Create a dummy raster for the example
     >>> import os
-    >>> with rasterio.open("example_raster.tif", 'w', driver='GTiff',
-    ...                    height=1, width=1, count=1, dtype='uint8') as dst:
-    ...     dst.write(np.array([[10]], dtype='uint8'), 1)
+    >>> with rasterio.open(
+    ...     "example_raster.tif",
+    ...     "w",
+    ...     driver="GTiff",
+    ...     height=1,
+    ...     width=1,
+    ...     count=1,
+    ...     dtype="uint8",
+    ... ) as dst:
+    ...     dst.write(np.array([[10]], dtype="uint8"), 1)
     >>>
     >>> # Using with a valid path
-    >>> with safe_raster_open("example_raster.tif", 'r') as src:
+    >>> with safe_raster_open("example_raster.tif", "r") as src:
     ...     if src:
     ...         print(f"Raster opened successfully: {src.name}")
     ...         # Perform operations with 'src'
     ...     else:
     ...         print("Raster was not opened.")
-    >>> os.remove("example_raster.tif") # Clean up
+    >>> os.remove("example_raster.tif")  # Clean up
     >>>
     >>> # Using with a None path
     >>> with safe_raster_open(None) as src_none:
@@ -290,7 +308,7 @@ def safe_raster_open(apath: Optional[str], *args: Any, **kwargs: Any) -> SafeCon
     >>>
     >>> # Handling a non-existent file (Rasterio will raise an error)
     >>> try:
-    ...     with safe_raster_open("non_existent_file.tif", 'r') as src_invalid:
+    ...     with safe_raster_open("non_existent_file.tif", "r") as src_invalid:
     ...         pass
     ... except rasterio.errors.RasterioIOError as e:
     ...     print(f"Caught expected Rasterio error: {e}")

@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -26,7 +25,8 @@ Tests for the gridr.core.utils.array_pad module
 
 Command to run test :
 PYTHONPATH=${PWD}/python/:$PYTHONPATH pytest tests/python/gridr/core/utils/test_array_pad.py
-"""
+"""  # noqa: E501
+
 import warnings
 
 import numpy as np
@@ -36,7 +36,6 @@ from gridr.core.utils.array_pad import pad_inplace, pad_inplace_fallback
 
 
 class TestArrayPad:
-
     @pytest.mark.parametrize(
         "array, src_win, pad_width",
         [
@@ -49,7 +48,11 @@ class TestArrayPad:
                 (slice(None, None), slice(None, None)),
                 ((0, 0), (0, 0)),
             ),
-            (np.arange(20).reshape((4, 5)), (slice(1, -2), slice(3, 4)), ((1, 2), (3, 1))),
+            (
+                np.arange(20).reshape((4, 5)),
+                (slice(1, -2), slice(3, 4)),
+                ((1, 2), (3, 1)),
+            ),
             (np.arange(20).reshape((4, 5)), (slice(1, -2), slice(1, -2)), (1, 2)),
             (
                 np.arange(40).reshape((2, 4, 5)),
@@ -58,7 +61,9 @@ class TestArrayPad:
             ),
         ],
     )
-    @pytest.mark.parametrize("mode", ["constant", "edge", "reflect", "symmetric", "wrap"])
+    @pytest.mark.parametrize(
+        "mode", ["constant", "edge", "reflect", "symmetric", "wrap"]
+    )
     @pytest.mark.parametrize("strict_size", [True, False])
     def test_pad_inplace_nominal(self, array, src_win, pad_width, mode, strict_size):
         """Test pad_inplace with various modes, dimensions and strict_size values."""
@@ -70,7 +75,9 @@ class TestArrayPad:
         # Test with numpy.pad for reference
         try:
             if mode == "constant":
-                expected = np.pad(reference_array, pad_width, mode=mode, constant_values=0)
+                expected = np.pad(
+                    reference_array, pad_width, mode=mode, constant_values=0
+                )
             else:
                 expected = np.pad(reference_array, pad_width, mode=mode)
         except Exception:
@@ -96,9 +103,15 @@ class TestArrayPad:
                 constant_values=0,
             )
         else:
-            pad_inplace(original_array, src_win, pad_width, mode=mode, strict_size=strict_size)
+            pad_inplace(
+                original_array, src_win, pad_width, mode=mode, strict_size=strict_size
+            )
             pad_inplace_fallback(
-                original_array_fallback, src_win, pad_width, mode=mode, strict_size=strict_size
+                original_array_fallback,
+                src_win,
+                pad_width,
+                mode=mode,
+                strict_size=strict_size,
             )
 
         # Check shapes match
@@ -109,7 +122,10 @@ class TestArrayPad:
         )
         # Check fallback
         np.testing.assert_allclose(
-            original_array_fallback, expected, rtol=1e-5, err_msg=f"Fallback failed for mode={mode}"
+            original_array_fallback,
+            expected,
+            rtol=1e-5,
+            err_msg=f"Fallback failed for mode={mode}",
         )
 
     @pytest.mark.parametrize("strict_size", [False, True])
@@ -130,7 +146,13 @@ class TestArrayPad:
         if strict_size:
             # Should raise ValueError
             with pytest.raises(ValueError):
-                pad_inplace(original_array, src_win, pad_width, mode=mode, strict_size=strict_size)
+                pad_inplace(
+                    original_array,
+                    src_win,
+                    pad_width,
+                    mode=mode,
+                    strict_size=strict_size,
+                )
 
             # Should raise ValueError
             with pytest.raises(ValueError):
@@ -145,7 +167,13 @@ class TestArrayPad:
             # Should issue warning but not raise
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
-                pad_inplace(original_array, src_win, pad_width, mode=mode, strict_size=strict_size)
+                pad_inplace(
+                    original_array,
+                    src_win,
+                    pad_width,
+                    mode=mode,
+                    strict_size=strict_size,
+                )
                 pad_inplace_fallback(
                     original_array_fallback,
                     src_win,
@@ -156,7 +184,10 @@ class TestArrayPad:
                 assert len(w) >= 1
                 assert issubclass(w[0].category, UserWarning)
                 np.testing.assert_allclose(
-                    original_array, expected, rtol=1e-5, err_msg=f"Fallback failed for mode={mode}"
+                    original_array,
+                    expected,
+                    rtol=1e-5,
+                    err_msg=f"Fallback failed for mode={mode}",
                 )
                 # Check fallback
                 np.testing.assert_allclose(
@@ -178,7 +209,11 @@ class TestArrayPad:
         # Should raise ValueError
         with pytest.raises(ValueError):
             pad_inplace(
-                original_array, src_win, pad_width, mode="constant", strict_size=strict_size
+                original_array,
+                src_win,
+                pad_width,
+                mode="constant",
+                strict_size=strict_size,
             )
         # Should raise ValueError
         with pytest.raises(ValueError):

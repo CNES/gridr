@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -29,6 +28,7 @@ generate reference data
 Reference data will be stored in :
 tests/python/regression/_regression_data/gridr/chain/test_regression_grid_resampling_chain
 """
+
 import copy
 from pathlib import Path
 from typing import Any, Protocol
@@ -224,8 +224,12 @@ def input_data_001_mandrill_grid_f64(tmp_path_factory):
 
     # create input raster mask
     mask_in = np.ones((mandrill.shape[1], mandrill.shape[2]), dtype=np.uint8)
-    rows_idx = np.array([grid_row[10, 10], grid_row[10, 12], grid_row[13, 12], grid_row[13, 10]])
-    cols_idx = np.array([grid_col[10, 10], grid_col[10, 12], grid_col[13, 12], grid_col[13, 10]])
+    rows_idx = np.array(
+        [grid_row[10, 10], grid_row[10, 12], grid_row[13, 12], grid_row[13, 10]]
+    )
+    cols_idx = np.array(
+        [grid_col[10, 10], grid_col[10, 12], grid_col[13, 12], grid_col[13, 10]]
+    )
     row_min = int(np.max((0, np.floor(np.min(rows_idx)))))
     row_max = int(np.min((mandrill.shape[1], np.ceil(np.max(rows_idx)))))
     col_min = int(np.max((0, np.floor(np.min(cols_idx)))))
@@ -240,7 +244,9 @@ def input_data_001_mandrill_grid_f64(tmp_path_factory):
 
     # write grid as tif
     write_array(
-        np.array([grid_row, grid_col]), dtype=input_grid_dtype, fileout=ret["grid_in_path"]["tif"]
+        np.array([grid_row, grid_col]),
+        dtype=input_grid_dtype,
+        fileout=ret["grid_in_path"]["tif"],
     )
 
     # create grid mask
@@ -287,7 +293,9 @@ class GridrAdapter(Protocol):
 
         if params["grid_mask_in"]:
             self._grid_mask_in_path = inputs["grid_mask_in_path"]
-            self._kwargs["grid_mask_in_unmasked_value"] = inputs["grid_mask_in_unmasked_value"]
+            self._kwargs["grid_mask_in_unmasked_value"] = inputs[
+                "grid_mask_in_unmasked_value"
+            ]
             self._kwargs["grid_mask_in_band"] = inputs["grid_mask_in_band"]
         else:
             self._grid_mask_in_path = None
@@ -313,7 +321,9 @@ class GridrAdapter(Protocol):
             self._kwargs["array_src_bands"] = 1
             count = 1
         else:
-            self._kwargs["array_src_bands"] = list(range(1, 1 + self._input_image_nbands))
+            self._kwargs["array_src_bands"] = list(
+                range(1, 1 + self._input_image_nbands)
+            )
             count = self._input_image_nbands
 
         self._output_image_profile = {

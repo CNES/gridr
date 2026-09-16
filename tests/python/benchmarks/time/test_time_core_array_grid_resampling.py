@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -25,6 +24,7 @@ Command : PYTHONPATH=$PWD/python:$PYTHONPATH python \
 --benchmark-storage=./benchmarks/results/pytest/ --benchmark-group-by=group \
 --benchmark-columns=min,median,mean,stddev,iqr,outliers,ops,rounds -v
 """
+
 from __future__ import annotations
 
 import copy
@@ -47,7 +47,8 @@ NSIZES = [
     4000,
 ]
 
-DO_BENCH = True 
+DO_BENCH = True
+
 
 class BenchAdapter(Protocol):
     """Each tool implements that interface"""
@@ -59,7 +60,9 @@ class BenchAdapter(Protocol):
         try:
             self._kwargs = copy.deepcopy(pmap["method"][params["method"]])
         except KeyError as err:
-            raise pytest.skip(f"{self.name} does not support '!r{params['method']}'") from err
+            raise pytest.skip(
+                f"{self.name} does not support '!r{params['method']}'"
+            ) from err
 
     def prepare(self, n: int, params: dict[str, Any]):
         """ """
@@ -203,7 +206,10 @@ class ScipyMapCoordinateAdapter(BenchAdapter):
 ADAPTERS = [GridrAdapter(), ScipyMapCoordinateAdapter()]
 
 if DO_BENCH:
-    @pytest.mark.benchmark(group="time:gridr.core.grid.grid_resampling.array_grid_resampling")
+
+    @pytest.mark.benchmark(
+        group="time:gridr.core.grid.grid_resampling.array_grid_resampling"
+    )
     @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
     @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
     @pytest.mark.parametrize("n", NSIZES)

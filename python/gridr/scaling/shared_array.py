@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2026 Centre National d'Etudes Spatiales (CNES).
 #
@@ -280,13 +279,16 @@ required:
    import numpy as np
    from gridr.scaling.shared_array import SharedArray
 
+
    def worker(sa, idx):
        sa.load()
-       sa.array[idx] = idx ** 2
+       sa.array[idx] = idx**2
+
 
    if __name__ == "__main__":
-       sa = SharedArray(shape=(100,), dtype=np.int64,
-                        name=SharedArray.build_name("squares"))
+       sa = SharedArray(
+           shape=(100,), dtype=np.int64, name=SharedArray.build_name("squares")
+       )
        sa.create()
        ctx = mp.get_context("fork")
        with ctx.Pool(4) as pool:
@@ -314,7 +316,7 @@ Cleaning up registered buffers
 
    buffers = []
    sa1 = create_and_register((512, 512), np.float32, buffers, prefix="grid")
-   sa2 = create_and_register((256, 256), np.uint8,  buffers, prefix="mask")
+   sa2 = create_and_register((256, 256), np.uint8, buffers, prefix="mask")
    # ... pipeline ...
    SharedArray.clear_buffers(buffers)
 
@@ -361,9 +363,11 @@ See also
 * :manpage:`memfd_create(2)`
 * :mod:`multiprocessing.reduction`
 """
+
 from __future__ import annotations
 
 import abc
+import contextlib
 import ctypes
 import logging
 import mmap
@@ -373,7 +377,7 @@ import sys
 from datetime import datetime
 from functools import wraps
 from multiprocessing import shared_memory
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from uuid import uuid4
 
 import numpy as np
@@ -386,8 +390,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _MFD_CLOEXEC = 0x0001
-_memfd_create_supported: Optional[bool] = None
-_libc: Optional[ctypes.CDLL] = None
+_memfd_create_supported: bool | None = None
+_libc: ctypes.CDLL | None = None
 
 
 def _memfd_create(name: str, size: int) -> int:
@@ -398,7 +402,9 @@ def _memfd_create(name: str, size: int) -> int:
         _libc = ctypes.CDLL("libc.so.6", use_errno=True)
 
     if not hasattr(_libc, "memfd_create"):
-        raise NotImplementedError("memfd_create symbol not available in libc (needs glibc >= 2.27)")
+        raise NotImplementedError(
+            "memfd_create symbol not available in libc (needs glibc >= 2.27)"
+        )
 
     _libc.memfd_create.argtypes = (ctypes.c_char_p, ctypes.c_uint)
     _libc.memfd_create.restype = ctypes.c_int
@@ -442,7 +448,7 @@ _VALID_BACKENDS = ("shm", "mmap", "memfd", "auto")
 _ENV_BACKEND = "GRIDR_SHARED_MEMORY_BACKEND"
 _ENV_SHM_MIN_FREE = "GRIDR_SHM_MIN_FREE"
 
-_active_backend: Optional[str] = None
+_active_backend: str | None = None
 _requested_backend: str = "auto"
 
 
@@ -504,7 +510,9 @@ def set_backend(name: str) -> None:
     """Force the backend for subsequent SharedArray creations."""
     global _requested_backend, _active_backend
     if name not in _VALID_BACKENDS:
-        raise ValueError(f"Invalid backend {name!r}. Expected one of {_VALID_BACKENDS}.")
+        raise ValueError(
+            f"Invalid backend {name!r}. Expected one of {_VALID_BACKENDS}."
+        )
     _requested_backend = name
     _active_backend = None
     logger.info(f"shared backend requested: {name}")
@@ -527,21 +535,21 @@ def get_backend() -> str:
 class _MemoryBackend(abc.ABC):
     """Internal backend handle. Owns the OS resource and exposes a numpy view."""
 
-    array: Optional[np.ndarray]
+    array: np.ndarray | None
 
     @abc.abstractmethod
-    def create(self, shape, dtype, name: str) -> None: ...  # noqa: E704
+    def create(self, shape, dtype, name: str) -> None: ...
 
     @abc.abstractmethod
-    def attach(self, shape, dtype, name: str) -> None: ...  # noqa: E704
+    def attach(self, shape, dtype, name: str) -> None: ...
 
     @abc.abstractmethod
-    def detach(self) -> None: ...  # noqa: E704
+    def detach(self) -> None: ...
 
     @abc.abstractmethod
-    def destroy(self) -> None: ...  # noqa: E704
+    def destroy(self) -> None: ...
 
-    def get_passing_payload(self) -> Optional[Dict[str, Any]]:
+    def get_passing_payload(self) -> dict[str, Any] | None:
         """Return backend-specific data needed to reattach in another process."""
         return None
 
@@ -555,8 +563,8 @@ class _ShmBackend(_MemoryBackend):
     """multiprocessing.shared_memory: named POSIX SHM in /dev/shm."""
 
     def __init__(self):
-        self._shm: Optional[shared_memory.SharedMemory] = None
-        self.array: Optional[np.ndarray] = None
+        self._shm: shared_memory.SharedMemory | None = None
+        self.array: np.ndarray | None = None
 
     def create(self, shape, dtype, name: str) -> None:
         dtype = np.dtype(dtype)
@@ -581,10 +589,8 @@ class _ShmBackend(_MemoryBackend):
             try:
                 self._shm.close()
             finally:
-                try:
+                with contextlib.suppress(FileNotFoundError):
                     self._shm.unlink()
-                except FileNotFoundError:
-                    pass
             self._shm = None
 
 
@@ -607,16 +613,16 @@ class _ShmBackend(_MemoryBackend):
 # pointing to the same mmap objects. __reduce__ on the backend then only
 # transmits the key, and __setstate__ looks the object up.
 # ---------------------------------------------------------------------------
-_MMAP_REGISTRY: Dict[str, mmap.mmap] = {}
+_MMAP_REGISTRY: dict[str, mmap.mmap] = {}
 
 
 class _MmapBackend(_MemoryBackend):
     """Anonymous MAP_SHARED mmap. Inherited via fork()."""
 
     def __init__(self):
-        self._mm: Optional[mmap.mmap] = None
-        self._key: Optional[str] = None  # registry key, set on create()
-        self.array: Optional[np.ndarray] = None
+        self._mm: mmap.mmap | None = None
+        self._key: str | None = None  # registry key, set on create()
+        self.array: np.ndarray | None = None
 
     def _build_array(self, shape, dtype) -> np.ndarray:
         flat = np.frombuffer(self._mm, dtype=np.dtype(dtype))
@@ -655,13 +661,12 @@ class _MmapBackend(_MemoryBackend):
         # which would cause BufferError on close otherwise.
         self.array = None
         if self._mm is not None:
-            try:
-                self._mm.close()
-            except BufferError:
-                # A buffer export still exists somewhere (e.g. a clone or
+            with contextlib.suppress(BufferError):
+                # If this fails, a buffer export still exists somewhere (e.g. a clone or
                 # a leftover numpy slice). Let GC reclaim the mapping.
-                pass
+                self._mm.close()
             self._mm = None
+
         # Remove from registry so destroy is observable from any holder.
         if self._key is not None:
             _MMAP_REGISTRY.pop(self._key, None)
@@ -700,10 +705,10 @@ class _MemfdBackend(_MemoryBackend):
 
     def __init__(self):
         self._fd: int = -1
-        self._mm: Optional[mmap.mmap] = None
+        self._mm: mmap.mmap | None = None
         self._size: int = 0
         self._owns_fd: bool = False
-        self.array: Optional[np.ndarray] = None
+        self.array: np.ndarray | None = None
 
     def _build_array(self, shape, dtype) -> np.ndarray:
         flat = np.frombuffer(self._mm, dtype=np.dtype(dtype))
@@ -736,24 +741,20 @@ class _MemfdBackend(_MemoryBackend):
     def destroy(self) -> None:
         self.array = None
         if self._mm is not None:
-            try:
+            with contextlib.suppress(BufferError):
+                # If fails, a buffer export still exists; let GC reclaim it.
                 self._mm.close()
-            except BufferError:
-                # A buffer export still exists; let GC reclaim it.
-                pass
             self._mm = None
         if self._fd >= 0 and self._owns_fd:
-            try:
+            with contextlib.suppress(OSError):
                 os.close(self._fd)
-            except OSError:
-                pass
             self._fd = -1
 
-    def get_passing_payload(self) -> Dict[str, Any]:
+    def get_passing_payload(self) -> dict[str, Any]:
         return {"fd": self._fd, "size": self._size}
 
     @classmethod
-    def from_payload(cls, payload: Dict[str, Any], shape, dtype) -> "_MemfdBackend":
+    def from_payload(cls, payload: dict[str, Any], shape, dtype) -> _MemfdBackend:
         """
         Build a backend from an fd received from the parent (spawn case).
 
@@ -793,7 +794,7 @@ class _MemfdBackend(_MemoryBackend):
 # ---------------------------------------------------------------------------
 
 
-def _make_backend(kind: Optional[str] = None) -> _MemoryBackend:
+def _make_backend(kind: str | None = None) -> _MemoryBackend:
     kind = kind or get_backend()
     if kind == "shm":
         return _ShmBackend()
@@ -822,11 +823,11 @@ class SharedArray:
 
     def __init__(
         self,
-        shape: Tuple[int, ...],
+        shape: tuple[int, ...],
         dtype: np.dtype,
         name: str,
-        array_slice: Optional[Tuple[slice, ...]] = None,
-        _backend: Optional[_MemoryBackend] = None,
+        array_slice: tuple[slice, ...] | None = None,
+        _backend: _MemoryBackend | None = None,
     ):
         """
         Initializes a SharedArray instance.
@@ -856,7 +857,9 @@ class SharedArray:
         self.dtype = np.dtype(dtype)
         self.name = name
         self.array_slice = array_slice
-        self._backend: _MemoryBackend = _backend if _backend is not None else _make_backend()
+        self._backend: _MemoryBackend = (
+            _backend if _backend is not None else _make_backend()
+        )
         self._backend_kind: str = self._infer_kind(self._backend)
 
     @staticmethod
@@ -874,7 +877,7 @@ class SharedArray:
     # ------------------------------------------------------------------
 
     @property
-    def array(self) -> Optional[np.ndarray]:
+    def array(self) -> np.ndarray | None:
         """Numpy view onto the shared buffer.
 
         Returns the writable :class:`numpy.ndarray` exposing the underlying
@@ -1001,7 +1004,7 @@ class SharedArray:
     # Cross-process passing (spawn-friendly, not supported for fork)
     # ------------------------------------------------------------------
 
-    def get_passing_payload(self) -> Dict[str, Any]:
+    def get_passing_payload(self) -> dict[str, Any]:
         """
         Return a serializable dict to reconstruct this SharedArray in
         another process.
@@ -1017,7 +1020,7 @@ class SharedArray:
             :class:`SharedArray` instance to workers and call :meth:`load` in
             the worker.
         """
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "kind": self._backend_kind,
             "shape": self.shape,
             "dtype": str(self.dtype),
@@ -1030,7 +1033,7 @@ class SharedArray:
         return payload
 
     @classmethod
-    def from_payload(cls, payload: Dict[str, Any]) -> "SharedArray":
+    def from_payload(cls, payload: dict[str, Any]) -> SharedArray:
         """Reconstruct a SharedArray in a child process."""
         kind = payload["kind"]
         shape = tuple(payload["shape"])
@@ -1044,18 +1047,26 @@ class SharedArray:
         elif kind == "memfd":
             backend = _MemfdBackend.from_payload(payload["backend"], shape, dtype)
         elif kind == "mmap":
-            raise RuntimeError("mmap backend cannot be reconstructed from a payload; use fork.")
+            raise RuntimeError(
+                "mmap backend cannot be reconstructed from a payload; use fork."
+            )
         else:
             raise ValueError(f"Unknown backend kind {kind!r}")
 
-        return cls(shape=shape, dtype=dtype, name=name, array_slice=array_slice, _backend=backend)
+        return cls(
+            shape=shape,
+            dtype=dtype,
+            name=name,
+            array_slice=array_slice,
+            _backend=backend,
+        )
 
     # ------------------------------------------------------------------
     # Class methods
     # ------------------------------------------------------------------
 
     @classmethod
-    def clone(cls, sa: "SharedArray", **override) -> "SharedArray":
+    def clone(cls, sa: SharedArray, **override) -> SharedArray:
         """
         Build a new SharedArray description from an existing one.
 
@@ -1092,7 +1103,7 @@ class SharedArray:
         return obj
 
     @classmethod
-    def build_name(cls, prefix: Optional[str] = None) -> str:
+    def build_name(cls, prefix: str | None = None) -> str:
         """
         Generates a supposedly unique name for a memory segment.
 
@@ -1258,8 +1269,8 @@ def shared_array_wrap(func):
 def create_and_register(
     shape,
     dtype,
-    register: List,
-    prefix: Optional[str] = None,
+    register: list,
+    prefix: str | None = None,
 ) -> SharedArray:
     """Create a SharedArray and append it to a tracking list."""
     name = SharedArray.build_name(prefix)

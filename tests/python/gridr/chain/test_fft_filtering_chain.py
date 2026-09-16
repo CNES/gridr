@@ -98,8 +98,12 @@ WINDOW_CASES = {
 def _chunk_count(window) -> int:
     """Number of strips a window is cut into at ``strip_size=64``."""
     height = 300 if window is None else window[0][1] - window[0][0] + 1
-    effective = check_oa_strip_size(nrow=height, kernel=ASYMMETRIC_KERNEL, strip_size=64)
-    return len(chunks.get_chunk_boundaries(nsize=height, chunk_size=effective, merge_last=True))
+    effective = check_oa_strip_size(
+        nrow=height, kernel=ASYMMETRIC_KERNEL, strip_size=64
+    )
+    return len(
+        chunks.get_chunk_boundaries(nsize=height, chunk_size=effective, merge_last=True)
+    )
 
 
 # A case that quietly falls back to a single call would empty the matrices below
@@ -116,7 +120,8 @@ SAMPLE_WINDOW_VALUES = [
     for name in SAMPLE_WINDOW_IDS
 ]
 
-#: Local policies only. ``wrap`` is excluded by construction ; see ``TestChainContract``.
+#: Local policies only.
+#: ``wrap`` is excluded by construction ; see ``TestChainContract``.
 LOCAL_POLICIES = [
     "none",
     "reflect",
@@ -151,7 +156,9 @@ def fixture_raster(tmp_path):
     return _make
 
 
-def run_chain(path_in, out_path, out_shape, out_dtype="float64", **kwargs) -> np.ndarray:
+def run_chain(
+    path_in, out_path, out_shape, out_dtype="float64", **kwargs
+) -> np.ndarray:
     """Run the chain into a fresh dataset of `out_shape` and read it back."""
     with (
         rasterio.open(path_in) as ds_in,
@@ -172,7 +179,9 @@ def run_chain(path_in, out_path, out_shape, out_dtype="float64", **kwargs) -> np
         return dataset.read(1)
 
 
-def run_and_compare(path_in, data, out_path, kernel, win=None, *, strip_size=64, **options):
+def run_and_compare(
+    path_in, data, out_path, kernel, win=None, *, strip_size=64, **options
+):
     """Run the chain on `win` and compare with the same call made in one go."""
     shape = fft_array_filter_output_shape(data.shape, kernel, win, **options)
     produced = run_chain(
@@ -240,11 +249,16 @@ class TestDecimatedBlock:
 
     @pytest.mark.parametrize("global_start", [0, 5, 100])
     def test_q_one_keeps_everything_at_its_global_index(self, global_start):
-        assert decimated_block(global_start, 10, 1, 0) == (slice(0, 10, 1), global_start)
+        assert decimated_block(global_start, 10, 1, 0) == (
+            slice(0, 10, 1),
+            global_start,
+        )
 
     @pytest.mark.parametrize("q", range(1, 8))
     @pytest.mark.parametrize("origin", list(DECIMATION_ORIGINS))
-    @pytest.mark.parametrize("cuts", [(0, 7, 19, 40), (0, 1, 2, 40), (0, 13, 26, 40), (0, 40)])
+    @pytest.mark.parametrize(
+        "cuts", [(0, 7, 19, 40), (0, 1, 2, 40), (0, 13, 26, 40), (0, 40)]
+    )
     def test_partition_reconstructs_the_global_decimation(self, q, origin, cuts):
         """Blocks written one after another must tile the decimated output."""
         total = cuts[-1]
@@ -282,10 +296,16 @@ class TestCheckOaStripSize:
     )
     def test_decision(self, nrow, kernel_rows, strip_size, expected):
         kernel = np.ones((kernel_rows, 3))
-        assert check_oa_strip_size(nrow=nrow, kernel=kernel, strip_size=strip_size) == expected
+        assert (
+            check_oa_strip_size(nrow=nrow, kernel=kernel, strip_size=strip_size)
+            == expected
+        )
 
     def test_a_strip_shorter_than_the_kernel(self):
-        assert check_oa_strip_size(nrow=3000, kernel=np.ones((1001, 3)), strip_size=512) == 0
+        assert (
+            check_oa_strip_size(nrow=3000, kernel=np.ones((1001, 3)), strip_size=512)
+            == 0
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -333,7 +353,9 @@ class TestChainMatchesMonolithic:
     @pytest.mark.parametrize("win", SAMPLE_WINDOW_VALUES, ids=SAMPLE_WINDOW_IDS)
     @pytest.mark.parametrize("origin", list(DECIMATION_ORIGINS))
     @pytest.mark.parametrize("q", [2, 3, 4, 7, 13])
-    def test_decimation_phase_survives_every_strip_size(self, raster, tmp_path, win, origin, q):
+    def test_decimation_phase_survives_every_strip_size(
+        self, raster, tmp_path, win, origin, q
+    ):
         """Test strip heights that are not multiples of ``Q``."""
         path_in, data = raster(nrow=301, ncol=138)
         run_and_compare(
@@ -351,7 +373,9 @@ class TestChainMatchesMonolithic:
 
     @pytest.mark.parametrize("win", WINDOW_VALUES, ids=WINDOW_IDS)
     @pytest.mark.parametrize("strip_size", [64, 71, 97, 128, 149])
-    def test_strip_size_does_not_change_the_result(self, raster, tmp_path, win, strip_size):
+    def test_strip_size_does_not_change_the_result(
+        self, raster, tmp_path, win, strip_size
+    ):
         path_in, data = raster()
         run_and_compare(
             path_in,
@@ -399,7 +423,11 @@ class TestChainMatchesMonolithic:
 
     @pytest.mark.parametrize(
         "win",
-        [None, np.asarray(WINDOW_CASES["explicit-full"]), np.asarray(((40, 231), (0, 136)))],
+        [
+            None,
+            np.asarray(WINDOW_CASES["explicit-full"]),
+            np.asarray(((40, 231), (0, 136))),
+        ],
         ids=["none", "explicit-full", "full-width-rows-40-231"],
     )
     def test_column_axis_wrap_is_supported(self, raster, tmp_path, win):
@@ -497,9 +525,13 @@ class TestExtendedExtent:
         ],
         ids=["both", "seam-above", "seam-below", "both-seams"],
     )
-    def test_seam_flags_suppress_the_extension(self, extend_before, extend_after, expected):
+    def test_seam_flags_suppress_the_extension(
+        self, extend_before, extend_after, expected
+    ):
         assert (
-            extended_extent(10, 20, 100, 3, extend_before=extend_before, extend_after=extend_after)
+            extended_extent(
+                10, 20, 100, 3, extend_before=extend_before, extend_after=extend_after
+            )
             == expected
         )
 
@@ -517,7 +549,9 @@ class TestProductionWindow:
         path_in, data = raster()
         window = np.asarray(((50, 249), (30, 129)))
         options = {"boundary": boundary, "out_mode": "same", "zoom": (1, 2)}
-        shape = fft_array_filter_output_shape(data.shape, ASYMMETRIC_KERNEL, window, **options)
+        shape = fft_array_filter_output_shape(
+            data.shape, ASYMMETRIC_KERNEL, window, **options
+        )
         produced = run_chain(
             path_in,
             tmp_path / f"out_{boundary}.tif",
@@ -529,7 +563,9 @@ class TestProductionWindow:
             round_out=False,
             **options,
         )
-        assert_matches_monolithic(produced, data, ASYMMETRIC_KERNEL, win=window, **options)
+        assert_matches_monolithic(
+            produced, data, ASYMMETRIC_KERNEL, win=window, **options
+        )
 
     @pytest.mark.parametrize(
         "win",
@@ -545,7 +581,9 @@ class TestProductionWindow:
             "out_mode": "same",
             "zoom": (1, 2),
         }
-        shape = fft_array_filter_output_shape(data.shape, WIDE_KERNEL, window, **options)
+        shape = fft_array_filter_output_shape(
+            data.shape, WIDE_KERNEL, window, **options
+        )
         produced = run_chain(
             path_in,
             tmp_path / "out_tiny.tif",
@@ -567,7 +605,9 @@ class TestProductionWindow:
             "out_mode": "same",
             "zoom": (1, 1),
         }
-        shape = fft_array_filter_output_shape(data.shape, WIDE_KERNEL, window, **options)
+        shape = fft_array_filter_output_shape(
+            data.shape, WIDE_KERNEL, window, **options
+        )
         produced = run_chain(
             path_in,
             tmp_path / "out_narrow.tif",
@@ -590,7 +630,9 @@ class TestProductionWindow:
             "out_mode": "same",
             "zoom": (1, 2),
         }
-        shape = fft_array_filter_output_shape(data.shape, WIDE_KERNEL, window, **options)
+        shape = fft_array_filter_output_shape(
+            data.shape, WIDE_KERNEL, window, **options
+        )
 
         pixels_read = 0
 
@@ -631,7 +673,9 @@ class TestProductionWindow:
 
         margin = WIDE_KERNEL.shape[0] // 2
         expected = (100 + 2 * margin) * (80 + 2 * margin)
-        assert pixels_read == expected, f"read {pixels_read} pixels, window needs {expected}"
+        assert pixels_read == expected, (
+            f"read {pixels_read} pixels, window needs {expected}"
+        )
         assert pixels_read < 0.1 * data.size
 
 
@@ -654,7 +698,8 @@ class TestChainContract:
         """The "wrap" policy is refused when striping."""
         path_in, data = raster(nrow=200, ncol=80)
         with pytest.raises(
-            NotImplementedError, match="'wrap' boundary is not supported on the row axis"
+            NotImplementedError,
+            match="'wrap' boundary is not supported on the row axis",
         ):
             run_chain(
                 path_in,
@@ -673,7 +718,9 @@ class TestChainContract:
     )
     def test_wrap_needs_the_window_to_span_the_axis(self, raster, tmp_path, win):
         _, data = raster()
-        with pytest.raises(ValueError, match="'wrap' boundary needs the window to span axis 1"):
+        with pytest.raises(
+            ValueError, match="'wrap' boundary needs the window to span axis 1"
+        ):
             fft_array_filter_output_shape(
                 data.shape,
                 ASYMMETRIC_KERNEL,
@@ -682,7 +729,9 @@ class TestChainContract:
             )
 
     @pytest.mark.parametrize("boundary", ["wrap", (("wrap", "wrap"), ("wrap", "wrap"))])
-    def test_row_axis_wrap_works_when_a_single_chunk_is_used(self, raster, tmp_path, boundary):
+    def test_row_axis_wrap_works_when_a_single_chunk_is_used(
+        self, raster, tmp_path, boundary
+    ):
         """The "wrap policy works when monolithic."""
         path_in, data = raster(nrow=200, ncol=80)
         run_and_compare(
@@ -759,7 +808,9 @@ class TestChainContract:
             round_out=True,
             **options,
         )
-        expected, _ = fft_array_filter(data, WIDE_KERNEL, None, dtype=np.float64, **options)
+        expected, _ = fft_array_filter(
+            data, WIDE_KERNEL, None, dtype=np.float64, **options
+        )
         np.testing.assert_array_equal(produced, np.round(expected))
 
     def test_binary_output(self, raster, tmp_path):
@@ -782,8 +833,12 @@ class TestChainContract:
             binary_threshold=1.0,
             **options,
         )
-        expected, _ = fft_array_filter(data, WIDE_KERNEL, None, dtype=np.float64, **options)
-        np.testing.assert_array_equal(produced, (np.abs(expected) >= 1.0).astype(np.uint8))
+        expected, _ = fft_array_filter(
+            data, WIDE_KERNEL, None, dtype=np.float64, **options
+        )
+        np.testing.assert_array_equal(
+            produced, (np.abs(expected) >= 1.0).astype(np.uint8)
+        )
 
     def test_working_dtype_can_be_pinned(self, raster, tmp_path):
         path_in, data = raster(nrow=300, ncol=90, scale=1.0)
@@ -792,7 +847,9 @@ class TestChainContract:
             "out_mode": "same",
             "zoom": (1, 2),
         }
-        shape = fft_array_filter_output_shape(data.shape, ASYMMETRIC_KERNEL, None, **options)
+        shape = fft_array_filter_output_shape(
+            data.shape, ASYMMETRIC_KERNEL, None, **options
+        )
         produced = run_chain(
             path_in,
             tmp_path / "out_f32.tif",
@@ -803,7 +860,9 @@ class TestChainContract:
             round_out=False,
             **options,
         )
-        expected, _ = fft_array_filter(data, ASYMMETRIC_KERNEL, None, dtype=np.float32, **options)
+        expected, _ = fft_array_filter(
+            data, ASYMMETRIC_KERNEL, None, dtype=np.float32, **options
+        )
         np.testing.assert_allclose(produced, expected, rtol=0, atol=1e-5)
 
     def test_input_raster_is_not_modified(self, raster, tmp_path):
@@ -813,7 +872,9 @@ class TestChainContract:
             "out_mode": "same",
             "zoom": (1, 2),
         }
-        shape = fft_array_filter_output_shape(data.shape, ASYMMETRIC_KERNEL, None, **options)
+        shape = fft_array_filter_output_shape(
+            data.shape, ASYMMETRIC_KERNEL, None, **options
+        )
         run_chain(
             path_in,
             tmp_path / "out.tif",

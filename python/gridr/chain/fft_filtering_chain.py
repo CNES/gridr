@@ -199,7 +199,8 @@ def extended_extent(
 
 
 def _normalize_boundary_pairs(boundary: BoundarySpec) -> tuple[tuple[str, str], ...]:
-    """Expand a boundary specification to one validated ``(before, after)`` pair per axis."""
+    """Expand a boundary specification to one validated ``(before, after)`` pair per
+    axis."""
     return tuple(
         tuple(_normalize_boundary_mode(side) for side in pair)
         for pair in tuplify(boundary, ndim=2, fill=None, strict=True)
@@ -430,8 +431,12 @@ def fft_array_filter_fallback(
 
     """
     margins = kernel_margin(kernel, axes=(0, 1))
-    row_low, row_high = extended_extent(int(win[0, 0]), int(win[0, 1]), ds_in.height, margins[0])
-    col_low, col_high = extended_extent(int(win[1, 0]), int(win[1, 1]), ds_in.width, margins[1])
+    row_low, row_high = extended_extent(
+        int(win[0, 0]), int(win[0, 1]), ds_in.height, margins[0]
+    )
+    col_low, col_high = extended_extent(
+        int(win[1, 0]), int(win[1, 1]), ds_in.width, margins[1]
+    )
     read_window = Window.from_slices((row_low, row_high + 1), (col_low, col_high + 1))
     arr = ds_in.read(band, window=read_window)
     local_win = np.asarray(
@@ -608,7 +613,9 @@ def fft_filtering_oa_strip_chain(
         logger = logging.getLogger(__name__)
 
     if out_mode == "valid":
-        raise NotImplementedError("the overlap-add chain does not support the 'valid' output mode")
+        raise NotImplementedError(
+            "the overlap-add chain does not support the 'valid' output mode"
+        )
 
     boundary_pairs = _normalize_boundary_pairs(boundary)
 
@@ -660,9 +667,15 @@ def fft_filtering_oa_strip_chain(
             f"produces {outer_shape}; open ds_out at the decimated shape"
         )
 
-    work_dtype = np.dtype(dtype) if dtype is not None else np.result_type(profile_in.dtype, kernel)
+    work_dtype = (
+        np.dtype(dtype)
+        if dtype is not None
+        else np.result_type(profile_in.dtype, kernel)
+    )
 
-    strip_size = check_oa_strip_size(nrow=nrow_win, kernel=kernel, strip_size=strip_size)
+    strip_size = check_oa_strip_size(
+        nrow=nrow_win, kernel=kernel, strip_size=strip_size
+    )
     chunk_boundaries = chunks.get_chunk_boundaries(
         nsize=nrow_win, chunk_size=strip_size, merge_last=True
     )
@@ -710,7 +723,9 @@ def fft_filtering_oa_strip_chain(
     # Column geometry is identical for every strip, since a strip spans the
     # full window width: one read extent, one local window, one decimated
     # slice inside the full-resolution output.
-    col_extent = extended_extent(int(win[1, 0]), int(win[1, 1]), ds_in.width, margins[1])
+    col_extent = extended_extent(
+        int(win[1, 0]), int(win[1, 1]), ds_in.width, margins[1]
+    )
     local_col_win = (int(win[1, 0]) - col_extent[0], int(win[1, 1]) - col_extent[0])
 
     # The first and last strips are read with their row margins, the others are
@@ -798,7 +813,9 @@ def fft_filtering_oa_strip_chain(
             else:
                 col_fullres = slice(0, carr_out.shape[1])
             col_src = slice(col_fullres.start + offset, col_fullres.stop, zoom_pq.q)
-            n_cols = decimated_size(col_fullres.stop - col_fullres.start, zoom_pq.q, offset)
+            n_cols = decimated_size(
+                col_fullres.stop - col_fullres.start, zoom_pq.q, offset
+            )
             if n_cols != outer_shape[1]:  # pragma: no cover - guards the geometry
                 raise ValueError(
                     f"decimated column count {n_cols} does not match the output "
@@ -819,9 +836,13 @@ def fft_filtering_oa_strip_chain(
             oa_buffer[1:, :] += carr_out[0 : kernel.shape[0], col_fullres]
 
             # oa_buffer row 0 sits one row before this strip's local row 0.
-            row_slice, dst_row = decimated_block(row_phase - 1, oa_nrow, zoom_pq.q, offset)
+            row_slice, dst_row = decimated_block(
+                row_phase - 1, oa_nrow, zoom_pq.q, offset
+            )
             if row_slice is not None:
-                block = oa_buffer[row_slice, col_src.start - col_fullres.start :: zoom_pq.q]
+                block = oa_buffer[
+                    row_slice, col_src.start - col_fullres.start :: zoom_pq.q
+                ]
                 window = Window.from_slices(
                     (dst_row, dst_row + block.shape[0]), (0, block.shape[1])
                 )
@@ -851,17 +872,22 @@ def fft_filtering_oa_strip_chain(
         if chunk_idx == 0:
             noa_start = int(cwin_same[0, 0]) if out_mode == "same" else 0
         if chunk_idx == last_idx:
-            noa_stop = int(cwin_same[0, 1]) + 1 if out_mode == "same" else carr_out.shape[0]
+            noa_stop = (
+                int(cwin_same[0, 1]) + 1 if out_mode == "same" else carr_out.shape[0]
+            )
 
         row_slice, dst_row = decimated_block(
             row_phase + noa_start, noa_stop - noa_start, zoom_pq.q, offset
         )
         if row_slice is not None:
             block = carr_out[
-                noa_start + row_slice.start : noa_start + row_slice.stop : row_slice.step,
+                noa_start + row_slice.start : noa_start
+                + row_slice.stop : row_slice.step,
                 col_src,
             ]
-            window = Window.from_slices((dst_row, dst_row + block.shape[0]), (0, block.shape[1]))
+            window = Window.from_slices(
+                (dst_row, dst_row + block.shape[0]), (0, block.shape[1])
+            )
             logger.debug(
                 f"chunk idx {chunk_idx} - writing non-overlap area to rows "
                 f"{dst_row}:{dst_row + block.shape[0]}"

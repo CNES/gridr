@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2024 Centre National d'Etudes Spatiales (CNES).
 #
@@ -11,7 +10,8 @@ Tests for the gridr.core.grid.grid_rasterize module
 
 Command to run test :
 PYTHONPATH=${PWD}/python/:$PYTHONPATH pytest tests/python/gridr/core/grid/test_grid_rasterize.py
-"""
+"""  # noqa: E501
+
 import numpy as np
 import pytest
 import shapely
@@ -36,19 +36,26 @@ ALG_RASTERIZE_SHAPELY_CONTAINS = {
     "alg": GridRasterizeAlg.SHAPELY,
     "kwargs_alg": {"shapely_predicate": ShapelyPredicate.CONTAINS},
 }
-ALG_RASTERIZE_RASTERIO_RASTERIZE = {"alg": GridRasterizeAlg.RASTERIO_RASTERIZE, "kwargs_alg": {}}
+ALG_RASTERIZE_RASTERIO_RASTERIZE = {
+    "alg": GridRasterizeAlg.RASTERIO_RASTERIZE,
+    "kwargs_alg": {},
+}
 
 
 # Test context using grid_coords
 DATAx00_COORDS = (
     (
-        np.array([0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5]),  # grid_coords
+        np.array(
+            [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5]
+        ),  # grid_coords
         np.array([0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5]),
     ),
     None,
     None,
     None,  # shape, origin, resolution
-    [shapely.geometry.Polygon([(2.5, 2.5), (4.5, 2.5), (4.5, 6.5), (2.5, 6.5)])],  # geometries
+    [
+        shapely.geometry.Polygon([(2.5, 2.5), (4.5, 2.5), (4.5, 6.5), (2.5, 6.5)])
+    ],  # geometries
     1e-6,  # geometries buffer
     None,
     np.uint8,
@@ -60,7 +67,9 @@ DATAx00_SOR = (
     (8, 12),
     (0.5, 0.5),
     (1, 1),  # shape, origin, resolution
-    [shapely.geometry.Polygon([(2.5, 2.5), (4.5, 2.5), (4.5, 6.5), (2.5, 6.5)])],  # geometries
+    [
+        shapely.geometry.Polygon([(2.5, 2.5), (4.5, 2.5), (4.5, 6.5), (2.5, 6.5)])
+    ],  # geometries
     1e-6,  # geometries buffer
     None,
     np.uint8,
@@ -123,7 +132,9 @@ DATAx01_SOR = (
     (8, 12),
     (0.0, 0.0),
     (1, 1),  # shape, origin, resolution
-    [shapely.geometry.Polygon([(2.5, 2.5), (4.5, 2.5), (4.5, 6.5), (2.5, 6.5)])],  # geometries
+    [
+        shapely.geometry.Polygon([(2.5, 2.5), (4.5, 2.5), (4.5, 6.5), (2.5, 6.5)])
+    ],  # geometries
     1e-6,  # geometries buffer
     None,
     np.uint8,
@@ -186,7 +197,9 @@ DATAx02_SOR = (
     (8, 12),
     (0.5, 0.5),
     (2, 1),  # shape, origin, resolution
-    [shapely.geometry.Polygon([(2.5, 2.5), (7.5, 2.5), (7.5, 9.5), (2.5, 9.5)])],  # geometries
+    [
+        shapely.geometry.Polygon([(2.5, 2.5), (7.5, 2.5), (7.5, 9.5), (2.5, 9.5)])
+    ],  # geometries
     1e-6,  # geometries buffer
     None,
     np.uint8,
@@ -225,7 +238,9 @@ DATAx03_SOR = (
     (8, 12),
     (0.0, 0.0),
     (2, 1),  # shape, origin, resolution
-    [shapely.geometry.Polygon([(2.5, 2.5), (7.5, 2.5), (7.5, 9.5), (2.5, 9.5)])],  # geometries
+    [
+        shapely.geometry.Polygon([(2.5, 2.5), (7.5, 2.5), (7.5, 9.5), (2.5, 9.5)])
+    ],  # geometries
     None,  # geometries buffer
     None,
     np.uint8,
@@ -281,7 +296,9 @@ DATAx04_ERROR_EXPECTED = {
 # Test error : coords and SOR are passed
 DATAx05_ERROR = (
     (
-        np.array([0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5]),  # grid_coords
+        np.array(
+            [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5]
+        ),  # grid_coords
         np.array([0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5]),
     ),
     (8, 12),
@@ -303,7 +320,9 @@ DATAx05_ERROR_EXPECTED = {
 # Test error : coords and SOR are passed (except origin)
 DATAx06_ERROR = (
     (
-        np.array([0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5]),  # grid_coords
+        np.array(
+            [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5]
+        ),  # grid_coords
         np.array([0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5]),
     ),
     (8, 12),
@@ -328,7 +347,9 @@ DATAx07 = (
     (8, 12),
     (0.0, 0.0),
     (2, 1),  # shape, origin, resolution
-    [shapely.geometry.Polygon([(2.5, 2.5), (7.5, 2.5), (7.5, 9.5), (2.5, 9.5)])],  # geometries
+    [
+        shapely.geometry.Polygon([(2.5, 2.5), (7.5, 2.5), (7.5, 9.5), (2.5, 9.5)])
+    ],  # geometries
     None,  # geometries buffer
     np.zeros((8, 12), dtype=np.uint8, order="C"),
     None,
@@ -367,7 +388,9 @@ DATAx08_ERROR = (
     (8, 12),
     (0.0, 0.0),
     (2, 1),  # shape, origin, resolution
-    [shapely.geometry.Polygon([(2.5, 2.5), (7.5, 2.5), (7.5, 9.5), (2.5, 9.5)])],  # geometries
+    [
+        shapely.geometry.Polygon([(2.5, 2.5), (7.5, 2.5), (7.5, 9.5), (2.5, 9.5)])
+    ],  # geometries
     None,  # geometries buffer
     np.zeros((8, 12), dtype=np.uint8, order="C"),
     np.uint8,
@@ -380,14 +403,16 @@ DATAx08_ERROR_EXPECTED = {
     GridRasterizeAlg.RASTERIO_RASTERIZE: ValueError,
 }
 
-# Test output usage : force error by passing an output shape that does not corresponds to the
-# computation grid
+# Test output usage : force error by passing an output shape that does not corresponds
+# to the computation grid
 DATAx09_ERROR = (
     None,  # grid_coords
     (8, 12),
     (0.0, 0.0),
     (2, 1),  # shape, origin, resolution
-    [shapely.geometry.Polygon([(2.5, 2.5), (7.5, 2.5), (7.5, 9.5), (2.5, 9.5)])],  # geometries
+    [
+        shapely.geometry.Polygon([(2.5, 2.5), (7.5, 2.5), (7.5, 9.5), (2.5, 9.5)])
+    ],  # geometries
     None,  # geometries buffer
     np.zeros((7, 12), dtype=np.uint8, order="C"),
     None,
@@ -406,7 +431,9 @@ DATAx10_ERROR = (
     (8, 12),
     (0.0, 0.0),
     (2, 1),  # shape, origin, resolution
-    [shapely.geometry.Polygon([(2.5, 2.5), (7.5, 2.5), (7.5, 9.5), (2.5, 9.5)])],  # geometries
+    [
+        shapely.geometry.Polygon([(2.5, 2.5), (7.5, 2.5), (7.5, 9.5), (2.5, 9.5)])
+    ],  # geometries
     None,  # geometries buffer
     None,
     None,
@@ -425,7 +452,9 @@ DATAx11 = (
     (8, 12),
     (0.0, 0.0),
     (2, 1),  # shape, origin, resolution
-    [shapely.geometry.Polygon([(2.5, 2.5), (7.5, 2.5), (7.5, 9.5), (2.5, 9.5)])],  # geometries
+    [
+        shapely.geometry.Polygon([(2.5, 2.5), (7.5, 2.5), (7.5, 9.5), (2.5, 9.5)])
+    ],  # geometries
     None,  # geometries buffer
     np.zeros((8, 12), dtype=bool, order="C"),
     None,
@@ -444,7 +473,8 @@ DATAx11_EXPECTED = {
             [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
         ]
     ),
-    GridRasterizeAlg.RASTERIO_RASTERIZE: ValueError,  # Bool not supported by rasterio rasterize
+    # Bool not supported by rasterio rasterize
+    GridRasterizeAlg.RASTERIO_RASTERIZE: ValueError,
 }
 
 
@@ -482,9 +512,11 @@ class TestGridRasterize:
         """Test a regular grid interpolation with mask
 
         Args:
-            data : input data as a tuple containing the shape, origin and resolution tuples
+            data : input data as a tuple containing the shape, origin
+                and resolution tuples
             expected: expected data
-            testing_decimal: decimal precision used for np.testing.assert_array_almost_equal
+            testing_decimal: decimal precision used for
+                np.testing.assert_array_almost_equal
         """
         # Create intial coordinates so that new coordinates match an integer sequence
         grid_coords, shape, origin, resolution, polygons, _, output, dtype = data
@@ -500,13 +532,7 @@ class TestGridRasterize:
         outer = 0 if inner else 1
 
         mask = None
-        expected_dtype = None
-        # expected_output_id = None
-        if output is not None:
-            expected_dtype = output.dtype
-            # expected_output_id = id(output.data)
-        else:
-            expected_dtype = dtype
+        expected_dtype = output.dtype if output is not None else dtype
         try:
             mask = rasterize_polygons_shapely(
                 polygons,
@@ -531,7 +557,8 @@ class TestGridRasterize:
             try:
                 if issubclass(expected_mask, BaseException):
                     raise Exception(
-                        f"The test should have raised an exceptionof type {expected_mask}"
+                        "The test should have raised an exceptionof ",
+                        f"type {expected_mask}",
                     )
             except TypeError:
                 pass
@@ -543,7 +570,9 @@ class TestGridRasterize:
                 else:
                     expected_mask_inv = np.where(expected_mask, 0, 1)
                 expected_mask = expected_mask_inv
-            np.testing.assert_array_almost_equal(mask, expected_mask, decimal=testing_decimal)
+            np.testing.assert_array_almost_equal(
+                mask, expected_mask, decimal=testing_decimal
+            )
             assert mask.dtype == expected_dtype
             # if expected_output_id is not None:
             #    assert(id(mask.data) == expected_output_id)
@@ -566,13 +595,17 @@ class TestGridRasterize:
         ],
     )
     @pytest.mark.parametrize("inner", [0, 1])
-    def test_rasterio_rasterize(self, data, expected, alg_param, testing_decimal, inner):
+    def test_rasterio_rasterize(
+        self, data, expected, alg_param, testing_decimal, inner
+    ):
         """Test a regular grid interpolation with mask
 
         Args:
-            data : input data as a tuple containing the shape, origin and resolution tuples
+            data : input data as a tuple containing the shape, origin
+                and resolution tuples
             expected: expected data
-            testing_decimal: decimal precision used for np.testing.assert_array_almost_equal
+            testing_decimal: decimal precision used for
+                np.testing.assert_array_almost_equal
         """
         # Create intial coordinates so that new coordinates match an integer sequence
         _, shape, origin, resolution, polygons, geometry_buffer, output, dtype = data
@@ -617,7 +650,8 @@ class TestGridRasterize:
             try:
                 if issubclass(expected_mask, BaseException):
                     raise Exception(
-                        f"The test should have raised an exceptionof type {expected_mask}"
+                        "The test should have raised an exceptionof ",
+                        f"type {expected_mask}",
                     )
             except TypeError:
                 pass
@@ -629,7 +663,9 @@ class TestGridRasterize:
                 else:
                     expected_mask_inv = np.where(expected_mask, 0, 1)
                 expected_mask = expected_mask_inv
-            np.testing.assert_array_almost_equal(mask, expected_mask, decimal=testing_decimal)
+            np.testing.assert_array_almost_equal(
+                mask, expected_mask, decimal=testing_decimal
+            )
             assert mask.dtype == expected_dtype
 
             if False:
@@ -662,12 +698,23 @@ class TestGridRasterize:
         """Test a regular grid interpolation with mask
 
         Args:
-            data : input data as a tuple containing the shape, origin and resolution tuples
+            data : input data as a tuple containing the shape, origin
+                and resolutiontuples
             expected: expected data
-            testing_decimal: decimal precision used for np.testing.assert_array_almost_equal
+            testing_decimal: decimal precision used for
+                np.testing.assert_array_almost_equal
         """
         # Create intial coordinates so that new coordinates match an integer sequence
-        grid_coords, shape, origin, resolution, polygons, geometry_buffer, output, dtype = data
+        (
+            grid_coords,
+            shape,
+            origin,
+            resolution,
+            polygons,
+            geometry_buffer,
+            output,
+            dtype,
+        ) = data
         # alg_params :
         alg = alg_param["alg"]
 
@@ -726,7 +773,8 @@ class TestGridRasterize:
             try:
                 if issubclass(expected_mask, BaseException):
                     raise Exception(
-                        f"The test should have raised an exceptionof type {expected_mask}"
+                        "The test should have raised an exceptionof ",
+                        f"type {expected_mask}",
                     )
             except TypeError:
                 pass
@@ -739,7 +787,9 @@ class TestGridRasterize:
                 else:
                     expected_mask_inv = np.where(expected_mask, 0, 1)
                 expected_mask = expected_mask_inv
-            np.testing.assert_array_almost_equal(mask, expected_mask, decimal=testing_decimal)
+            np.testing.assert_array_almost_equal(
+                mask, expected_mask, decimal=testing_decimal
+            )
             assert mask.dtype == expected_dtype
 
             if False:

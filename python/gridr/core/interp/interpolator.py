@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -20,8 +19,9 @@
 """
 GridR interpolators interface
 """
+
 # pylint: disable=C0413
-from typing import Any, TypeAlias, Union
+from typing import Any, TypeAlias
 
 from gridr.cdylib import (
     BSpline3Interpolator,
@@ -60,27 +60,27 @@ INTERPOLATOR_TYPE_CLASSES = {
 }
 
 # Type alias for interpolator classes
-Interpolator: TypeAlias = Union[
-    NearestInterpolator,
-    LinearInterpolator,
-    OptimizedBicubicInterpolator,
-    BSpline3Interpolator,
-    BSpline5Interpolator,
-    BSpline7Interpolator,
-    BSpline9Interpolator,
-    BSpline11Interpolator,
-]
+Interpolator: TypeAlias = (
+    NearestInterpolator
+    | LinearInterpolator
+    | OptimizedBicubicInterpolator
+    | BSpline3Interpolator
+    | BSpline5Interpolator
+    | BSpline7Interpolator
+    | BSpline9Interpolator
+    | BSpline11Interpolator
+)
 
-BSplineInterpolator: TypeAlias = Union[
-    BSpline3Interpolator,
-    BSpline5Interpolator,
-    BSpline7Interpolator,
-    BSpline9Interpolator,
-    BSpline11Interpolator,
-]
+BSplineInterpolator: TypeAlias = (
+    BSpline3Interpolator
+    | BSpline5Interpolator
+    | BSpline7Interpolator
+    | BSpline9Interpolator
+    | BSpline11Interpolator
+)
 
 # Type alias for all accepted interpolator identifier
-InterpolatorIdentifier: TypeAlias = Union[str, PyInterpolatorType, Interpolator]
+InterpolatorIdentifier: TypeAlias = str | PyInterpolatorType | Interpolator
 
 
 def get_interpolator(
@@ -88,25 +88,27 @@ def get_interpolator(
     **kwargs: Any,
 ) -> Interpolator:
     """
-    Get an instance of an interpolator either from its short name, from its enum type, or from an
-    existing object.
+    Get an instance of an interpolator either from its short name, from
+    its enum type, or from an existing object.
 
-    If `interp` is either a `str` or a `PyInterpolatorType`, the corresponding interpolator object
-    is instantiated with the provided keyword arguments. If an existing interpolator object is
-    passed as an argument, the method returns it as is without any modification.
+    If `interp` is either a `str` or a `PyInterpolatorType`, the
+    corresponding interpolator object is instantiated with the provided
+    keyword arguments. If an existing interpolator object is passed as
+    an argument, the method returns it as is without any modification.
 
     Parameters
     ----------
     interp : Union[str, PyInterpolatorType, InterpolatorClasses]
         The interpolator identifier. It can be:
 
-        - A string representing the interpolator name (e.g., "nearest", "linear", "cubic", etc.).
+        - A string representing the interpolator name (e.g., "nearest",
+          "linear", "cubic", etc.).
         - A `PyInterpolatorType` enum value.
         - An instance of an interpolator class.
 
     **kwargs : Any
-        Additional keyword arguments to pass to the interpolator constructor if a new instance is
-        created.
+        Additional keyword arguments to pass to the interpolator
+        constructor if a new instance is created.
 
     Returns
     -------
@@ -158,7 +160,8 @@ def is_bspline(
     interp : Union[str, PyInterpolatorType, InterpolatorClasses]
         The interpolator identifier. It can be:
 
-        - A string representing the interpolator name (e.g., "nearest", "linear", "cubic", etc.).
+        - A string representing the interpolator name (e.g., "nearest",
+          "linear", "cubic", etc.).
         - A `PyInterpolatorType` enum value.
         - An interpolator class
         - An instance of an interpolator class.
@@ -185,11 +188,14 @@ def is_bspline(
         PyInterpolatorType.BSpline11,
         BSpline11Interpolator,
     )
-    check_object = (
-        isinstance(interp, BSpline3Interpolator)
-        or isinstance(interp, BSpline5Interpolator)
-        or isinstance(interp, BSpline7Interpolator)
-        or isinstance(interp, BSpline9Interpolator)
-        or isinstance(interp, BSpline11Interpolator)
+    check_object = isinstance(
+        interp,
+        (
+            BSpline3Interpolator,
+            BSpline5Interpolator,
+            BSpline7Interpolator,
+            BSpline9Interpolator,
+            BSpline11Interpolator,
+        ),
     )
     return check_type or check_object

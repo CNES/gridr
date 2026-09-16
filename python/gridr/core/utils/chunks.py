@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -20,8 +19,8 @@
 """
 Chunk definition computation module
 """
+
 import itertools
-from typing import List, Tuple
 
 import numpy as np
 
@@ -30,7 +29,7 @@ def get_chunk_boundaries(
     nsize: int,
     chunk_size: int,
     merge_last: bool = False,
-) -> List[Tuple[int, int]]:
+) -> list[tuple[int, int]]:
     """Compute chunks from a total number of elements and a chunk size.
 
     This method divides a total number of elements (`nsize`) into smaller
@@ -65,8 +64,10 @@ def get_chunk_boundaries(
         (0, nsize),
     ]
     if chunk_size > 0 and chunk_size < nsize:
-        limits = np.unique(np.concatenate((np.arange(0, nsize + 1, chunk_size), [nsize])))
-        intervals = np.asarray(list(zip(limits[0:-1], limits[1:], strict=True)))
+        limits = np.unique(
+            np.concatenate((np.arange(0, nsize + 1, chunk_size), [nsize]))
+        )
+        intervals = np.asarray(list(itertools.pairwise(limits)))
         if merge_last and (intervals[-1][1] - intervals[-1][0]) < chunk_size:
             # change second last interval upper limit to correspond to last interval
             # upper limit.
@@ -77,8 +78,8 @@ def get_chunk_boundaries(
 
 
 def get_chunk_shapes(
-    shape: Tuple, chunk_shape: Tuple, merge_last=False
-) -> List[Tuple[Tuple[int, int]]]:
+    shape: tuple, chunk_shape: tuple, merge_last=False
+) -> list[tuple[tuple[int, int]]]:
     """Compute chunks for an N-dimensional shape.
 
     This method calculates the tensor product of chunks for each axis of an

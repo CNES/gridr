@@ -119,7 +119,14 @@ ConvolutionMethod = Literal["overlap_add", "fft", "direct", "auto"]
 #: ``(Q - 1) // 2``.
 DecimationOrigin = Literal["centered", "leading"]
 
-BOUNDARY_MODES: tuple[str, ...] = ("none", "reflect", "symmetric", "edge", "wrap", "constant")
+BOUNDARY_MODES: tuple[str, ...] = (
+    "none",
+    "reflect",
+    "symmetric",
+    "edge",
+    "wrap",
+    "constant",
+)
 OUTPUT_MODES: tuple[str, ...] = ("same", "full", "valid")
 CONVOLUTION_METHODS: tuple[str, ...] = ("overlap_add", "fft", "direct", "auto")
 DECIMATION_ORIGINS: tuple[str, ...] = ("centered", "leading")
@@ -221,7 +228,9 @@ def normalize_zoom(zoom: int | tuple[int, int]) -> Zoom:
     else:
         items = list(zoom)
         if len(items) != 2:
-            raise ValueError(f"zoom pair must contain exactly two integers, got {len(items)}")
+            raise ValueError(
+                f"zoom pair must contain exactly two integers, got {len(items)}"
+            )
         p = _as_index(items[0], "zoom P")
         q = _as_index(items[1], "zoom Q")
 
@@ -333,7 +342,9 @@ def normalize_axes(axes: int | Iterable[int] | None, ndim: int) -> tuple[int, ..
 # --------------------------------------------------------------------------- #
 # Kernel preparation
 # --------------------------------------------------------------------------- #
-def align_kernel(kernel: ArrayLike, ndim: int, axes: int | Iterable[int] | None = None) -> NDArray:
+def align_kernel(
+    kernel: ArrayLike, ndim: int, axes: int | Iterable[int] | None = None
+) -> NDArray:
     """Broadcast a kernel so that it has exactly ``ndim`` dimensions.
 
     Two shapes are accepted:
@@ -382,7 +393,9 @@ def align_kernel(kernel: ArrayLike, ndim: int, axes: int | Iterable[int] | None 
     )
 
 
-def pad_kernel_to_odd(kernel: NDArray, axes: int | Iterable[int] | None = None) -> NDArray:
+def pad_kernel_to_odd(
+    kernel: NDArray, axes: int | Iterable[int] | None = None
+) -> NDArray:
     """Right-pad the kernel with zeros so its size is odd along every target axis.
 
     An odd size gives the kernel an unambiguous centre, without which the
@@ -402,7 +415,9 @@ def pad_kernel_to_odd(kernel: NDArray, axes: int | Iterable[int] | None = None) 
     return np.pad(kernel, widths, mode="constant", constant_values=0)
 
 
-def kernel_margin(kernel: NDArray, axes: int | Iterable[int] | None = None) -> tuple[int, ...]:
+def kernel_margin(
+    kernel: NDArray, axes: int | Iterable[int] | None = None
+) -> tuple[int, ...]:
     """Half-width of an odd-sized kernel along every axis, ``0`` outside ``axes``.
 
     ``axes`` is normalized here, so the function is safe to call on its own.
@@ -487,7 +502,10 @@ class FilterPlan:
         convention.
         """
         return np.asarray(
-            [(axis.origin, axis.origin + axis.window_size - 1) for axis in self.per_axis],
+            [
+                (axis.origin, axis.origin + axis.window_size - 1)
+                for axis in self.per_axis
+            ],
             dtype=np.int64,
         )
 
@@ -505,7 +523,8 @@ class FilterPlan:
     def src_win(self) -> tuple[slice, ...]:
         """Where the real samples sit inside the padded convolution input."""
         return tuple(
-            slice(axis.pad_width[0], axis.conv_size - axis.pad_width[1]) for axis in self.per_axis
+            slice(axis.pad_width[0], axis.conv_size - axis.pad_width[1])
+            for axis in self.per_axis
         )
 
     @property
@@ -569,7 +588,9 @@ def _normalize_boundary(
 
     pairs = [tuple(_normalize_boundary_mode(side) for side in pair) for pair in pairs]
 
-    effective = [pair if axis in axes else ("none", "none") for axis, pair in enumerate(pairs)]
+    effective = [
+        pair if axis in axes else ("none", "none") for axis, pair in enumerate(pairs)
+    ]
 
     policies = {side for pair in effective for side in pair if side is not NO_BOUNDARY}
     if len(policies) > 1:
@@ -579,7 +600,9 @@ def _normalize_boundary(
             "Sides choose whether they are padded, not how."
         )
 
-    where = tuple((pair[0] is not NO_BOUNDARY, pair[1] is not NO_BOUNDARY) for pair in effective)
+    where = tuple(
+        (pair[0] is not NO_BOUNDARY, pair[1] is not NO_BOUNDARY) for pair in effective
+    )
     return where, policies.pop() if policies else NO_BOUNDARY
 
 
@@ -600,7 +623,8 @@ def _axis_output(
         margin = kernel_size // 2
         if window_size <= 2 * margin:
             raise ValueError(
-                f"the 'valid' output is empty: a kernel of size {kernel_size} does not fit "
+                "the 'valid' output is empty: a kernel of size "
+                f"{kernel_size} does not fit "
                 f"in a window of size {window_size}"
             )
         return slice(origin + margin, origin + window_size - margin)
@@ -943,11 +967,15 @@ def fft_array_filter(
             zoom=zoom,
             decimation=decimation,
             axes=axes,
-            dtype=dtype if dtype is not None else np.result_type(arr, np.asarray(kernel)),
+            dtype=dtype
+            if dtype is not None
+            else np.result_type(arr, np.asarray(kernel)),
             method=method,
         )
     elif plan.per_axis and len(plan.per_axis) != arr.ndim:
-        raise ValueError(f"plan was built for a {len(plan.per_axis)}-d array, got {arr.ndim}-d")
+        raise ValueError(
+            f"plan was built for a {len(plan.per_axis)}-d array, got {arr.ndim}-d"
+        )
 
     conv_arr = _make_convolution_input(arr, plan)
     conv_kernel = np.asarray(plan.kernel, dtype=plan.dtype)

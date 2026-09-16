@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -20,7 +19,6 @@
 """
 Grid commons module
 """
-from typing import List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -28,9 +26,9 @@ from gridr.core.utils.array_window import window_apply
 
 
 def grid_full_resolution_shape(
-    shape: Tuple[int, int],
-    resolution: Tuple[int, int],
-) -> Tuple[int, int]:
+    shape: tuple[int, int],
+    resolution: tuple[int, int],
+) -> tuple[int, int]:
     """Compute the grid's shape at full resolution.
 
     Parameters
@@ -54,10 +52,10 @@ def grid_full_resolution_shape(
 
 
 def grid_regular_coords_1d(
-    shape: Tuple[int, int],
-    origin: Tuple[float, float],
-    resolution: Tuple[int, int],
-) -> Tuple[np.ndarray, np.ndarray]:
+    shape: tuple[int, int],
+    origin: tuple[float, float],
+    resolution: tuple[int, int],
+) -> tuple[np.ndarray, np.ndarray]:
     """Create grid one-dimensional coordinates based on its output shape,
     origin, and resolution.
 
@@ -110,11 +108,11 @@ def grid_regular_coords_1d(
 
 
 def grid_regular_coords_2d(
-    shape: Tuple[int, int],
-    origin: Tuple[float, float],
-    resolution: Tuple[int, int],
+    shape: tuple[int, int],
+    origin: tuple[float, float],
+    resolution: tuple[int, int],
     sparse: bool = False,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Create 2D grid coordinates considering its output shape, origin, and
     resolution.
 
@@ -175,8 +173,8 @@ def grid_regular_coords_2d(
 
 
 def regular_grid_shape_origin_resolution(
-    grid_coords: Union[Tuple[np.ndarray], List[np.ndarray], np.ndarray],
-) -> Tuple[Tuple[int, int], Tuple[float, float], Tuple[int, int]]:
+    grid_coords: tuple[np.ndarray] | list[np.ndarray] | np.ndarray,
+) -> tuple[tuple[int, int], tuple[float, float], tuple[int, int]]:
     """Compute shape, origin, and resolution from a regular grid.
 
     The grid can be provided as a 3D grid, a tuple of two 2D arrays, or a
@@ -231,10 +229,10 @@ def regular_grid_shape_origin_resolution(
 
 
 def window_apply_grid_coords(
-    grid_coords: Union[Tuple[np.ndarray], List[np.ndarray], np.ndarray],
+    grid_coords: tuple[np.ndarray] | list[np.ndarray] | np.ndarray,
     win: np.ndarray,
     check: bool = True,
-) -> Tuple[np.ndarray]:
+) -> tuple[np.ndarray]:
     """Apply a window to a grid.
 
     The grid can be given as a 3D grid, a tuple of two 2D arrays, or a tuple
@@ -293,11 +291,11 @@ def window_apply_grid_coords(
 
 
 def window_apply_shape_origin_resolution(
-    shape: Tuple[int, int],
-    origin: Tuple[float, float],
-    resolution: Tuple[int, int],
+    shape: tuple[int, int],
+    origin: tuple[float, float],
+    resolution: tuple[int, int],
     win: np.ndarray,
-) -> Tuple[Tuple[int, int], Tuple[float, float], Tuple[int, int]]:
+) -> tuple[tuple[int, int], tuple[float, float], tuple[int, int]]:
     """Apply a window to the shape, origin, and resolution arguments.
 
     This function adjusts the grid's defining parameters (shape, origin, and
@@ -351,11 +349,11 @@ def window_apply_shape_origin_resolution(
 
 
 def check_grid_coords_definition(
-    grid_coords: Optional[Tuple[np.ndarray, np.ndarray]],
-    shape: Optional[Tuple[int, int]],
-    origin: Optional[Tuple[float, float]],
-    resolution: Optional[Tuple[int, int]],
-) -> Union[Tuple[np.ndarray, np.ndarray], np.ndarray]:
+    grid_coords: tuple[np.ndarray, np.ndarray] | None,
+    shape: tuple[int, int] | None,
+    origin: tuple[float, float] | None,
+    resolution: tuple[int, int] | None,
+) -> tuple[np.ndarray, np.ndarray] | np.ndarray:
     """Check grid definition's parameters.
 
     This function validates and, if necessary, computes the grid coordinates
@@ -396,7 +394,12 @@ def check_grid_coords_definition(
     # Check computation domain arguments
     # We make sure here that the coordinates are either given through the
     # grid_coords argument or the 3 arguments 'shape', 'origin' and 'resolution'
-    if grid_coords is not None and shape is None and origin is None and resolution is None:
+    if (
+        grid_coords is not None
+        and shape is None
+        and origin is None
+        and resolution is None
+    ):
         try:
             if len(grid_coords) != 2:
                 raise TypeError(
@@ -407,16 +410,17 @@ def check_grid_coords_definition(
             if not isinstance(grid_coords[0], np.ndarray) or not isinstance(
                 grid_coords[1], np.ndarray
             ):
-                raise TypeError("The grid_coords argument items must be numpy " "ndarrays")
+                raise TypeError("The grid_coords argument items must be numpy ndarrays")
 
             if grid_coords[0].ndim != grid_coords[1].ndim:
-                raise TypeError("The grid_coords items must have the same " " dimension")
+                raise TypeError("The grid_coords items must have the same  dimension")
 
             if grid_coords[0].ndim not in (1, 2):
-                raise TypeError("The grid_coords items must be of dimension 1 " "or 2")
+                raise TypeError("The grid_coords items must be of dimension 1 or 2")
         except IndexError as e:
             raise TypeError(
-                "The grid_coords argument should be indexable and " "have at least 2 dimensions."
+                "The grid_coords argument should be indexable and "
+                "have at least 2 dimensions."
             ) from e
 
         # Check grid_coords input type and adapt it to be a tuple of 2 2d arrays
@@ -429,7 +433,10 @@ def check_grid_coords_definition(
             pass
 
     elif (
-        grid_coords is None and shape is not None and origin is not None and resolution is not None
+        grid_coords is None
+        and shape is not None
+        and origin is not None
+        and resolution is not None
     ):
         # TODO : more checks here
         pass
@@ -444,9 +451,9 @@ def check_grid_coords_definition(
 
 
 def grid_resolution_window(
-    resolution: Tuple[int, int],
+    resolution: tuple[int, int],
     win: np.ndarray,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Compute the required window in the input grid to cover a target window.
 
     This method determines the necessary window in the input grid to encompass
@@ -503,10 +510,10 @@ def grid_resolution_window(
 
 
 def grid_resolution_window_safe(
-    resolution: Tuple[int, int],
+    resolution: tuple[int, int],
     win: np.ndarray,
-    grid_shape: Tuple[int, int],
-) -> Tuple[np.ndarray, np.ndarray]:
+    grid_shape: tuple[int, int],
+) -> tuple[np.ndarray, np.ndarray]:
     """Compute the required window in the input grid to cover a target window
     safely.
 
@@ -556,7 +563,9 @@ def grid_resolution_window_safe(
     #        resolution along each axis.
     # - stop index : we must take the nearest upper index in the input grid.
     grid_win_start = win[:, 0] // resolution_arr
-    grid_win_stop = win[:, 1] // resolution_arr + (win[:, 1] % resolution_arr != 0).astype(int)
+    grid_win_stop = win[:, 1] // resolution_arr + (
+        win[:, 1] % resolution_arr != 0
+    ).astype(int)
 
     # Store original start for rel_win adjustment
     original_grid_win_start = np.copy(grid_win_start)
@@ -569,7 +578,8 @@ def grid_resolution_window_safe(
     # Extend stop if needed, but not beyond grid_shape_arr - 1
     # This addresses cases like [5,5] needing to become [5,6] but grid max is 5
     grid_win_stop[needs_extension_mask] = np.minimum(
-        grid_win_stop[needs_extension_mask] + 1, grid_shape_arr[needs_extension_mask] - 1
+        grid_win_stop[needs_extension_mask] + 1,
+        grid_shape_arr[needs_extension_mask] - 1,
     )
 
     # Re-evaluate current_size after initial stop extension
@@ -583,7 +593,9 @@ def grid_resolution_window_safe(
     # If still too small, try to shift start backward, but not below 0
     # This handles cases like [5,5] becoming [5,5] because grid max was 5, now
     # try [4,5]
-    grid_win_start[needs_extension_mask] = np.maximum(grid_win_start[needs_extension_mask] - 1, 0)
+    grid_win_start[needs_extension_mask] = np.maximum(
+        grid_win_start[needs_extension_mask] - 1, 0
+    )
 
     # Final check: ensure stop is not less than start for validity, but don't
     # force minimum size here (The above logic already ensures minimum size
@@ -608,7 +620,8 @@ def grid_resolution_window_safe(
     # We need to adjust rel_win_start based on the *actual* grid_win_start
     # compared to the original, ideal grid_win_start.
     rel_win_start_adjusted = (
-        win[:, 0] % resolution_arr + (original_grid_win_start - grid_win_start) * resolution_arr
+        win[:, 0] % resolution_arr
+        + (original_grid_win_start - grid_win_start) * resolution_arr
     )
 
     # The relative stop should just be the relative start plus the span of the

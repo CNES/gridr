@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -22,7 +21,8 @@ Tests for the gridr.core.interp.interpolator module
 
 Command to run test :
 PYTHONPATH=${PWD}/python/:$PYTHONPATH pytest tests/python/gridr/core/interp/test_interpolator.py
-"""
+"""  # noqa: E501
+
 import numpy as np
 import pytest
 
@@ -50,13 +50,41 @@ class TestInterpolator:
             ("nearest", {}, "nearest"),
             ("linear", {}, "linear"),
             ("cubic", {}, "optimized_bicubic"),
-            ("bspline3", {"epsilon": 1e-6, "mask_influence_threshold": 0.01}, "bspline3"),
-            ("bspline3", {"epsilon": None, "mask_influence_threshold": 0.01}, TypeError),
-            ("bspline3", {"epsilon": 1e-6, "mask_influence_threshold": None}, TypeError),
-            ("bspline5", {"epsilon": 1e-6, "mask_influence_threshold": 0.01}, "bspline5"),
-            ("bspline7", {"epsilon": 1e-6, "mask_influence_threshold": 0.01}, "bspline7"),
-            ("bspline9", {"epsilon": 1e-6, "mask_influence_threshold": 0.01}, "bspline9"),
-            ("bspline11", {"epsilon": 1e-6, "mask_influence_threshold": 0.01}, "bspline11"),
+            (
+                "bspline3",
+                {"epsilon": 1e-6, "mask_influence_threshold": 0.01},
+                "bspline3",
+            ),
+            (
+                "bspline3",
+                {"epsilon": None, "mask_influence_threshold": 0.01},
+                TypeError,
+            ),
+            (
+                "bspline3",
+                {"epsilon": 1e-6, "mask_influence_threshold": None},
+                TypeError,
+            ),
+            (
+                "bspline5",
+                {"epsilon": 1e-6, "mask_influence_threshold": 0.01},
+                "bspline5",
+            ),
+            (
+                "bspline7",
+                {"epsilon": 1e-6, "mask_influence_threshold": 0.01},
+                "bspline7",
+            ),
+            (
+                "bspline9",
+                {"epsilon": 1e-6, "mask_influence_threshold": 0.01},
+                "bspline9",
+            ),
+            (
+                "bspline11",
+                {"epsilon": 1e-6, "mask_influence_threshold": 0.01},
+                "bspline11",
+            ),
             ("nearest", {"param": 0}, TypeError),
             ("bspline3", {}, TypeError),
             ("unknown", {}, Exception),
@@ -95,11 +123,31 @@ class TestInterpolator:
             (NearestInterpolator(), {}, "nearest"),
             (LinearInterpolator(), {}, "linear"),
             (OptimizedBicubicInterpolator(), {}, "optimized_bicubic"),
-            (BSpline3Interpolator(epsilon=1e-7, mask_influence_threshold=0.01), {}, "bspline3"),
-            (BSpline5Interpolator(epsilon=1e-7, mask_influence_threshold=0.01), {}, "bspline5"),
-            (BSpline7Interpolator(epsilon=1e-7, mask_influence_threshold=0.01), {}, "bspline7"),
-            (BSpline9Interpolator(epsilon=1e-7, mask_influence_threshold=0.01), {}, "bspline9"),
-            (BSpline11Interpolator(epsilon=1e-7, mask_influence_threshold=0.01), {}, "bspline11"),
+            (
+                BSpline3Interpolator(epsilon=1e-7, mask_influence_threshold=0.01),
+                {},
+                "bspline3",
+            ),
+            (
+                BSpline5Interpolator(epsilon=1e-7, mask_influence_threshold=0.01),
+                {},
+                "bspline5",
+            ),
+            (
+                BSpline7Interpolator(epsilon=1e-7, mask_influence_threshold=0.01),
+                {},
+                "bspline7",
+            ),
+            (
+                BSpline9Interpolator(epsilon=1e-7, mask_influence_threshold=0.01),
+                {},
+                "bspline9",
+            ),
+            (
+                BSpline11Interpolator(epsilon=1e-7, mask_influence_threshold=0.01),
+                {},
+                "bspline11",
+            ),
             (object(), {}, Exception),
         ],
     )
@@ -120,7 +168,8 @@ class TestInterpolator:
         Args:
             interp: The input to the get_interpolator function (string, enum, or object)
             interp_args: Dictionary of arguments to pass to the interpolator constructor
-            expected: Either the expected shortname string or the expected exception type
+            expected: Either the expected shortname string or the expected exception
+                type
 
         Raises:
             AssertionError: If the test fails to verify the expected behavior
@@ -145,11 +194,26 @@ class TestInterpolator:
             (NearestInterpolator(), [1] * 4),
             (LinearInterpolator(), [1] * 4),
             (OptimizedBicubicInterpolator(), [2] * 4),
-            (BSpline3Interpolator(epsilon=1e-7, mask_influence_threshold=0.01), [16] * 4),
-            (BSpline5Interpolator(epsilon=1e-5, mask_influence_threshold=0.01), [28] * 4),
-            (BSpline7Interpolator(epsilon=1e-3, mask_influence_threshold=0.01), [37] * 4),
-            (BSpline9Interpolator(epsilon=1e-12, mask_influence_threshold=0.01), [121] * 4),
-            (BSpline11Interpolator(epsilon=1e-6, mask_influence_threshold=0.01), [105] * 4),
+            (
+                BSpline3Interpolator(epsilon=1e-7, mask_influence_threshold=0.01),
+                [16] * 4,
+            ),
+            (
+                BSpline5Interpolator(epsilon=1e-5, mask_influence_threshold=0.01),
+                [28] * 4,
+            ),
+            (
+                BSpline7Interpolator(epsilon=1e-3, mask_influence_threshold=0.01),
+                [37] * 4,
+            ),
+            (
+                BSpline9Interpolator(epsilon=1e-12, mask_influence_threshold=0.01),
+                [121] * 4,
+            ),
+            (
+                BSpline11Interpolator(epsilon=1e-6, mask_influence_threshold=0.01),
+                [105] * 4,
+            ),
         ],
     )
     def test_interpolator_total_margins(
@@ -181,7 +245,8 @@ class TestInterpolator:
 
         Raises:
             AssertionError: If the actual margins don't match the expected values.
-            Exception: If the initialize() or total_margins() methods raise an unexpected exception.
+            Exception: If the initialize() or total_margins() methods
+                raise an unexpected exception.
         """
         interp.initialize()
         total_margins = np.asarray(interp.total_margins())
@@ -194,11 +259,26 @@ class TestInterpolator:
             (NearestInterpolator(), None),
             (LinearInterpolator(), None),
             (OptimizedBicubicInterpolator(), None),
-            (BSpline3Interpolator(epsilon=1e-7, mask_influence_threshold=0.01), ValueError),
-            (BSpline5Interpolator(epsilon=1e-5, mask_influence_threshold=0.01), ValueError),
-            (BSpline7Interpolator(epsilon=1e-3, mask_influence_threshold=0.01), ValueError),
-            (BSpline9Interpolator(epsilon=1e-12, mask_influence_threshold=0.01), ValueError),
-            (BSpline11Interpolator(epsilon=1e-6, mask_influence_threshold=0.01), ValueError),
+            (
+                BSpline3Interpolator(epsilon=1e-7, mask_influence_threshold=0.01),
+                ValueError,
+            ),
+            (
+                BSpline5Interpolator(epsilon=1e-5, mask_influence_threshold=0.01),
+                ValueError,
+            ),
+            (
+                BSpline7Interpolator(epsilon=1e-3, mask_influence_threshold=0.01),
+                ValueError,
+            ),
+            (
+                BSpline9Interpolator(epsilon=1e-12, mask_influence_threshold=0.01),
+                ValueError,
+            ),
+            (
+                BSpline11Interpolator(epsilon=1e-6, mask_influence_threshold=0.01),
+                ValueError,
+            ),
         ],
     )
     def test_interpolator_total_margins_no_initialize(
@@ -211,8 +291,8 @@ class TestInterpolator:
 
         This test verifies that:
         1. For some interpolators, total_margins() can be called without initialize()
-        2. For other interpolators, total_margins() raises ValueError when called without
-           initialize()
+        2. For other interpolators, total_margins() raises ValueError when called
+           without initialize()
 
         Args:
             interp: An instance of an interpolator class to be tested.
@@ -225,24 +305,26 @@ class TestInterpolator:
             ValueError: If the test fails to verify the expected exception
 
         Notes:
-            - For interpolators where None is expected, the test verifies that total_margins()
-              can be called without initialize() and does not raise any Exception.
-            - For interpolators where ValueError is expected, the test verifies that
-              calling total_margins() without initialize() raises the expected exception
+            - For interpolators where None is expected, the test
+              verifies that total_margins() can be called without
+              initialize() and does not raise any Exception.
+            - For interpolators where ValueError is expected, the test
+              verifies that calling total_margins() without initialize()
+              raises the expected exception
         """
         if expected is None:
             # Test that no exception is raised
             _ = np.asarray(interp.total_margins())
         else:
             # Test that the expected exception is raised
-            with pytest.raises(expected) as exc_info:  # noqa: B908
+            with pytest.raises(expected) as exc_info:
                 _ = np.asarray(interp.total_margins())
 
                 if not isinstance(exc_info.value, expected):
                     pytest.fail(
                         f"Expected exception of type {expected.__name__}, "
                         f"but got {type(exc_info.value).__name__} instead. "
-                        f"Exception message: {str(exc_info.value)}"
+                        f"Exception message: {exc_info.value!s}"
                     )
 
     @pytest.mark.parametrize(

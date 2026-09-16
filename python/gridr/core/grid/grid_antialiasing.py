@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -20,12 +19,15 @@
 """
 Grid antialiasing module
 """
+
 from enum import Enum
-from typing import Optional, Tuple
 
 import numpy as np
 
-from gridr.core.filter.frequential_interp_2d import FrequentialInterpolator2d, ReciprocalCellModel
+from gridr.core.filter.frequential_interp_2d import (
+    FrequentialInterpolator2d,
+    ReciprocalCellModel,
+)
 from gridr.core.filter.lattice import Domain, Lattice2d
 from gridr.core.grid.grid_utils import array_compute_resampling_grid_geometries
 
@@ -42,16 +44,16 @@ class ComputeAntialiasingFilterStatus(Enum):
 def compute_antialiasing_filter_from_grid(
     grid_row: np.ndarray,
     grid_col: np.ndarray,
-    grid_resolution: Tuple[int, int],
+    grid_resolution: tuple[int, int],
     filter_nrow: int,
     filter_ncol: int,
-    filter_cutoff_tanh_slope: Optional[float] = 10.0,
+    filter_cutoff_tanh_slope: float | None = 10.0,
     filter_cutoff_shift: float = 0.0,
-    win: Optional[np.ndarray] = None,
-    grid_mask: Optional[np.ndarray] = None,
-    grid_mask_valid_value: Optional[int] = 1,
-    grid_nodata: Optional[float] = None,
-) -> Tuple[ComputeAntialiasingFilterStatus, np.ndarray]:
+    win: np.ndarray | None = None,
+    grid_mask: np.ndarray | None = None,
+    grid_mask_valid_value: int | None = 1,
+    grid_nodata: float | None = None,
+) -> tuple[ComputeAntialiasingFilterStatus, np.ndarray]:
     """
     Create an antialiasing filter adapted to the grid geometric transformation.
     The filter will be well adapted to regular grid.
@@ -171,7 +173,9 @@ def compute_antialiasing_filter_from_grid(
                 cell_geometry=cell_geometry, cutoff_tanh_slope=None, cutoff_shift=0.0
             ),
         )
-        filter_interp.compute(nrow=128, ncol=128, oversampling_row=1, oversampling_col=1)
+        filter_interp.compute(
+            nrow=128, ncol=128, oversampling_row=1, oversampling_col=1
+        )
 
         # Lets check if the filter corresponds to a dirac
         if filter_interp.is_dirac():

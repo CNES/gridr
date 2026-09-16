@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -20,8 +19,9 @@
 """
 Grid rasterize module
 """
+
+import contextlib
 from enum import IntEnum
-from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import shapely
@@ -41,9 +41,11 @@ from gridr.core.utils.array_window import window_check
 DFLT_GEOMETRY_BUFFER_DISTANCE = 1e-6
 
 # Define a type alias for geometry input
-GeometryType = Union[
-    shapely.geometry.Polygon, List[shapely.geometry.Polygon], shapely.geometry.MultiPolygon
-]
+GeometryType = (
+    shapely.geometry.Polygon
+    | list[shapely.geometry.Polygon]
+    | shapely.geometry.MultiPolygon
+)
 """
 Type alias for valid geometry inputs.
 
@@ -127,7 +129,7 @@ class ShapelyPredicate(IntEnum):
 
 
 # Prepare geometries so that it correspond to a list of Polygons
-def geometry_to_polygon_list(geom: shapely.geometry) -> List[shapely.geometry.Polygon]:
+def geometry_to_polygon_list(geom: shapely.geometry) -> list[shapely.geometry.Polygon]:
     """Convert a Shapely Polygon or MultiPolygon geometry to a list of polygons.
 
     This function takes a single `shapely.geometry.Polygon` or
@@ -158,21 +160,21 @@ def geometry_to_polygon_list(geom: shapely.geometry) -> List[shapely.geometry.Po
 
 
 def _grid_rasterize_check_params(
-    grid_coords: Optional[Tuple[np.ndarray, np.ndarray]],
-    shape: Optional[Tuple[int, int]],
-    origin: Optional[Tuple[float, float]],
-    resolution: Optional[Tuple[int, int]],
-    win: Optional[np.ndarray],
-    geometry: Optional[GeometryType],
-    output: Optional[np.ndarray] = None,
-    dtype: Optional[np.dtype] = None,
+    grid_coords: tuple[np.ndarray, np.ndarray] | None,
+    shape: tuple[int, int] | None,
+    origin: tuple[float, float] | None,
+    resolution: tuple[int, int] | None,
+    win: np.ndarray | None,
+    geometry: GeometryType | None,
+    output: np.ndarray | None = None,
+    dtype: np.dtype | None = None,
     reduce: bool = False,
-) -> Tuple[
-    Union[np.ndarray, Tuple[np.ndarray, np.ndarray]],
-    Optional[np.dtype],
-    Tuple[int, int],
+) -> tuple[
+    np.ndarray | tuple[np.ndarray, np.ndarray],
+    np.dtype | None,
+    tuple[int, int],
     np.ndarray,
-    List[shapely.geometry.Polygon],
+    list[shapely.geometry.Polygon],
 ]:
     """Check and preprocess parameters for the grid_rasterize method.
 
@@ -268,11 +270,15 @@ def _grid_rasterize_check_params(
 
     # Check that both reduce and output are not set to True
     if reduce and output is not None:
-        raise ValueError("The arguments 'reduce' and 'output' cannot be set " "at the same time")
+        raise ValueError(
+            "The arguments 'reduce' and 'output' cannot be set at the same time"
+        )
 
     # Check that both output and dtype are not set to True
     if dtype is not None and output is not None:
-        raise ValueError("The arguments 'dtype' and 'output' cannot be set " "at the same time")
+        raise ValueError(
+            "The arguments 'dtype' and 'output' cannot be set at the same time"
+        )
     elif output is not None:
         dtype = output.dtype
 
@@ -296,7 +302,9 @@ def _grid_rasterize_check_params(
     else:
         # Check the window is ok
         if not window_check(array_profile_out, win):
-            raise Exception("The given 'window' is outside the grid domain of " "definition.")
+            raise Exception(
+                "The given 'window' is outside the grid domain of definition."
+            )
         # Update the output shape
         shape_out = win[:, 1] - win[:, 0] + 1
     win = np.asarray(win)
@@ -314,22 +322,22 @@ def _grid_rasterize_check_params(
 
 
 def grid_rasterize(
-    grid_coords: Optional[Tuple[np.ndarray, np.ndarray]],
-    shape: Optional[Tuple[int, int]],
-    origin: Optional[Tuple[float, float]],
-    resolution: Optional[Tuple[int, int]],
-    win: Optional[np.ndarray],
+    grid_coords: tuple[np.ndarray, np.ndarray] | None,
+    shape: tuple[int, int] | None,
+    origin: tuple[float, float] | None,
+    resolution: tuple[int, int] | None,
+    win: np.ndarray | None,
     inner_value: int,
     outer_value: int,
     default_value: int,
     geometry: GeometryType,
-    geometry_buffer_dst: Optional[float] = DFLT_GEOMETRY_BUFFER_DISTANCE,
+    geometry_buffer_dst: float | None = DFLT_GEOMETRY_BUFFER_DISTANCE,
     alg: GridRasterizeAlg = GridRasterizeAlg.RASTERIO_RASTERIZE,
-    output: Optional[np.ndarray] = None,
-    dtype: Optional[np.dtype] = None,
+    output: np.ndarray | None = None,
+    dtype: np.dtype | None = None,
     reduce: bool = False,
     **kwargs_alg,
-) -> Union[np.ndarray, np.uint8, None]:
+) -> np.ndarray | np.uint8 | None:
     """Generates a raster mask based on the spatial relationship between
     grid cell centroids and the input geometry.
 
@@ -449,7 +457,6 @@ def grid_rasterize(
 
     # Test we got polygons to rasterize
     if len(polygons) > 0:
-
         if geometry_buffer_dst is not None:
             # Dilate or erode the polygons through shapely.buffer method
             polygons = [
@@ -466,7 +473,9 @@ def grid_rasterize(
         if alg == GridRasterizeAlg.RASTERIO_RASTERIZE:
             # TODO : to be tested !
             if grid_coords is not None:
-                shape, origin, resolution = regular_grid_shape_origin_resolution(grid_coords)
+                shape, origin, resolution = regular_grid_shape_origin_resolution(
+                    grid_coords
+                )
             # If window is not on full data
             if ~np.all(win[:, 1] + 1 == shape):
                 shape, origin, resolution = window_apply_shape_origin_resolution(
@@ -477,20 +486,27 @@ def grid_rasterize(
             if output is None:
                 kwgs["dtype"] = dtype
             raster = rasterize_polygons_rasterio_rasterize(
-                shape, origin, resolution, polygons, inner_value, outer_value, output, **kwgs
+                shape,
+                origin,
+                resolution,
+                polygons,
+                inner_value,
+                outer_value,
+                output,
+                **kwgs,
             )
 
         elif alg == GridRasterizeAlg.SHAPELY:
             kwgs = {}
             for kwarg_key in ("shapely_predicate",):
-                try:
+                with contextlib.suppress(KeyError):
                     kwgs[kwarg_key] = kwargs_alg[kwarg_key]
-                except KeyError:
-                    pass
 
             # Compute grid coordinates if not given
             if not grid_coords:
-                grid_coords = grid_regular_coords_2d(shape, origin, resolution, sparse=False)
+                grid_coords = grid_regular_coords_2d(
+                    shape, origin, resolution, sparse=False
+                )
 
             # Apply window - check has already been performed previously
             grid_coords = window_apply_grid_coords(grid_coords, win, check=False)
@@ -529,17 +545,17 @@ def grid_rasterize(
 
 
 def rasterize_polygons_shapely(
-    polygons: List[shapely.geometry.Polygon],
+    polygons: list[shapely.geometry.Polygon],
     inner_value: int,
     outer_value: int,
-    grid_coords: Optional[Union[np.ndarray, Tuple[np.ndarray]]] = None,
-    shape: Optional[Tuple[float, float]] = None,
-    origin: Optional[Tuple[float, float]] = None,
-    resolution: Optional[Tuple[float, float]] = None,
+    grid_coords: np.ndarray | tuple[np.ndarray] | None = None,
+    shape: tuple[float, float] | None = None,
+    origin: tuple[float, float] | None = None,
+    resolution: tuple[float, float] | None = None,
     shapely_predicate: ShapelyPredicate = ShapelyPredicate.COVERS,
-    output: Optional[np.ndarray] = None,
-    dtype: Optional[np.dtype] = None,
-) -> Optional[np.ndarray]:
+    output: np.ndarray | None = None,
+    dtype: np.dtype | None = None,
+) -> np.ndarray | None:
     """Rasterizes a list of polygons onto a grid, producing a binary raster
     using Shapely's geometric predicates.
 
@@ -563,7 +579,8 @@ def rasterize_polygons_shapely(
         exterior of the union of polygons. Must be either 0 or 1.
         Must be different from `inner_value`.
 
-    grid_coords : Optional[Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]], default None
+    grid_coords : Optional[Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]],
+        default None
         Coordinates of pixel centers. Can be:
 
             -   A 2D NumPy array with shape (N, 2) where N is the total number
@@ -581,7 +598,8 @@ def rasterize_polygons_shapely(
         must also be provided.
 
     origin : Optional[Tuple[float, float]], default None
-        Grid origin as a tuple of floats `(origin_row_coordinate, origin_column_coordinate)`.
+        Grid origin as a tuple of floats `(origin_row_coordinate,
+        origin_column_coordinate)`.
         Used with `shape` and `resolution` to compute `grid_coords` if
         `grid_coords` is `None`.
 
@@ -635,12 +653,22 @@ def rasterize_polygons_shapely(
     """
     # Not yet implemented : raise exception if output is given
     if (output is not None and dtype is not None) or (output is None and dtype is None):
-        raise ValueError("You should either provide the an output buffer or the" " dtype argument")
+        raise ValueError(
+            "You should either provide the an output buffer or the dtype argument"
+        )
 
-    if grid_coords is not None and shape is None and origin is None and resolution is None:
+    if (
+        grid_coords is not None
+        and shape is None
+        and origin is None
+        and resolution is None
+    ):
         pass
     elif (
-        grid_coords is None and shape is not None and origin is not None and resolution is not None
+        grid_coords is None
+        and shape is not None
+        and origin is not None
+        and resolution is not None
     ):
         grid_coords = grid_regular_coords_2d(shape, origin, resolution, sparse=False)
     else:
@@ -655,9 +683,11 @@ def rasterize_polygons_shapely(
 
     # Check output shape
     if output is not None and ~np.all(output.shape == xx.shape):
-        raise ValueError("The output buffer's shape does not match the grid's " "shape")
+        raise ValueError("The output buffer's shape does not match the grid's shape")
 
-    points = [shapely.Point(x, y) for x, y in zip(xx.flatten(), yy.flatten(), strict=True)]
+    points = [
+        shapely.Point(x, y) for x, y in zip(xx.flatten(), yy.flatten(), strict=True)
+    ]
 
     # Prepare geometries in order to optimize computation
     # This methods affects objects inplace
@@ -665,13 +695,15 @@ def rasterize_polygons_shapely(
 
     # TODO : STRrtree
     if inner_value not in [0, 1]:
-        raise ValueError("The argument 'inner_value' must have a binary value " "(0 or 1)")
+        raise ValueError("The argument 'inner_value' must have a binary value (0 or 1)")
 
     if outer_value not in [0, 1]:
-        raise ValueError("The argument 'inner_value' must have a binary value " "(0 or 1)")
+        raise ValueError("The argument 'inner_value' must have a binary value (0 or 1)")
 
     if inner_value == outer_value:
-        raise ValueError("The argument 'inner_value' and 'outer_value' must be " "different")
+        raise ValueError(
+            "The argument 'inner_value' and 'outer_value' must be different"
+        )
 
     # Here we adopt the shapely convention :
     # - 0 is used for the exterior
@@ -723,14 +755,14 @@ def rasterize_polygons_shapely(
 
 
 def rasterize_polygons_rasterio_rasterize(
-    shape: Tuple[float, float],
-    origin: Tuple[float, float],
-    resolution: Tuple[float, float],
-    polygons: List[shapely.geometry.Polygon],
+    shape: tuple[float, float],
+    origin: tuple[float, float],
+    resolution: tuple[float, float],
+    polygons: list[shapely.geometry.Polygon],
     inner_value: int,
     outer_value: int,
-    output: Optional[np.ndarray] = None,
-    dtype: Optional[np.dtype] = None,
+    output: np.ndarray | None = None,
+    dtype: np.dtype | None = None,
 ) -> np.ndarray:
     """Rasterizes a list of polygons onto a grid using `rasterio.features.rasterize`.
 
@@ -814,10 +846,12 @@ def rasterize_polygons_rasterio_rasterize(
 
     """
     if (output is not None and dtype is not None) or (output is None and dtype is None):
-        raise ValueError("You should either provide the output buffer or the" " dtype argument")
+        raise ValueError(
+            "You should either provide the output buffer or the dtype argument"
+        )
     # Check output shape
     if output is not None and shape is not None and ~np.all(output.shape == shape):
-        raise ValueError("The output buffer's shape does not match the shape " "argument")
+        raise ValueError("The output buffer's shape does not match the shape argument")
 
     # RasterIO method is parametrized through an AffineTransform (a, b, c, d, e,
     # f, g, h, i) corresponding to the affine transform matrix :

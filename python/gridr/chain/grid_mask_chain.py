@@ -1,5 +1,3 @@
-# coding: utf8
-#
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
 # This file is part of GRIDR
@@ -21,15 +19,18 @@
 Module for a Grid and Mask creation chain
 # @doc
 """
+
 import logging
-from functools import partial
 import multiprocessing
-from typing import Dict, Optional, Tuple, Union
+from functools import partial
 
 import numpy as np
 import rasterio
 
-from gridr.core.grid.grid_commons import grid_full_resolution_shape, grid_resolution_window
+from gridr.core.grid.grid_commons import (
+    grid_full_resolution_shape,
+    grid_resolution_window,
+)
 from gridr.core.grid.grid_mask import Validity, build_mask
 from gridr.core.grid.grid_rasterize import GeometryType
 from gridr.core.grid.grid_utils import build_grid
@@ -43,7 +44,6 @@ from gridr.core.utils.array_window import (
     window_shift,
 )
 from gridr.io.common import GridRIOMode
-#from gridr.scaling.shmutils import SharedMemoryArray, create_and_register_sma, shmarray_wrap
 from gridr.scaling.shared_array import (
     SharedArray,
     create_and_register,
@@ -85,23 +85,23 @@ def build_grid_mask_tile_worker(arg):
 
 
 def build_mask_chain(
-    shape: Tuple[int, int],
-    resolution: Tuple[int, int],
+    shape: tuple[int, int],
+    resolution: tuple[int, int],
     mask_out_ds: rasterio.io.DatasetWriter,
-    mask_out_dtype: Union[np.dtypes.Int8DType, np.dtypes.UInt8DType],
-    mask_in_ds: Optional[rasterio.io.DatasetReader],
-    mask_in_unmasked_value: Optional[int],
-    mask_in_band: Optional[int],
+    mask_out_dtype: np.dtypes.Int8DType | np.dtypes.UInt8DType,
+    mask_in_ds: rasterio.io.DatasetReader | None,
+    mask_in_unmasked_value: int | None,
+    mask_in_band: int | None,
     computation_dtype: np.dtype,
-    geometry_origin: Tuple[float, float],
-    geometry_pair: Optional[Tuple[Optional[GeometryType], Optional[GeometryType]]],
-    rasterize_kwargs: Optional[Dict] = None,
-    mask_out_values: Optional[Tuple[int, int]] = (Validity.VALID, Validity.INVALID),
+    geometry_origin: tuple[float, float],
+    geometry_pair: tuple[GeometryType | None, GeometryType | None] | None,
+    rasterize_kwargs: dict | None = None,
+    mask_out_values: tuple[int, int] | None = (Validity.VALID, Validity.INVALID),
     io_strip_size: int = DEFAULT_IO_STRIP_SIZE,
     io_strip_size_target: GridRIOMode = GridRIOMode.INPUT,
     ncpu: int = DEFAULT_NCPU,
-    cpu_tile_shape: Optional[Tuple[int, int]] = DEFAULT_CPU_TILE_SHAPE,
-    logger: Optional[logging.Logger] = None,
+    cpu_tile_shape: tuple[int, int] | None = DEFAULT_CPU_TILE_SHAPE,
+    logger: logging.Logger | None = None,
 ) -> int:
     """@doc
     Grid mask computation chain.
@@ -279,7 +279,7 @@ def build_mask_chain(
 
     if mask_in_ds is not None:
         mask_nrow_in, mask_ncol_in = mask_in_ds.height, mask_in_ds.width
-        logger.debug(f"Mask shape : {mask_nrow_in} rows x {mask_ncol_in} " "columns")
+        logger.debug(f"Mask shape : {mask_nrow_in} rows x {mask_ncol_in} columns")
         assert nrow_in == mask_nrow_in
         assert ncol_in == mask_ncol_in
     else:
@@ -300,8 +300,12 @@ def build_mask_chain(
             )
 
     # Compute the output shape
-    shape_out = grid_full_resolution_shape(shape=(nrow_in, ncol_in), resolution=resolution)
-    logger.debug(f"Computed output shape : {shape_out[0]} rows x {shape_out[1]}" " columns")
+    shape_out = grid_full_resolution_shape(
+        shape=(nrow_in, ncol_in), resolution=resolution
+    )
+    logger.debug(
+        f"Computed output shape : {shape_out[0]} rows x {shape_out[1]} columns"
+    )
 
     # Compute strips definitions
     chunk_boundaries = chunks.get_chunk_boundaries(
@@ -315,18 +319,24 @@ def build_mask_chain(
     # Please note that the last coordinate in each chunk is not contained
     # in the chunk (it corresponds to the index), whereas the window
     # definition contains index that are in the window
-    chunk_windows = [np.array([[c0, c1 - 1], [0, shape_out[1] - 1]]) for c0, c1 in chunk_boundaries]
+    chunk_windows = [
+        np.array([[c0, c1 - 1], [0, shape_out[1] - 1]]) for c0, c1 in chunk_boundaries
+    ]
 
     # Compute the window to read for each chunk window.
     # This will returns both the window to read, and the relative window
     # corresponding to the target chunk window.
     chunk_windows_read = [
-        grid_resolution_window(resolution=resolution, win=chunk_win) for chunk_win in chunk_windows
+        grid_resolution_window(resolution=resolution, win=chunk_win)
+        for chunk_win in chunk_windows
     ]
 
     # Determine the read buffer shape
     read_buffer_shape = np.max(
-        np.asarray([window_shape(read_win) for read_win, rel_win in chunk_windows_read]), axis=0
+        np.asarray(
+            [window_shape(read_win) for read_win, rel_win in chunk_windows_read]
+        ),
+        axis=0,
     )
 
     # Determine the write buffer shape
@@ -337,7 +347,9 @@ def build_mask_chain(
     sma_read_buffer = None
     if mask_in_ds is not None:
         # Create shared memory array for read
-        sma_read_buffer = register_sma(read_buffer_shape, mask_in_ds.dtypes[mask_in_band - 1])
+        sma_read_buffer = register_sma(
+            read_buffer_shape, mask_in_ds.dtypes[mask_in_band - 1]
+        )
 
     # Create shared memory array for output
     sma_write_buffer = register_sma(buffer_shape, mask_out_dtype)
@@ -349,7 +361,6 @@ def build_mask_chain(
         for chunk_idx, (chunk_win, (win_read, win_rel)) in enumerate(
             zip(chunk_windows, chunk_windows_read, strict=True)
         ):
-
             logger.debug(f"Chunk {chunk_idx} - chunk_win: {chunk_win}")
 
             # Compute current strip chunk parameters to pass to the build_mask
@@ -392,7 +403,9 @@ def build_mask_chain(
             # is complient with the core convention, i.e. Validity.VALID (1) for
             # valid data.
             if cmask_arr is not None and mask_in_unmasked_value != Validity.VALID:
-                array_replace(cmask_arr, mask_in_unmasked_value, Validity.VALID, Validity.INVALID)
+                array_replace(
+                    cmask_arr, mask_in_unmasked_value, Validity.VALID, Validity.INVALID
+                )
 
             # Choose between the tiled multiprocessing branch and the
             # processing branch
@@ -405,16 +418,19 @@ def build_mask_chain(
                     f"{cpu_tile_shape[1]}"
                 )
 
-                chunk_tiles = chunks.get_chunk_shapes(cshape, cpu_tile_shape, merge_last=True)
+                chunk_tiles = chunks.get_chunk_shapes(
+                    cshape, cpu_tile_shape, merge_last=True
+                )
 
                 logger.debug(
-                    f"Chunk {chunk_idx} - Number of tiles to process :" f" {len(chunk_tiles)}"
+                    f"Chunk {chunk_idx} - Number of tiles to process :"
+                    f" {len(chunk_tiles)}"
                 )
 
                 # Init the list of process arguments as 'tasks'
                 tasks = []
                 for tile in chunk_tiles:
-                    logger.debug(f"Chunk {chunk_idx} - tile {tile} " "- preparing args...")
+                    logger.debug(f"Chunk {chunk_idx} - tile {tile} - preparing args...")
 
                     # Compute current strip chunk parameters to pass to the
                     # 'build_mask_tile_worker' ('build_mask' wrapper) method
@@ -446,9 +462,12 @@ def build_mask_chain(
                     tile_mask_in_target_win = window_shift(tile_win, win_rel[:, 0])
 
                     logger.debug(
-                        f"Chunk {chunk_idx} - tile {tile} - " f"tile's chunk origin : {tile_origin}"
+                        f"Chunk {chunk_idx} - tile {tile} - "
+                        f"tile's chunk origin : {tile_origin}"
                     )
-                    logger.debug(f"Chunk {chunk_idx} - tile {tile} - " f"tile window : {tile_win}")
+                    logger.debug(
+                        f"Chunk {chunk_idx} - tile {tile} - tile window : {tile_win}"
+                    )
                     logger.debug(
                         f"Chunk {chunk_idx} - tile {tile} - "
                         f"mask_in_target_win : {tile_mask_in_target_win} "
@@ -497,7 +516,7 @@ def build_mask_chain(
 
             else:
                 # Build mask on full strip - no multiprocessing
-                logger.debug(f"Chunk {chunk_idx} - Full strip computation " "(no tiling)")
+                logger.debug(f"Chunk {chunk_idx} - Full strip computation (no tiling)")
 
                 _ = build_mask(
                     shape=cshape,
@@ -521,7 +540,9 @@ def build_mask_chain(
             if not np.all(mask_out_values == (Validity.VALID, Validity.INVALID)):
                 val_cond = Validity.VALID  # considered true in build_mask method
                 val_true, val_false = mask_out_values
-                array_replace(sma_write_buffer.array[cslices], val_cond, val_true, val_false)
+                array_replace(
+                    sma_write_buffer.array[cslices], val_cond, val_true, val_false
+                )
                 # sma_write_buffer.array[*cslices] = np.where(
                 #        sma_write_buffer.array[*cslices]==0,
                 #        mask_out_valid_value, ~mask_out_valid_value)
@@ -544,31 +565,31 @@ def build_mask_chain(
 
 
 def build_grid_mask_chain(
-    resolution: Tuple[int, int],
+    resolution: tuple[int, int],
     grid_in_ds: rasterio.io.DatasetReader,
-    grid_in_col_ds: Union[rasterio.io.DatasetReader, None],
+    grid_in_col_ds: rasterio.io.DatasetReader | None,
     grid_in_row_coords_band: int,
     grid_in_col_coords_band: int,
     grid_out_ds: rasterio.io.DatasetWriter,
-    grid_out_col_ds: Union[rasterio.io.DatasetWriter, None],
+    grid_out_col_ds: rasterio.io.DatasetWriter | None,
     grid_out_row_coords_band: int,
     grid_out_col_coords_band: int,
     mask_out_ds: rasterio.io.DatasetWriter,
-    mask_out_dtype: Union[np.dtypes.Int8DType, np.dtypes.UInt8DType],
-    mask_in_ds: Optional[rasterio.io.DatasetReader],
-    mask_in_unmasked_value: Optional[int],
-    mask_in_band: Optional[int],
+    mask_out_dtype: np.dtypes.Int8DType | np.dtypes.UInt8DType,
+    mask_in_ds: rasterio.io.DatasetReader | None,
+    mask_in_unmasked_value: int | None,
+    mask_in_band: int | None,
     computation_dtype: np.dtype,
-    geometry_origin: Tuple[float, float],
-    geometry_pair: Optional[Tuple[Optional[GeometryType], Optional[GeometryType]]],
-    rasterize_kwargs: Optional[Dict] = None,
-    mask_out_values: Optional[Tuple[int, int]] = (Validity.VALID, Validity.INVALID),
-    merge_mask_grid: Optional[Union[int, float]] = None,
+    geometry_origin: tuple[float, float],
+    geometry_pair: tuple[GeometryType | None, GeometryType | None] | None,
+    rasterize_kwargs: dict | None = None,
+    mask_out_values: tuple[int, int] | None = (Validity.VALID, Validity.INVALID),
+    merge_mask_grid: int | float | None = None,
     io_strip_size: int = DEFAULT_IO_STRIP_SIZE,
     io_strip_size_target: GridRIOMode = GridRIOMode.INPUT,
     ncpu: int = DEFAULT_NCPU,
-    cpu_tile_shape: Optional[Tuple[int, int]] = DEFAULT_CPU_TILE_SHAPE,
-    logger: Optional[logging.Logger] = None,
+    cpu_tile_shape: tuple[int, int] | None = DEFAULT_CPU_TILE_SHAPE,
+    logger: logging.Logger | None = None,
 ) -> int:
     """Grid and mask computation chain.
 
@@ -758,7 +779,7 @@ def build_grid_mask_chain(
         - argument `ncpu` to be greater than 1.
         - argument `cpu_tile_shape` to be different from None and smaller than
           the output shape.
-    
+
     The Pool mapping uses a fork context.
 
     **Shared Memory**
@@ -805,7 +826,7 @@ def build_grid_mask_chain(
     # Check mask shape
     if mask_in_ds is not None:
         mask_nrow_in, mask_ncol_in = mask_in_ds.height, mask_in_ds.width
-        logger.debug(f"Mask shape : {mask_nrow_in} rows x {mask_ncol_in} " "columns")
+        logger.debug(f"Mask shape : {mask_nrow_in} rows x {mask_ncol_in} columns")
         assert nrow_in == mask_nrow_in
         assert ncol_in == mask_ncol_in
     else:
@@ -831,8 +852,12 @@ def build_grid_mask_chain(
             )
 
     # Compute the output shape
-    shape_out = grid_full_resolution_shape(shape=(nrow_in, ncol_in), resolution=resolution)
-    logger.debug(f"Computed output shape : {shape_out[0]} rows x {shape_out[1]}" " columns")
+    shape_out = grid_full_resolution_shape(
+        shape=(nrow_in, ncol_in), resolution=resolution
+    )
+    logger.debug(
+        f"Computed output shape : {shape_out[0]} rows x {shape_out[1]} columns"
+    )
 
     # Compute strips definitions
     chunk_boundaries = chunks.get_chunk_boundaries(
@@ -846,18 +871,24 @@ def build_grid_mask_chain(
     # Please note that the last coordinate in each chunk is not contained
     # in the chunk (it corresponds to the index), whereas the window
     # definition contains index that are in the window
-    chunk_windows = [np.array([[c0, c1 - 1], [0, shape_out[1] - 1]]) for c0, c1 in chunk_boundaries]
+    chunk_windows = [
+        np.array([[c0, c1 - 1], [0, shape_out[1] - 1]]) for c0, c1 in chunk_boundaries
+    ]
 
     # Compute the window to read for each chunk window.
     # This will returns both the window to read, and the relative window
     # corresponding to the target chunk window.
     chunk_windows_read = [
-        grid_resolution_window(resolution=resolution, win=chunk_win) for chunk_win in chunk_windows
+        grid_resolution_window(resolution=resolution, win=chunk_win)
+        for chunk_win in chunk_windows
     ]
 
     # Determine the read buffer shape
     read_buffer_shape = np.max(
-        np.asarray([window_shape(read_win) for read_win, rel_win in chunk_windows_read]), axis=0
+        np.asarray(
+            [window_shape(read_win) for read_win, rel_win in chunk_windows_read]
+        ),
+        axis=0,
     )
     read_buffer_shape3 = np.insert(read_buffer_shape, 0, 2)
 
@@ -876,7 +907,9 @@ def build_grid_mask_chain(
     # - mask in
     sma_r_buffer_mask = None
     if mask_in_ds is not None:
-        sma_r_buffer_mask = register_sma(read_buffer_shape, mask_in_ds.dtypes[mask_in_band - 1])
+        sma_r_buffer_mask = register_sma(
+            read_buffer_shape, mask_in_ds.dtypes[mask_in_band - 1]
+        )
 
     # Create shared memory array for write
     sma_w_buffer_grid = register_sma(
@@ -903,7 +936,6 @@ def build_grid_mask_chain(
         for chunk_idx, (chunk_win, (win_read, win_rel)) in enumerate(
             zip(chunk_windows, chunk_windows_read, strict=True)
         ):
-
             logger.debug(f"Chunk {chunk_idx} - chunk_win: {chunk_win}")
 
             # Compute current strip chunk parameters to pass to the build_mask
@@ -924,7 +956,7 @@ def build_grid_mask_chain(
             #       the strip.
             cshape = window_shape(chunk_win)
             cslices = window_indices(chunk_win, reset_origin=True)
-            cslices3 = (slice(None, None),) + cslices
+            cslices3 = (slice(None, None), *cslices)
             cslices_write = window_indices(chunk_win, reset_origin=False)
             # read the data
             cread_shape = window_shape(win_read)
@@ -942,17 +974,18 @@ def build_grid_mask_chain(
                 out=sma_r_buffer_grid.array[1, 0 : cread_shape[0], 0 : cread_shape[1]],
             )
 
-            cread_grid_arr = sma_r_buffer_grid.array[:, 0 : cread_shape[0], 0 : cread_shape[1]]
+            cread_grid_arr = sma_r_buffer_grid.array[
+                :, 0 : cread_shape[0], 0 : cread_shape[1]
+            ]
 
             # Input mask if given
             cread_mask_arr = None
-            if compute_mask:
-                if sma_r_buffer_mask is not None:
-                    cread_mask_arr = mask_in_ds.read(
-                        mask_in_band,
-                        window=as_rio_window(win_read),
-                        out=sma_r_buffer_mask.array[0 : cread_shape[0], 0 : cread_shape[1]],
-                    )
+            if compute_mask and sma_r_buffer_mask is not None:
+                cread_mask_arr = mask_in_ds.read(
+                    mask_in_band,
+                    window=as_rio_window(win_read),
+                    out=sma_r_buffer_mask.array[0 : cread_shape[0], 0 : cread_shape[1]],
+                )
 
             # Shift geometry origin for the strip
             cgeometry_origin = (
@@ -966,14 +999,16 @@ def build_grid_mask_chain(
             logger.debug(f"Chunk {chunk_idx} - build starts...")
 
             # Mask management
-            if cread_mask_arr is not None:
+            if cread_mask_arr is not None and mask_in_unmasked_value != Validity.VALID:
                 # Check valid/masked convention and ensure that the input buffer
                 # is complient with the core convention, i.e. Validity.VALID (1)
                 # for valid data.
-                if mask_in_unmasked_value != Validity.VALID:
-                    array_replace(
-                        cread_mask_arr, mask_in_unmasked_value, Validity.VALID, Validity.INVALID
-                    )
+                array_replace(
+                    cread_mask_arr,
+                    mask_in_unmasked_value,
+                    Validity.VALID,
+                    Validity.INVALID,
+                )
 
             # Choose between the tiled multiprocessing branch and the
             # processing branch
@@ -986,16 +1021,19 @@ def build_grid_mask_chain(
                     f"{cpu_tile_shape[1]}"
                 )
 
-                chunk_tiles = chunks.get_chunk_shapes(cshape, cpu_tile_shape, merge_last=True)
+                chunk_tiles = chunks.get_chunk_shapes(
+                    cshape, cpu_tile_shape, merge_last=True
+                )
 
                 logger.debug(
-                    f"Chunk {chunk_idx} - Number of tiles to process :" f" {len(chunk_tiles)}"
+                    f"Chunk {chunk_idx} - Number of tiles to process :"
+                    f" {len(chunk_tiles)}"
                 )
 
                 # Init the list of process arguments as 'tasks'
                 tasks = []
                 for tile in chunk_tiles:
-                    logger.debug(f"Chunk {chunk_idx} - tile {tile} " "- preparing args...")
+                    logger.debug(f"Chunk {chunk_idx} - tile {tile} - preparing args...")
 
                     # Compute current strip chunk parameters to pass to the
                     # 'build_mask_tile_worker' ('build_mask' wrapper) method
@@ -1024,13 +1062,16 @@ def build_grid_mask_chain(
 
                     tile_shape = window_shape(tile_win)
                     tile_slice = window_indices(tile_win, reset_origin=False)
-                    tile_slices3 = (slice(None, None),) + tile_slice
+                    tile_slices3 = (slice(None, None), *tile_slice)
                     tile_target_win = window_shift(tile_win, win_rel[:, 0])
 
                     logger.debug(
-                        f"Chunk {chunk_idx} - tile {tile} - " f"tile's chunk origin : {tile_origin}"
+                        f"Chunk {chunk_idx} - tile {tile} - "
+                        f"tile's chunk origin : {tile_origin}"
                     )
-                    logger.debug(f"Chunk {chunk_idx} - tile {tile} - " f"tile window : {tile_win}")
+                    logger.debug(
+                        f"Chunk {chunk_idx} - tile {tile} - tile window : {tile_win}"
+                    )
                     logger.debug(
                         f"Chunk {chunk_idx} - tile {tile} - "
                         f"target_win : {tile_target_win} "
@@ -1110,7 +1151,7 @@ def build_grid_mask_chain(
             # Mono processing for now
             else:
                 # Build mask on full strip - no multiprocessing
-                logger.debug(f"Chunk {chunk_idx} - Full strip computation " "(no tiling)")
+                logger.debug(f"Chunk {chunk_idx} - Full strip computation (no tiling)")
 
                 if compute_mask:
                     _ = build_mask(
@@ -1170,10 +1211,14 @@ def build_grid_mask_chain(
 
             # Check masked/unmasked convention and ensure that the output buffer
             # is complient with the user's given convention.
-            if compute_mask and not np.all(mask_out_values == (Validity.VALID, Validity.INVALID)):
+            if compute_mask and not np.all(
+                mask_out_values == (Validity.VALID, Validity.INVALID)
+            ):
                 val_cond = Validity.VALID  # considered true in build_mask method
                 val_true, val_false = mask_out_values
-                array_replace(sma_w_buffer_mask.array[cslices], val_cond, val_true, val_false)
+                array_replace(
+                    sma_w_buffer_mask.array[cslices], val_cond, val_true, val_false
+                )
 
             # Write the data
             # Write grid rows

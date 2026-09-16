@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -50,7 +49,8 @@
 # POSSIBILITY OF SUCH DAMAGE.
 import typing
 import warnings
-from typing import Final, Iterable, NoReturn, Tuple, Union
+from collections.abc import Iterable
+from typing import Final, NoReturn
 
 import numpy as np
 
@@ -136,10 +136,7 @@ def _expand_slice_with_padding(src_slice, pad_width_pair):
         else:
             new_start = start
 
-        if pad_after > 0 and stop is not None:
-            new_stop = stop + pad_after
-        else:
-            new_stop = stop
+        new_stop = stop + pad_after if pad_after > 0 and stop is not None else stop
 
         target_slice.append(slice(new_start, new_stop))
 
@@ -148,10 +145,10 @@ def _expand_slice_with_padding(src_slice, pad_width_pair):
 
 def _pad_simple_inplace(
     array: np.ndarray,
-    src_win: Tuple[Tuple[slice]],
-    pad_width: Union[int, Tuple[int, int], Iterable[Tuple[int, int]]],
+    src_win: tuple[tuple[slice]],
+    pad_width: int | tuple[int, int] | Iterable[tuple[int, int]],
     strict_size: bool = True,
-) -> Tuple[np.ndarray, np.ndarray, Tuple[slice]]:
+) -> tuple[np.ndarray, np.ndarray, tuple[slice]]:
     """
     Mocks the original numpy `_pad_simple` method considering an inplace behaviour.
 
@@ -200,12 +197,14 @@ def _pad_simple_inplace(
     # Check that array can exactly hold the requested padding
     # First compute required total size
     padded_shape = tuple(
-        left + size + right for size, (left, right) in zip(array.shape, pad_width, strict=True)
+        left + size + right
+        for size, (left, right) in zip(array.shape, pad_width, strict=True)
     )
 
     # Get original slice
     original_area_slice = tuple(
-        slice(left, left + size) for size, (left, right) in zip(array.shape, pad_width, strict=True)
+        slice(left, left + size)
+        for size, (left, right) in zip(array.shape, pad_width, strict=True)
     )
 
     # Validate array size against padding requirements
@@ -215,7 +214,8 @@ def _pad_simple_inplace(
                 raise ValueError(
                     f"Array too small for requested padding on axis {axis}. "
                     f"Required size: {padded_shape[axis]}, "
-                    f"pad_before: {pad_width[axis][0]}, pad_after: {pad_width[axis][1]}), "
+                    f"pad_before: {pad_width[axis][0]}, "
+                    f"pad_after: {pad_width[axis][1]}), "
                     f"but got: {padded.shape[axis]}"
                 )
             elif padded_shape[axis] < padded.shape[axis]:
@@ -237,8 +237,8 @@ def _pad_simple_inplace(
 
 def pad_inplace(
     array: np.ndarray,
-    src_win: Tuple[Tuple[slice]],
-    pad_width: Union[int, Tuple[int, int], Iterable[Tuple[int, int]]],
+    src_win: tuple[tuple[slice]],
+    pad_width: int | tuple[int, int] | Iterable[tuple[int, int]],
     mode="constant",
     strict_size: bool = True,
     **kwargs,
@@ -353,37 +353,37 @@ def pad_inplace(
     --------
     >>> import numpy as np
     >>> a = [1, 2, 3, 4, 5]
-    >>> np.pad(a, (2, 3), 'constant', constant_values=(4, 6))
+    >>> np.pad(a, (2, 3), "constant", constant_values=(4, 6))
     >>> a
     array([4, 4, 1, ..., 6, 6, 6])
 
     >>> a = [1, 2, 3, 4, 5]
-    >>> np.pad(a, (2, 3), 'edge')
+    >>> np.pad(a, (2, 3), "edge")
     >>> a
     array([1, 1, 1, ..., 5, 5, 5])
 
     >>> a = [1, 2, 3, 4, 5]
-    >>> np.pad(a, (2, 3), 'reflect')
+    >>> np.pad(a, (2, 3), "reflect")
     >>> a
     array([3, 2, 1, 2, 3, 4, 5, 4, 3, 2])
 
     >>> a = [1, 2, 3, 4, 5]
-    >>> np.pad(a, (2, 3), 'reflect', reflect_type='odd')
+    >>> np.pad(a, (2, 3), "reflect", reflect_type="odd")
     >>> a
     array([-1,  0,  1,  2,  3,  4,  5,  6,  7,  8])
 
     >>> a = [1, 2, 3, 4, 5]
-    >>> np.pad(a, (2, 3), 'symmetric')
+    >>> np.pad(a, (2, 3), "symmetric")
     >>> a
     array([2, 1, 1, 2, 3, 4, 5, 5, 4, 3])
 
     >>> a = [1, 2, 3, 4, 5]
-    >>> np.pad(a, (2, 3), 'symmetric', reflect_type='odd')
+    >>> np.pad(a, (2, 3), "symmetric", reflect_type="odd")
     >>> a
     array([0, 1, 1, 2, 3, 4, 5, 5, 6, 7])
 
     >>> a = [1, 2, 3, 4, 5]
-    >>> np.pad(a, (2, 3), 'wrap')
+    >>> np.pad(a, (2, 3), "wrap")
     >>> a
     array([4, 5, 1, 2, 3, 4, 5, 1, 2, 3])
     """
@@ -421,12 +421,14 @@ def pad_inplace(
         raise ValueError(f"mode '{mode!r}' is not supported") from None
     if unsupported_kwargs:
         raise ValueError(
-            "unsupported keyword arguments for mode " f"'{mode!r}': {unsupported_kwargs}"
+            f"unsupported keyword arguments for mode '{mode!r}': {unsupported_kwargs}"
         )
 
     # Create array with final shape and original values
     # (padded area is undefined)
-    array, padded, original_area_slice = _pad_simple_inplace(array, src_win, pad_width, strict_size)
+    array, padded, original_area_slice = _pad_simple_inplace(
+        array, src_win, pad_width, strict_size
+    )
 
     # And prepare iteration over all dimensions
     # (zipping may be more readable than using enumerate)
@@ -462,7 +464,12 @@ def pad_inplace(
                 # values. This is necessary if the pad area is larger than
                 # the length of the original values in the current dimension.
                 left_index, right_index = _set_reflect_both(
-                    roi, axis, (left_index, right_index), method, array.shape[axis], include_edge
+                    roi,
+                    axis,
+                    (left_index, right_index),
+                    method,
+                    array.shape[axis],
+                    include_edge,
                 )
 
     elif mode == "wrap":
@@ -480,8 +487,8 @@ def pad_inplace(
 
 def pad_inplace_fallback(
     array: np.ndarray,
-    src_win: Tuple[Tuple[slice]],
-    pad_width: Union[int, Tuple[int, int], Iterable[Tuple[int, int]]],
+    src_win: tuple[tuple[slice]],
+    pad_width: int | tuple[int, int] | Iterable[tuple[int, int]],
     mode="constant",
     strict_size: bool = True,
     **kwargs,

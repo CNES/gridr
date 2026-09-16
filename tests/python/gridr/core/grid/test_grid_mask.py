@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -11,7 +10,8 @@ Tests for the gridr.core.grid.grid_mask module
 
 Command to run test :
 PYTHONPATH=${PWD}/python/:$PYTHONPATH pytest tests/python/gridr/core/grid/test_grid_mask.py
-"""
+"""  # noqa: E501
+
 import numpy as np
 import pytest
 import shapely
@@ -40,7 +40,10 @@ ALG_RASTERIZE_SHAPELY_COVERS = {
     "alg": GridRasterizeAlg.SHAPELY,
     "kwargs_alg": {"shapely_predicate": ShapelyPredicate.COVERS},
 }
-ALG_RASTERIZE_RASTERIO_RASTERIZE = {"alg": GridRasterizeAlg.RASTERIO_RASTERIZE, "kwargs_alg": {}}
+ALG_RASTERIZE_RASTERIO_RASTERIZE = {
+    "alg": GridRasterizeAlg.RASTERIO_RASTERIZE,
+    "kwargs_alg": {},
+}
 DEFAULT_ALG = ALG_RASTERIZE_RASTERIO_RASTERIZE
 
 INPUT_CHECK_001 = (
@@ -401,7 +404,8 @@ INPUT_CHECK_010b = (
 )
 
 
-# test geometry_origin must be provided - no pixel should be invalid except the first line
+# test geometry_origin must be provided - no pixel should be invalid
+# except the first line
 INPUT_CHECK_011 = (
     (
         (5, 6),  # shape
@@ -469,7 +473,8 @@ INPUT_CHECK_011b = (
 #                      [I, I, I, I, I, I]])
 
 
-# test geometry_origin must be provided - no pixel should be invalid except the first col
+# test geometry_origin must be provided - no pixel should be invalid except the first
+# col
 INPUT_CHECK_012 = (
     (
         (5, 6),  # shape
@@ -811,7 +816,13 @@ INPUT_CHECK_019 = (
             [V, V, V, V, V],
             [V, I, I, I, V],
             [V, I, I, I, V],
-            [V, I, I, I, V],  # first line taken ; the geometry mask invalidates the last col here.
+            [
+                V,
+                I,
+                I,
+                I,
+                V,
+            ],  # first line taken ; the geometry mask invalidates the last col here.
             [V, I, I, I, I],
             [V, I, I, I, I],
             [V, V, V, I, I],
@@ -822,15 +833,18 @@ INPUT_CHECK_019 = (
     )[3:10, 3:5],
 )
 
-# Add an invalid geometry - notice that the geometry is applied on the output geometry (after
-# windowing of the raster mask)
+# Add an invalid geometry - notice that the geometry is applied on the output geometry
+# (after windowing of the raster mask)
 INPUT_CHECK_019b = (
     (
         (7, 2),  # shape
         (1, 1),  # resolution
         None,  # out
         (0.5, 0.5),  # geometry_origin
-        (None, shapely.geometry.Polygon([(1.5, 0.5), (1.5, 1.5), (2.5, 1.5), (2.5, 0.5)])),
+        (
+            None,
+            shapely.geometry.Polygon([(1.5, 0.5), (1.5, 1.5), (2.5, 1.5), (2.5, 0.5)]),
+        ),
         np.array([[V, V, V], [V, I, V], [V, V, I], [V, V, V]]),  # mask_in
         [(3, 9), (3, 4)],  # mask_in_target_win
         (3, 2),  # mask_in_resolution
@@ -842,7 +856,13 @@ INPUT_CHECK_019b = (
             [V, V, V, V, V],
             [V, I, I, I, V],
             [V, I, I, I, V],
-            [V, I, I, I, I],  # first line taken ; the geometry mask invalidates the last col here.
+            [
+                V,
+                I,
+                I,
+                I,
+                I,
+            ],  # first line taken ; the geometry mask invalidates the last col here.
             [V, I, I, I, I],
             [V, I, I, I, I],
             [V, V, V, I, I],
@@ -854,8 +874,8 @@ INPUT_CHECK_019b = (
 )
 
 
-# Add a valid geometry - here we cover all the masked area that is invalidated by the raster
-# that mask should not change anything
+# Add a valid geometry - here we cover all the masked area that is invalidated by the
+# raster that mask should not change anything
 INPUT_CHECK_019c = (
     (
         (7, 2),  # shape
@@ -863,7 +883,9 @@ INPUT_CHECK_019c = (
         None,  # out
         (0.5, 0.5),  # geometry_origin
         (
-            shapely.geometry.Polygon([(-10.5, -10.5), (-10.5, 10.5), (10.5, 10.5), (10.5, -10.5)]),
+            shapely.geometry.Polygon(
+                [(-10.5, -10.5), (-10.5, 10.5), (10.5, 10.5), (10.5, -10.5)]
+            ),
             None,
         ),
         np.array([[V, V, V], [V, I, V], [V, V, I], [V, V, V]]),  # mask_in
@@ -889,8 +911,8 @@ INPUT_CHECK_019c = (
 )
 
 
-# Add a valid geometry - here we cover all the masked area that is invalidated by the raster
-# that mask should not change anything
+# Add a valid geometry - here we cover all the masked area that is invalidated by the
+# raster that mask should not change anything
 INPUT_CHECK_019d = (
     (
         (7, 2),  # shape
@@ -898,7 +920,9 @@ INPUT_CHECK_019d = (
         None,  # out
         (0.5, 0.5),  # geometry_origin
         (
-            shapely.geometry.Polygon([(-10.5, -10.5), (-10.5, 10.5), (10.5, 10.5), (10.5, -10.5)]),
+            shapely.geometry.Polygon(
+                [(-10.5, -10.5), (-10.5, 10.5), (10.5, 10.5), (10.5, -10.5)]
+            ),
             shapely.geometry.Polygon([(1.5, 0.5), (1.5, 1.5), (2.5, 1.5), (2.5, 0.5)]),
         ),
         np.array([[V, V, V], [V, I, V], [V, V, I], [V, V, V]]),  # mask_in
@@ -912,7 +936,13 @@ INPUT_CHECK_019d = (
             [V, V, V, V, V],
             [V, I, I, I, V],
             [V, I, I, I, V],
-            [V, I, I, I, I],  # first line taken ; the geometry mask invalidates the last col here.
+            [
+                V,
+                I,
+                I,
+                I,
+                I,
+            ],  # first line taken ; the geometry mask invalidates the last col here.
             [V, I, I, I, I],
             [V, I, I, I, I],
             [V, V, V, I, I],
@@ -973,7 +1003,8 @@ class TestGridMask:
         Args:
             data : input data as a tuple containing all the arguments
             expected: expected data
-            testing_decimal: decimal precision used for np.testing.assert_array_almost_equal
+            testing_decimal: decimal precision used for
+                np.testing.assert_array_almost_equal
         """
         (
             shape,
@@ -1019,11 +1050,15 @@ class TestGridMask:
         else:
             try:
                 if issubclass(expected, BaseException):
-                    raise Exception(f"The test should have raised an exceptionof type {expected}")
+                    raise Exception(
+                        f"The test should have raised an exceptionof type {expected}"
+                    )
             except TypeError:
                 pass
             # Check
-            np.testing.assert_array_almost_equal(mask, expected, decimal=testing_decimal)
+            np.testing.assert_array_almost_equal(
+                mask, expected, decimal=testing_decimal
+            )
             assert mask.dtype == expected_dtype
             if expected_out_id is not None:
                 assert id(mask.data) == expected_out_id

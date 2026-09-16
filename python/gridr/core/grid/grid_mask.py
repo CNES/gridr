@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -20,8 +19,8 @@
 """
 Grid mask module
 """
+
 from enum import IntEnum
-from typing import Dict, Optional, Tuple
 
 import numpy as np
 
@@ -56,19 +55,19 @@ class Validity(IntEnum):
 
 
 def build_mask(
-    shape: Tuple[int, int],
-    resolution: Tuple[int, int],
+    shape: tuple[int, int],
+    resolution: tuple[int, int],
     out: np.ndarray,
-    geometry_origin: Optional[Tuple[float, float]] = None,
-    geometry_pair: Optional[Tuple[Optional[GeometryType], Optional[GeometryType]]] = None,
-    mask_in: Optional[np.ndarray] = None,
-    mask_in_target_win: Optional[np.ndarray] = None,
-    mask_in_resolution: Optional[Tuple[int, int]] = None,
-    oversampling_dtype: Optional[np.dtype] = None,
+    geometry_origin: tuple[float, float] | None = None,
+    geometry_pair: tuple[GeometryType | None, GeometryType | None] | None = None,
+    mask_in: np.ndarray | None = None,
+    mask_in_target_win: np.ndarray | None = None,
+    mask_in_resolution: tuple[int, int] | None = None,
+    oversampling_dtype: np.dtype | None = None,
     mask_in_binary_threshold: float = 0.999,
-    rasterize_kwargs: Optional[Dict] = None,
+    rasterize_kwargs: dict | None = None,
     init_out: bool = False,
-) -> Optional[np.ndarray]:
+) -> np.ndarray | None:
     """Create a binary mask associated with a grid.
 
     This method operates solely on raster data and does not perform I/O.
@@ -193,8 +192,10 @@ def build_mask(
         For example:
 
         ::
-            {'alg': GridRasterizeAlg.SHAPELY,
-             'kwargs_alg': {'shapely_predicate': ShapelyPredicate.COVERS}}
+            {
+                "alg": GridRasterizeAlg.SHAPELY,
+                "kwargs_alg": {"shapely_predicate": ShapelyPredicate.COVERS},
+            }
 
         Defaults to ``None``.
 
@@ -248,10 +249,11 @@ def build_mask(
     ret = None
     # -- Perform some checks on arguments and init optional arguments
     if shape is None or resolution is None:
-        raise ValueError("You must provide both the 'shape' and 'resolution' " "arguments")
+        raise ValueError("You must provide both the 'shape' and 'resolution' arguments")
     if ~np.all(resolution == (1, 1)):
         raise ValueError(
-            "Output resolution different from full resolution have" " not been implemented yet"
+            "Output resolution different from full resolution have"
+            " not been implemented yet"
         )
 
     has_geometry = (geometry_pair is not None) and (geometry_pair != (None, None))
@@ -272,11 +274,15 @@ def build_mask(
         out[:] = Validity.VALID
 
     if ~np.all(out.shape == shape):
-        raise ValueError("The values of the 2 arguments 'out' and 'shape' does " "not match.")
+        raise ValueError(
+            "The values of the 2 arguments 'out' and 'shape' does not match."
+        )
 
     if mask_in is not None and oversampling_dtype is not None:
         if not np.issubdtype(oversampling_dtype, np.floating):
-            raise ValueError("The value of argument 'oversampling_dtype' is not" " a floating type")
+            raise ValueError(
+                "The value of argument 'oversampling_dtype' is not a floating type"
+            )
     elif mask_in is not None:
         raise ValueError("You must precise argument 'oversampling_dtype'")
 
@@ -306,7 +312,9 @@ def build_mask(
             ndim=mask_in.ndim,
             dtype=mask_in.dtype,
         )
-        if not window_check(arr=mask_in_full_res_profile, win=mask_in_target_win, axes=None):
+        if not window_check(
+            arr=mask_in_full_res_profile, win=mask_in_target_win, axes=None
+        ):
             raise ValueError(
                 "Target window error is not contained in input mask : "
                 f"\n\t Input mask : {mask_in_full_res_profile.shape}"
@@ -358,7 +366,7 @@ def build_mask(
         default_val: int,
         current_out_array: np.ndarray,
         merge_current_out_array: bool,
-        temp_array: Optional[np.ndarray] = None,
+        temp_array: np.ndarray | None = None,
     ) -> np.ndarray:
         """
         Helper to rasterize a geometry and optionally merge it.
@@ -391,7 +399,6 @@ def build_mask(
             return grid_rasterize(**raster_args)  # Returns 'current_out_array'
 
     match geometry_pair:
-
         case None:
             pass
 
@@ -402,20 +409,30 @@ def build_mask(
             # There is only valid geometry
             # Only valid geometry provided
             _ = grid_rasterize_wrapper(
-                geometry_valid, Validity.VALID, Validity.INVALID, Validity.VALID, out, merge, None
+                geometry_valid,
+                Validity.VALID,
+                Validity.INVALID,
+                Validity.VALID,
+                out,
+                merge,
+                None,
             )
 
         case (None, geometry_invalid) if geometry_invalid is not None:
-
             # There is only invalid geometry
             _ = grid_rasterize_wrapper(
-                geometry_invalid, Validity.INVALID, Validity.VALID, Validity.VALID, out, merge, None
+                geometry_invalid,
+                Validity.INVALID,
+                Validity.VALID,
+                Validity.VALID,
+                out,
+                merge,
+                None,
             )
 
         case (geometry_valid, geometry_invalid) if (
             geometry_valid is not None and geometry_invalid is not None
         ):
-
             # In that case we will proceed in 2 passes :
             # - pass 1 : rasterize the valid geometry
             # - pass 2 : rasterize the invalid geometry

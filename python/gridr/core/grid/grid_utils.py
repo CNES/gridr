@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -20,8 +19,9 @@
 """
 Grid utils module
 """
+
 import logging
-from typing import NoReturn, Optional, Tuple, Union
+from typing import NoReturn
 
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
@@ -61,12 +61,12 @@ PY_ARRAY_COMPUTE_RESAMPLING_GRID_SRC_BOUNDARIES_FUNC = {
 def array_compute_resampling_grid_geometries(
     grid_row: np.ndarray,
     grid_col: np.ndarray,
-    grid_resolution: Tuple[int, int],
-    win: Optional[np.ndarray] = None,
-    grid_mask: Optional[np.ndarray] = None,
-    grid_mask_valid_value: Optional[int] = 1,
-    grid_nodata: Optional[float] = None,
-) -> Union[PyGridGeometriesMetricsF64, None]:
+    grid_resolution: tuple[int, int],
+    win: np.ndarray | None = None,
+    grid_mask: np.ndarray | None = None,
+    grid_mask_valid_value: int | None = 1,
+    grid_nodata: float | None = None,
+) -> PyGridGeometriesMetricsF64 | None:
     """Computes resampling grid geometries metrics from given row and column
     grids.
 
@@ -182,7 +182,10 @@ def array_compute_resampling_grid_geometries(
     py_grid_win = None
     if win is not None:
         py_grid_win = PyArrayWindow2(
-            start_row=win[0][0], end_row=win[0][1], start_col=win[1][0], end_col=win[1][1]
+            start_row=win[0][0],
+            end_row=win[0][1],
+            start_col=win[1][0],
+            end_col=win[1][1],
         )
 
     func_types = (np.dtype("float64"), grid_row.dtype)
@@ -222,11 +225,11 @@ def array_compute_resampling_grid_geometries(
 def array_compute_resampling_grid_src_boundaries(
     grid_row: np.ndarray,
     grid_col: np.ndarray,
-    win: Optional[np.ndarray] = None,
-    grid_mask: Optional[np.ndarray] = None,
-    grid_mask_valid_value: Optional[int] = 1,
-    grid_nodata: Optional[float] = None,
-) -> Union[PyGeometryBoundsF64, None]:
+    win: np.ndarray | None = None,
+    grid_mask: np.ndarray | None = None,
+    grid_mask_valid_value: int | None = 1,
+    grid_nodata: float | None = None,
+) -> PyGeometryBoundsF64 | None:
     """Computes resampling grid source boundaries from given row and column
     grids.
 
@@ -329,7 +332,10 @@ def array_compute_resampling_grid_src_boundaries(
     py_grid_win = None
     if win is not None:
         py_grid_win = PyArrayWindow2(
-            start_row=win[0][0], end_row=win[0][1], start_col=win[1][0], end_col=win[1][1]
+            start_row=win[0][0],
+            end_row=win[0][1],
+            start_col=win[1][0],
+            end_col=win[1][1],
         )
 
     func_types = (np.dtype("float64"), grid_row.dtype)
@@ -368,11 +374,11 @@ def array_compute_resampling_grid_src_boundaries(
 def array_shift_grid_coordinates(
     grid_row: np.ndarray,
     grid_col: np.ndarray,
-    grid_shift: Union[Tuple[int, int], Tuple[float, float]],
-    win: Optional[np.ndarray] = None,
-    grid_mask: Optional[np.ndarray] = None,
-    grid_mask_valid_value: Optional[int] = 1,
-    grid_nodata: Optional[float] = None,
+    grid_shift: tuple[int, int] | tuple[float, float],
+    win: np.ndarray | None = None,
+    grid_mask: np.ndarray | None = None,
+    grid_mask_valid_value: int | None = 1,
+    grid_nodata: float | None = None,
 ) -> NoReturn:
     """Shift a resampling grid by adding a scalar values in both row and column
     dimentions.
@@ -451,13 +457,11 @@ def array_shift_grid_coordinates(
     assert len(grid_row.shape) == 2
     grid_shape = grid_row.shape
 
-    if win is not None:
-        if not window_check(grid_row, win):
-            raise Exception("window outside of output grid domain")
+    if win is not None and not window_check(grid_row, win):
+        raise Exception("window outside of output grid domain")
 
     # Manage grid_mask
     if grid_mask is not None:
-
         # grid mask must be c-contiguous
         assert grid_mask.flags.c_contiguous is True
         # grid mask must be encoded as unsigned 8 bits integer
@@ -484,7 +488,6 @@ def array_shift_grid_coordinates(
         array_add(array=grid_col, val_add=grid_shift[1], **kwargs)
 
     elif grid_nodata is not None:
-
         # prepare call to array_add - here we use val_cond
         # we have to add the scalars on valid data, ie. different from val_cond,
         # hence add_on_true set to False
@@ -505,7 +508,8 @@ def array_shift_grid_coordinates(
     else:
         # no mask is given, we directly use native numpy operations
         if win is not None:
-            # Define the window slice - we have ensured previously that the window is valid
+            # Define the window slice - we have ensured previously that
+            # the window is valid
             win_slice = (
                 slice(win[0][0], win[0][1] + 1),
                 slice(win[1][0], win[1][1] + 1),
@@ -531,7 +535,7 @@ def read_win_from_grid_metrics(
     margins: np.ndarray,
     logger: logging.Logger,
     logger_msg_prefix: str = "",
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Computes the source read window from grid metrics.
 
     This function determines the read window (`src_win_read`) from the
@@ -681,7 +685,9 @@ def read_win_from_grid_metrics(
         DEBUG(f"src read win required pad : {src_win_marged_overflow}")
 
         # `cstrip_read_win` corresponds to the window to read from src array
-        src_win_read = window_extend(src_win_marged, src_win_marged_overflow, reverse=True)
+        src_win_read = window_extend(
+            src_win_marged, src_win_marged_overflow, reverse=True
+        )
         src_win_read_shape = window_shape(src_win_read)
         DEBUG(f"src read win read : {src_win_read} with shape {src_win_read_shape}")
 
@@ -693,16 +699,16 @@ def read_win_from_grid_metrics(
 
 
 def interpolate_grid(
-    grid: Optional[np.ndarray],
-    grid_mask: Optional[np.ndarray],
+    grid: np.ndarray | None,
+    grid_mask: np.ndarray | None,
     x: np.ndarray,
     y: np.ndarray,
     x_new: np.ndarray,
     y_new: np.ndarray,
-    dtype: Optional[np.dtype] = None,
+    dtype: np.dtype | None = None,
     mask_binarize_precision: float = 1e-6,
     mask_dtype: np.dtype = np.uint8,
-) -> Tuple[np.ndarray]:
+) -> tuple[np.ndarray]:
     """Interpolate a 3-dimensional grid and its associated 2-dimensional mask.
 
     The first dimension of the grid contains the variable. This function
@@ -715,7 +721,8 @@ def interpolate_grid(
     interpolated mask values:
 
     .. math::
-        final\\_mask(i,j) = 0 \\quad \\text{only if} \\quad |interp\\_mask(i,j)| < threshold
+        final\\_mask(i,j) = 0 \\quad \\text{only if} \\quad
+        |interp\\_mask(i,j)| < threshold
 
     The grid is interpolated on the mesh generated by the `x_new` and `y_new`
     coordinates, using a linear interpolation method.
@@ -788,7 +795,11 @@ def interpolate_grid(
         for i in range(n_vars):
             # Create the interpolator
             interpolator = RegularGridInterpolator(
-                (y, x), grid[i, :, :], method="linear", bounds_error=False, fill_value=np.nan
+                (y, x),
+                grid[i, :, :],
+                method="linear",
+                bounds_error=False,
+                fill_value=np.nan,
             )
             # Perform the interpolation
             interp_grid[i, :, :] = interpolator((y_new_sparse, x_new_sparse))
@@ -799,28 +810,34 @@ def interpolate_grid(
         interp_grid_mask = np.empty(grid_mask.shape)
 
         interpolator = RegularGridInterpolator(
-            (y, x), grid_mask[:, :], method="linear", bounds_error=False, fill_value=np.nan
+            (y, x),
+            grid_mask[:, :],
+            method="linear",
+            bounds_error=False,
+            fill_value=np.nan,
         )
         # Perform the interpolation
         interp_grid_mask = interpolator((y_new_sparse, x_new_sparse))
         # The interpolator will generate interpolated values
         # If we are strict we will only consider unmasked data to have
         # strictly the mask_value (almost equal with a precision)
-        interp_grid_mask = (np.abs(interp_grid_mask) >= mask_binarize_precision).astype(mask_dtype)
+        interp_grid_mask = (np.abs(interp_grid_mask) >= mask_binarize_precision).astype(
+            mask_dtype
+        )
 
     return interp_grid, interp_grid_mask
 
 
 def oversample_regular_grid(
-    grid: Optional[np.ndarray],
+    grid: np.ndarray | None,
     grid_oversampling_row: int,
     grid_oversampling_col: int,
-    grid_mask: Optional[np.ndarray],
-    dtype: Optional[np.dtype] = None,
-    grid_mask_binarize_precision: Optional[float] = 1e-6,
+    grid_mask: np.ndarray | None,
+    dtype: np.dtype | None = None,
+    grid_mask_binarize_precision: float | None = 1e-6,
     grid_mask_dtype: np.dtype = np.uint8,
-    win: Optional[np.ndarray] = None,
-) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    win: np.ndarray | None = None,
+) -> tuple[np.ndarray | None, np.ndarray | None]:
     """Get a linearly interpolated oversampled grid from the input grid.
 
     This function takes an input grid and optionally an associated mask, then
@@ -913,13 +930,19 @@ def oversample_regular_grid(
         # => the number of points along an axis is given by :
         #    (shape(axis) -1) * oversampling + 1
         win = np.asarray(
-            [[0, (nrows - 1) * grid_oversampling_row], [0, (ncols - 1) * grid_oversampling_col]]
+            [
+                [0, (nrows - 1) * grid_oversampling_row],
+                [0, (ncols - 1) * grid_oversampling_col],
+            ]
         )
 
     # Check the window is OK - for that we pass an ArrayProfile in order to
     # mock the output array's profile
     out_array_profile = ArrayProfile(
-        shape=((nrows - 1) * grid_oversampling_row + 1, (ncols - 1) * grid_oversampling_col + 1),
+        shape=(
+            (nrows - 1) * grid_oversampling_row + 1,
+            (ncols - 1) * grid_oversampling_col + 1,
+        ),
         ndim=2,
         dtype=float,
     )
@@ -967,13 +990,13 @@ def oversample_regular_grid(
 
 
 def build_grid(
-    resolution: Tuple[int, int],
+    resolution: tuple[int, int],
     grid: np.ndarray,
     grid_target_win: np.ndarray,
-    grid_resolution: Tuple[int, int],
+    grid_resolution: tuple[int, int],
     out: np.ndarray,
-    computation_dtype: Optional[np.dtype] = None,
-) -> Optional[np.ndarray]:
+    computation_dtype: np.dtype | None = None,
+) -> np.ndarray | None:
     """Create the target resolution grid.
 
     This method generates a grid at a specified target resolution by resampling
@@ -1055,7 +1078,7 @@ def build_grid(
     ret = None
     # -- Perform some checks on arguments and init optional arguments
     if resolution is None:
-        raise ValueError("You must provide both the 'shape' and 'resolution' " "arguments")
+        raise ValueError("You must provide both the 'shape' and 'resolution' arguments")
     if grid is None:
         raise ValueError("You must provide the 'grid' argument")
     if grid.ndim != 3:
@@ -1063,7 +1086,8 @@ def build_grid(
 
     if ~np.all(resolution == (1, 1)):
         raise ValueError(
-            "Output resolution different from full resolution have" " not been implemented yet"
+            "Output resolution different from full resolution have"
+            " not been implemented yet"
         )
 
     grid_full_res_profile = ArrayProfile(
@@ -1079,12 +1103,15 @@ def build_grid(
     if grid_target_win is None:
         # Compute full size
         grid_target_win = np.asarray(
-            [[0, grid_full_res_profile.shape[1] - 1], [0, grid_full_res_profile.shape[2] - 1]]
+            [
+                [0, grid_full_res_profile.shape[1] - 1],
+                [0, grid_full_res_profile.shape[2] - 1],
+            ]
         )
     else:
         grid_target_win = np.asarray(grid_target_win)
         if grid_target_win.ndim != 2:
-            raise ValueError("The argument 'grid_target_win' must be a 2d " "window")
+            raise ValueError("The argument 'grid_target_win' must be a 2d window")
     grid_target_win3 = window_expand_ndim(grid_target_win, (0, grid.shape[0] - 1))
 
     # check that the target window lies in the full resolution grid
@@ -1103,7 +1130,9 @@ def build_grid(
         out = np.zeros(shape3, dtype=grid.dtype)
         ret = out
     elif ~np.all(out.shape == shape3):
-        raise ValueError("The values of the 2 arguments 'out' and 'shape' does " "not match.")
+        raise ValueError(
+            "The values of the 2 arguments 'out' and 'shape' does not match."
+        )
 
     if computation_dtype is None:
         computation_dtype = out.dtype

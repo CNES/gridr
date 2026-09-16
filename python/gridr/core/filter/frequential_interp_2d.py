@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -17,7 +16,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-from typing import Tuple
 
 import numpy as np
 
@@ -25,7 +23,7 @@ from gridr.core.filter.filter import Filter2d
 from gridr.core.filter.lattice import Lattice2d
 
 
-class CellModel(object):
+class CellModel:
     pass
 
 
@@ -79,7 +77,9 @@ class ReciprocalCellModel(CellModel):
         self.cutoff_tanh_slope = cutoff_tanh_slope
         self.cutoff_shift = cutoff_shift
 
-    def compute(self, freq1d_x: np.array, freq1d_y: np.array, working_geometry: Lattice2d):
+    def compute(
+        self, freq1d_x: np.array, freq1d_y: np.array, working_geometry: Lattice2d
+    ):
         """Compute the filter
 
         Parameters
@@ -190,7 +190,7 @@ class FrequentialInterpolator2d(Filter2d):
 
     def compute(
         self, nrow: int, ncol: int, oversampling_row: float, oversampling_col: float
-    ) -> Tuple[np.array, np.array, np.array]:
+    ) -> tuple[np.array, np.array, np.array]:
         """
         Compute the filter on nrow x ncol samples.
 
@@ -202,8 +202,10 @@ class FrequentialInterpolator2d(Filter2d):
 
         :param nrow: number of rows for the computed filter
         :param ncol: number of columns for the computed filter
-        :param oversampling_row: oversampling factor for the rows frequencies (y frequencies)
-        :param oversampling_col: oversampling factor for the columns frequencies (x frequencies)
+        :param oversampling_row: oversampling factor for the rows frequencies (y
+            frequencies)
+        :param oversampling_col: oversampling factor for the columns frequencies (x
+            frequencies)
         :return: the computed filter.
         """
         # Check working geometry

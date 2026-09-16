@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -26,6 +25,7 @@ Functions
 ifft : Compute the inverse Fast Fourier Transform of an array with optional
        frequency domain shifting
 """
+
 import numpy as np
 
 
@@ -74,7 +74,8 @@ def ifft(array: np.ndarray, shift: bool = True, shift_after: bool = True) -> np.
         ifft_result = np.fft.ifft(array)
     else:
         raise ValueError(
-            f"Unsupported array dimension: {array.ndim}. " f"Only 1D and 2D arrays are supported."
+            f"Unsupported array dimension: {array.ndim}. "
+            f"Only 1D and 2D arrays are supported."
         )
 
     if shift_after:

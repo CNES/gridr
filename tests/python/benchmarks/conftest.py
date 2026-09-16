@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -26,6 +25,7 @@ Contains :
   - Hook pytest_benchmark_update_machine_info : enrich machine_info with
     CPU flags (AVX/SSE4/FMA), Frequency, caches L2/L3, available RAM
 """
+
 from __future__ import annotations
 
 import os
@@ -65,7 +65,9 @@ def pytest_benchmark_update_machine_info(config, machine_info: dict) -> None:
     machine_info["swap_total_gb"] = round(psutil.swap_memory().total / 1e9, 2)
 
     machine_info["bench_runner"] = (
-        os.environ.get("BENCH_RUNNER") or os.environ.get("CI_RUNNER_DESCRIPTION") or platform.node()
+        os.environ.get("BENCH_RUNNER")
+        or os.environ.get("CI_RUNNER_DESCRIPTION")
+        or platform.node()
     )
     machine_info["bench_runner_id"] = os.environ.get("CI_RUNNER_ID", "local")
 

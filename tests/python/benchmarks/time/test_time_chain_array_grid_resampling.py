@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -31,6 +30,7 @@ PYTHONPATH=$PWD/python:$PYTHONPATH python \
 --benchmark-storage=./benchmarks/results/pytest/ --benchmark-group-by=group \
 --benchmark-columns=min,median,mean,stddev,iqr,outliers,ops,rounds -v
 """
+
 from __future__ import annotations
 
 import copy
@@ -42,8 +42,8 @@ from typing import Any, Protocol
 import numpy as np
 import pytest
 import rasterio
-
 from benchmarks.wrappers.grid_orion import grid_orion, grid_orion_init_only
+
 from gridr.chain.grid_resampling_chain import basic_grid_resampling_chain
 from gridr.core.grid.grid_commons import grid_full_resolution_shape
 from gridr.io.common import safe_raster_open
@@ -74,11 +74,11 @@ RESOLUTIONS = [
     (100, 100),
 ]
 
-DO_TEST_001=False
-DO_TEST_INIT_ORION=False
-DO_TEST_002=False
-DO_TEST_003=False # 12000x12000 size
-DO_TEST_004=False # 4000x4000 size
+DO_TEST_001 = False
+DO_TEST_INIT_ORION = False
+DO_TEST_002 = False
+DO_TEST_003 = False  # 12000x12000 size
+DO_TEST_004 = False  # 4000x4000 size
 
 
 def write_array(array, dtype, fileout):
@@ -117,7 +117,11 @@ def write_array_bsq(array, dtype, fileout, oversampling_row, oversampling_col):
         height=array.shape[1],
         count=array.shape[0],
         dtype=dtype,
-        header_info={"LABEL": "dummy", "PAS COL": oversampling_col, "PAS LIG": oversampling_row},
+        header_info={
+            "LABEL": "dummy",
+            "PAS COL": oversampling_col,
+            "PAS LIG": oversampling_row,
+        },
         byte_order="native",
     ) as writer:
         writer.write(array[0], indexes=1, window=None)
@@ -176,7 +180,10 @@ def input_data_001_mandrill_grid_f64(tmp_path_factory):
         "raster_in_mask_band": None,
         "grid_in_path": {
             "tif": tmp_dir / "test_grid_in.tif",
-            "bsq": {res: tmp_dir / f"test_grid_in.bsq_{res[0]}_{res[1]}.hd" for res in RESOLUTIONS},
+            "bsq": {
+                res: tmp_dir / f"test_grid_in.bsq_{res[0]}_{res[1]}.hd"
+                for res in RESOLUTIONS
+            },
         },
         "grid_in_shape": (50, 40),
         "grid_mask_flag": False,
@@ -205,7 +212,9 @@ def input_data_001_mandrill_grid_f64(tmp_path_factory):
 
     # write grid as tif
     write_array(
-        np.array([grid_row, grid_col]), dtype=input_grid_dtype, fileout=ret["grid_in_path"]["tif"]
+        np.array([grid_row, grid_col]),
+        dtype=input_grid_dtype,
+        fileout=ret["grid_in_path"]["tif"],
     )
     if USE_ORION:
         # write grid as bsq - it requires to write header for each resolution
@@ -222,8 +231,6 @@ def input_data_001_mandrill_grid_f64(tmp_path_factory):
     return ret
 
 
-
-
 def input_data_002_mandrill_grid_f64(tmp_path_factory, res):
     """Create input data"""
     input_raster_dtype = mandrill.dtype
@@ -234,13 +241,12 @@ def input_data_002_mandrill_grid_f64(tmp_path_factory, res):
     output_shape_target = (10000, 10000)
     grid_in_shape = (
         (output_shape_target[0] - 1) // res[0] + 1,
-        (output_shape_target[1] - 1) // res[1] + 1
+        (output_shape_target[1] - 1) // res[1] + 1,
     )
-    v_row_y = (mandrill.shape[0] / output_shape_target[0])
-    v_row_x = (0.0002)
-    v_col_y = (-0.0005)
-    v_col_x = (mandrill.shape[1] / output_shape_target[1])
-    
+    v_row_y = mandrill.shape[0] / output_shape_target[0]
+    v_row_x = 0.0002
+    v_col_y = -0.0005
+    v_col_x = mandrill.shape[1] / output_shape_target[1]
 
     ret = {
         "raster_in_path": tmp_dir / "test_raster_in.tif",
@@ -259,7 +265,6 @@ def input_data_002_mandrill_grid_f64(tmp_path_factory, res):
 
     # write input raster as tif
     write_array(mandrill, dtype=input_raster_dtype, fileout=ret["raster_in_path"])
-    
 
     # create grid
     grid_row, grid_col = create_grid_generic(
@@ -278,21 +283,22 @@ def input_data_002_mandrill_grid_f64(tmp_path_factory, res):
 
     # write grid as tif
     write_array(
-        np.array([grid_row, grid_col]), dtype=input_grid_dtype, fileout=ret["grid_in_path"]["tif"]
+        np.array([grid_row, grid_col]),
+        dtype=input_grid_dtype,
+        fileout=ret["grid_in_path"]["tif"],
     )
     if USE_ORION:
         # write grid as bsq - it requires to write header for each resolution
         # here we write full grid data for each resolution to make it simple
         write_array_bsq(
-                np.array([grid_row, grid_col]),
-                dtype=input_grid_dtype,
-                fileout=ret["grid_in_path"]["bsq"][res],
-                oversampling_row=res[0],
-                oversampling_col=res[1],
-            )
+            np.array([grid_row, grid_col]),
+            dtype=input_grid_dtype,
+            fileout=ret["grid_in_path"]["bsq"][res],
+            oversampling_row=res[0],
+            oversampling_col=res[1],
+        )
 
     return ret
-
 
 
 @pytest.fixture(scope="session")
@@ -300,16 +306,17 @@ def input_data_002_mandrill_grid_50_f64(tmp_path_factory):
     res = (50, 50)
     return input_data_002_mandrill_grid_f64(tmp_path_factory, res)
 
+
 @pytest.fixture(scope="session")
 def input_data_002_mandrill_grid_100_f64(tmp_path_factory):
     res = (100, 100)
     return input_data_002_mandrill_grid_f64(tmp_path_factory, res)
 
+
 @pytest.fixture(scope="session")
 def input_data_002_mandrill_grid_500_f64(tmp_path_factory):
     res = (500, 500)
     return input_data_002_mandrill_grid_f64(tmp_path_factory, res)
-
 
 
 def input_data_003_12000_grid_f64(tmp_path_factory, res):
@@ -323,14 +330,17 @@ def input_data_003_12000_grid_f64(tmp_path_factory, res):
     output_shape_target = (10000, 10000)
     grid_in_shape = (
         (output_shape_target[0] - 1) // res[0] + 1,
-        (output_shape_target[1] - 1) // res[1] + 1
+        (output_shape_target[1] - 1) // res[1] + 1,
     )
-    v_row_y = (input_shape[1] / output_shape_target[0])
+    v_row_y = input_shape[1] / output_shape_target[0]
     v_row_x = 0.0002 * res[1]
     v_col_y = 0.0005 * res[0]
-    v_col_x = (input_shape[2] / output_shape_target[1])
+    v_col_x = input_shape[2] / output_shape_target[1]
 
-    input_data = np.arange(input_shape[0]*input_shape[1]*input_shape[2], dtype=np.uint16) % 4000
+    input_data = (
+        np.arange(input_shape[0] * input_shape[1] * input_shape[2], dtype=np.uint16)
+        % 4000
+    )
     input_data = input_data.reshape(input_shape).astype(input_raster_dtype)
 
     ret = {
@@ -368,35 +378,41 @@ def input_data_003_12000_grid_f64(tmp_path_factory, res):
 
     # write grid as tif
     write_array(
-        np.array([grid_row, grid_col]), dtype=input_grid_dtype, fileout=ret["grid_in_path"]["tif"]
+        np.array([grid_row, grid_col]),
+        dtype=input_grid_dtype,
+        fileout=ret["grid_in_path"]["tif"],
     )
     if USE_ORION:
         # write grid as bsq - it requires to write header for each resolution
         # here we write full grid data for each resolution to make it simple
         write_array_bsq(
-                np.array([grid_row, grid_col]),
-                dtype=input_grid_dtype,
-                fileout=ret["grid_in_path"]["bsq"][res],
-                oversampling_row=res[0],
-                oversampling_col=res[1],
-            )
+            np.array([grid_row, grid_col]),
+            dtype=input_grid_dtype,
+            fileout=ret["grid_in_path"]["bsq"][res],
+            oversampling_row=res[0],
+            oversampling_col=res[1],
+        )
 
     return ret
+
 
 @pytest.fixture(scope="session")
 def input_data_003_12000_grid_1_f64(tmp_path_factory):
     res = (1, 1)
     return input_data_003_12000_grid_f64(tmp_path_factory, res)
-    
+
+
 @pytest.fixture(scope="session")
 def input_data_003_12000_grid_50_f64(tmp_path_factory):
     res = (50, 50)
     return input_data_003_12000_grid_f64(tmp_path_factory, res)
 
+
 @pytest.fixture(scope="session")
 def input_data_003_12000_grid_100_f64(tmp_path_factory):
     res = (100, 100)
     return input_data_003_12000_grid_f64(tmp_path_factory, res)
+
 
 @pytest.fixture(scope="session")
 def input_data_003_12000_grid_200_f64(tmp_path_factory):
@@ -415,14 +431,17 @@ def input_data_004_4000_grid_f64(tmp_path_factory, res):
     output_shape_target = (3900, 3900)
     grid_in_shape = (
         (output_shape_target[0] - 1) // res[0] + 1,
-        (output_shape_target[1] - 1) // res[1] + 1
+        (output_shape_target[1] - 1) // res[1] + 1,
     )
-    v_row_y = (input_shape[1] / output_shape_target[0])
+    v_row_y = input_shape[1] / output_shape_target[0]
     v_row_x = 0.0002 * res[1]
     v_col_y = 0.0005 * res[0]
-    v_col_x = (input_shape[2] / output_shape_target[1])
+    v_col_x = input_shape[2] / output_shape_target[1]
 
-    input_data = np.arange(input_shape[0]*input_shape[1]*input_shape[2], dtype=np.uint16) % 4000
+    input_data = (
+        np.arange(input_shape[0] * input_shape[1] * input_shape[2], dtype=np.uint16)
+        % 4000
+    )
     input_data = input_data.reshape(input_shape).astype(input_raster_dtype)
 
     ret = {
@@ -460,41 +479,46 @@ def input_data_004_4000_grid_f64(tmp_path_factory, res):
 
     # write grid as tif
     write_array(
-        np.array([grid_row, grid_col]), dtype=input_grid_dtype, fileout=ret["grid_in_path"]["tif"]
+        np.array([grid_row, grid_col]),
+        dtype=input_grid_dtype,
+        fileout=ret["grid_in_path"]["tif"],
     )
     if USE_ORION:
         # write grid as bsq - it requires to write header for each resolution
         # here we write full grid data for each resolution to make it simple
         write_array_bsq(
-                np.array([grid_row, grid_col]),
-                dtype=input_grid_dtype,
-                fileout=ret["grid_in_path"]["bsq"][res],
-                oversampling_row=res[0],
-                oversampling_col=res[1],
-            )
+            np.array([grid_row, grid_col]),
+            dtype=input_grid_dtype,
+            fileout=ret["grid_in_path"]["bsq"][res],
+            oversampling_row=res[0],
+            oversampling_col=res[1],
+        )
 
     return ret
+
 
 @pytest.fixture(scope="session")
 def input_data_004_4000_grid_1_f64(tmp_path_factory):
     res = (1, 1)
     return input_data_004_4000_grid_f64(tmp_path_factory, res)
-    
+
+
 @pytest.fixture(scope="session")
 def input_data_004_4000_grid_50_f64(tmp_path_factory):
     res = (50, 50)
     return input_data_004_4000_grid_f64(tmp_path_factory, res)
+
 
 @pytest.fixture(scope="session")
 def input_data_004_4000_grid_100_f64(tmp_path_factory):
     res = (100, 100)
     return input_data_004_4000_grid_f64(tmp_path_factory, res)
 
+
 @pytest.fixture(scope="session")
 def input_data_004_4000_grid_200_f64(tmp_path_factory):
     res = (200, 200)
     return input_data_004_4000_grid_f64(tmp_path_factory, res)
-
 
 
 @pytest.fixture(scope="session")
@@ -513,7 +537,9 @@ class BenchAdapter(Protocol):
         try:
             self._kwargs = copy.deepcopy(pmap["method"][params["method"]])
         except KeyError as err:
-            raise pytest.skip(f"{self.name} does not support '!r{params['method']}'") from err
+            raise pytest.skip(
+                f"{self.name} does not support '!r{params['method']}'"
+            ) from err
 
     def prepare(self, benchmark, request, params: dict[str, Any], work_dir: Path):
         """ """
@@ -650,7 +676,9 @@ class GridrAdapter(BenchAdapter):
             self._kwargs["array_src_bands"] = 1
             count = 1
         else:
-            self._kwargs["array_src_bands"] = list(range(1, 1 + self._input_image_nbands))
+            self._kwargs["array_src_bands"] = list(
+                range(1, 1 + self._input_image_nbands)
+            )
             count = self._input_image_nbands
 
         self._output_image_profile = {
@@ -666,11 +694,11 @@ class GridrAdapter(BenchAdapter):
 
         # For GridR we use the TIF input grid
         self._grid_in_path = self._grid_in_path_dict["tif"]
-        
+
         with rasterio.open(self._input_image_path, "r") as array_src_ds:
             if array_src_ds.width > 1000:
-                self._kwargs['io_strip_size'] = 2000
-                self._kwargs['tile_shape'] = (2000, 2000)
+                self._kwargs["io_strip_size"] = 2000
+                self._kwargs["tile_shape"] = (2000, 2000)
         self._logger = None
 
     def run(self):
@@ -732,14 +760,14 @@ class OrionAdapter(BenchAdapter):
 
         if not params["multi_bands"]:
             self._kwargs["num_canal_in"] = 1
-        
-        self._kwargs['mode_read'] = "IMAGE"
+
+        self._kwargs["mode_read"] = "IMAGE"
         with rasterio.open(self._input_image_path, "r") as array_src_ds:
             if array_src_ds.width > 1000:
-                self._kwargs['mode_read'] = "TUILE"
-                self._kwargs['largeur_imagette'] = 2000
-                self._kwargs['hauteur_imagette'] = 2000
-                #self._kwargs['tile_orion_auto'] = True
+                self._kwargs["mode_read"] = "TUILE"
+                self._kwargs["largeur_imagette"] = 2000
+                self._kwargs["hauteur_imagette"] = 2000
+                # self._kwargs['tile_orion_auto'] = True
 
         # For Orion we use the BSQ input grid for the corresponding resolution
         self._grid_in_path = self._grid_in_path_dict["bsq"][params["resolution"]]
@@ -800,7 +828,10 @@ ADAPTERS = [
 ]
 
 if DO_TEST_001:
-    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+
+    @pytest.mark.benchmark(
+        group="time:gridr.chain.grid.grid_resampling.array_grid_resampling"
+    )
     @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
     @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
     @pytest.mark.parametrize("resolution", RESOLUTIONS)
@@ -856,11 +887,15 @@ if DO_TEST_001:
             iterations=NITERATIONS,
         )
 
+
 if DO_TEST_002:
-    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+
+    @pytest.mark.benchmark(
+        group="time:gridr.chain.grid.grid_resampling.array_grid_resampling"
+    )
     @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
     @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
-    @pytest.mark.parametrize("resolution", ((50,50),))
+    @pytest.mark.parametrize("resolution", ((50, 50),))
     @pytest.mark.parametrize(
         "input_data",
         [
@@ -913,11 +948,12 @@ if DO_TEST_002:
             iterations=NITERATIONS,
         )
 
-
-    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+    @pytest.mark.benchmark(
+        group="time:gridr.chain.grid.grid_resampling.array_grid_resampling"
+    )
     @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
     @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
-    @pytest.mark.parametrize("resolution", ((100,100),))
+    @pytest.mark.parametrize("resolution", ((100, 100),))
     @pytest.mark.parametrize(
         "input_data",
         [
@@ -969,12 +1005,13 @@ if DO_TEST_002:
             rounds=NROUNDS,
             iterations=NITERATIONS,
         )
-        
 
-    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+    @pytest.mark.benchmark(
+        group="time:gridr.chain.grid.grid_resampling.array_grid_resampling"
+    )
     @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
     @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
-    @pytest.mark.parametrize("resolution", ((500,500),))
+    @pytest.mark.parametrize("resolution", ((500, 500),))
     @pytest.mark.parametrize(
         "input_data",
         [
@@ -1028,12 +1065,14 @@ if DO_TEST_002:
         )
 
 
-
 if DO_TEST_003:
-    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+
+    @pytest.mark.benchmark(
+        group="time:gridr.chain.grid.grid_resampling.array_grid_resampling"
+    )
     @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
     @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
-    @pytest.mark.parametrize("resolution", ((1,1),))
+    @pytest.mark.parametrize("resolution", ((1, 1),))
     @pytest.mark.parametrize(
         "input_data",
         [
@@ -1085,10 +1124,13 @@ if DO_TEST_003:
             rounds=NROUNDS,
             iterations=NITERATIONS,
         )
-    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+
+    @pytest.mark.benchmark(
+        group="time:gridr.chain.grid.grid_resampling.array_grid_resampling"
+    )
     @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
     @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
-    @pytest.mark.parametrize("resolution", ((50,50),))
+    @pytest.mark.parametrize("resolution", ((50, 50),))
     @pytest.mark.parametrize(
         "input_data",
         [
@@ -1140,10 +1182,13 @@ if DO_TEST_003:
             rounds=NROUNDS,
             iterations=NITERATIONS,
         )
-    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+
+    @pytest.mark.benchmark(
+        group="time:gridr.chain.grid.grid_resampling.array_grid_resampling"
+    )
     @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
     @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
-    @pytest.mark.parametrize("resolution", ((100,100),))
+    @pytest.mark.parametrize("resolution", ((100, 100),))
     @pytest.mark.parametrize(
         "input_data",
         [
@@ -1195,10 +1240,13 @@ if DO_TEST_003:
             rounds=NROUNDS,
             iterations=NITERATIONS,
         )
-    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+
+    @pytest.mark.benchmark(
+        group="time:gridr.chain.grid.grid_resampling.array_grid_resampling"
+    )
     @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
     @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
-    @pytest.mark.parametrize("resolution", ((200,200),))
+    @pytest.mark.parametrize("resolution", ((200, 200),))
     @pytest.mark.parametrize(
         "input_data",
         [
@@ -1253,10 +1301,13 @@ if DO_TEST_003:
 
 
 if DO_TEST_004:
-    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+
+    @pytest.mark.benchmark(
+        group="time:gridr.chain.grid.grid_resampling.array_grid_resampling"
+    )
     @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
     @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
-    @pytest.mark.parametrize("resolution", ((1,1),))
+    @pytest.mark.parametrize("resolution", ((1, 1),))
     @pytest.mark.parametrize(
         "input_data",
         [
@@ -1308,10 +1359,13 @@ if DO_TEST_004:
             rounds=NROUNDS,
             iterations=NITERATIONS,
         )
-    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+
+    @pytest.mark.benchmark(
+        group="time:gridr.chain.grid.grid_resampling.array_grid_resampling"
+    )
     @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
     @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
-    @pytest.mark.parametrize("resolution", ((50,50),))
+    @pytest.mark.parametrize("resolution", ((50, 50),))
     @pytest.mark.parametrize(
         "input_data",
         [
@@ -1363,10 +1417,13 @@ if DO_TEST_004:
             rounds=NROUNDS,
             iterations=NITERATIONS,
         )
-    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+
+    @pytest.mark.benchmark(
+        group="time:gridr.chain.grid.grid_resampling.array_grid_resampling"
+    )
     @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
     @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
-    @pytest.mark.parametrize("resolution", ((100,100),))
+    @pytest.mark.parametrize("resolution", ((100, 100),))
     @pytest.mark.parametrize(
         "input_data",
         [
@@ -1418,10 +1475,13 @@ if DO_TEST_004:
             rounds=NROUNDS,
             iterations=NITERATIONS,
         )
-    @pytest.mark.benchmark(group="time:gridr.chain.grid.grid_resampling.array_grid_resampling")
+
+    @pytest.mark.benchmark(
+        group="time:gridr.chain.grid.grid_resampling.array_grid_resampling"
+    )
     @pytest.mark.parametrize("adapter", ADAPTERS, ids=[a.name for a in ADAPTERS])
     @pytest.mark.parametrize("method", CANONICAL_PARAMS["method"])
-    @pytest.mark.parametrize("resolution", ((200,200),))
+    @pytest.mark.parametrize("resolution", ((200, 200),))
     @pytest.mark.parametrize(
         "input_data",
         [
@@ -1476,6 +1536,7 @@ if DO_TEST_004:
 
 
 if DO_TEST_INIT_ORION:
+
     @pytest.mark.benchmark(group="time:orion_init_only")
     def test_orion_init_only(benchmark):
         """ """

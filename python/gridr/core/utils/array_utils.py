@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -20,9 +19,10 @@
 """
 Array utils module
 """
+
 # pylint: disable=C0413
 import sys
-from typing import Any, Literal, NoReturn, Optional, Tuple, Union
+from typing import Any, Literal, NoReturn
 
 import numpy as np
 import rasterio
@@ -46,20 +46,20 @@ from gridr.cdylib import (
 PY311 = sys.version_info >= (3, 11)
 
 if PY311:
-    from typing import Self  # noqa: E402, F401
+    from typing import Self
 else:
-    from typing_extensions import Self  # noqa: E402, F401
+    from typing_extensions import Self
 # pylint: enable=C0413
 
 
 def array_replace(
     array: np.ndarray,
-    val_cond: Union[int, float],
-    val_true: Union[int, float],
-    val_false: Union[int, float],
-    array_cond: Optional[np.ndarray] = None,
-    array_cond_val: Optional[Union[int, float]] = None,
-    win: Optional[np.ndarray] = None,
+    val_cond: int | float,
+    val_true: int | float,
+    val_false: int | float,
+    array_cond: np.ndarray | None = None,
+    array_cond_val: int | float | None = None,
+    win: np.ndarray | None = None,
 ) -> NoReturn:
     """Replaces elements within an array in-place based on specified conditions.
 
@@ -143,7 +143,10 @@ def array_replace(
     py_window = None
     if win is not None:
         py_window = PyArrayWindow2(
-            start_row=win[0][0], end_row=win[0][1], start_col=win[1][0], end_col=win[1][1]
+            start_row=win[0][0],
+            end_row=win[0][1],
+            start_col=win[1][0],
+            end_col=win[1][1],
         )
 
     nrow, ncol = array.shape
@@ -161,7 +164,15 @@ def array_replace(
     }
     if array_cond is not None:
         py_array_replace_func[(array.dtype, array_cond.dtype)](
-            array, nrow, ncol, val_cond, val_true, val_false, array_cond, array_cond_val, py_window
+            array,
+            nrow,
+            ncol,
+            val_cond,
+            val_true,
+            val_false,
+            array_cond,
+            array_cond_val,
+            py_window,
         )
     else:
         py_array_replace_func[(array.dtype, array.dtype)](
@@ -171,12 +182,12 @@ def array_replace(
 
 def array_add(
     array: np.ndarray,
-    val_cond: Union[int, float],
-    val_add: Union[int, float],
+    val_cond: int | float,
+    val_add: int | float,
     add_on_true: bool,
-    array_cond: Optional[np.ndarray] = None,
-    array_cond_val: Optional[Union[int, float]] = None,
-    win: Optional[np.ndarray] = None,
+    array_cond: np.ndarray | None = None,
+    array_cond_val: int | float | None = None,
+    win: np.ndarray | None = None,
 ) -> NoReturn:
     """Add a scalar to elements within an array in-place based on specified
     conditions.
@@ -262,7 +273,10 @@ def array_add(
     py_window = None
     if win is not None:
         py_window = PyArrayWindow2(
-            start_row=win[0][0], end_row=win[0][1], start_col=win[1][0], end_col=win[1][1]
+            start_row=win[0][0],
+            end_row=win[0][1],
+            start_col=win[1][0],
+            end_col=win[1][1],
         )
 
     nrow, ncol = array.shape
@@ -280,7 +294,15 @@ def array_add(
     }
     if array_cond is not None:
         py_array_add_func[(array.dtype, array_cond.dtype)](
-            array, nrow, ncol, val_cond, val_add, add_on_true, array_cond, array_cond_val, py_window
+            array,
+            nrow,
+            ncol,
+            val_cond,
+            val_add,
+            add_on_true,
+            array_cond,
+            array_cond_val,
+            py_window,
         )
     else:
         py_array_add_func[(array.dtype, array.dtype)](
@@ -303,7 +325,9 @@ def is_clip_required(in_dtype: np.dtype, out_dtype: np.dtype) -> bool:
         ValueError: If the conversion between types is not managed
     """
     in_dtype_info = np.iinfo(in_dtype) if in_dtype.kind in "iu" else np.finfo(in_dtype)
-    out_dtype_info = np.iinfo(out_dtype) if out_dtype.kind in "iu" else np.finfo(out_dtype)
+    out_dtype_info = (
+        np.iinfo(out_dtype) if out_dtype.kind in "iu" else np.finfo(out_dtype)
+    )
     in_min, in_max = np.float64(in_dtype_info.min), np.float64(in_dtype_info.max)
     out_min, out_max = np.float64(out_dtype_info.min), np.float64(out_dtype_info.max)
 
@@ -321,17 +345,21 @@ def is_clip_required(in_dtype: np.dtype, out_dtype: np.dtype) -> bool:
             clip_required = in_max > out_max
 
         case _:
-            raise ValueError(f"Conversion from {in_dtype} to {out_dtype} is not managed")
+            raise ValueError(
+                f"Conversion from {in_dtype} to {out_dtype} is not managed"
+            )
 
     return clip_required
 
 
 def is_clip_to_dtype_limits_safe(in_dtype: np.dtype, out_dtype: np.dtype) -> bool:
     """
-    Determines whether clipping from an input type to the type limits of a target data type is safe.
+    Determines whether clipping from an input type to the type limits of
+    a target data type is safe.
 
-    This function checks if converting from a data type to a target data type and clipping it to the
-    target type's limits will preserve all values without overflow.
+    This function checks if converting from a data type to a target data
+    type and clipping it to the target type's limits will preserve all
+    values without overflow.
 
     Parameters
     ----------
@@ -343,35 +371,35 @@ def is_clip_to_dtype_limits_safe(in_dtype: np.dtype, out_dtype: np.dtype) -> boo
     Returns
     -------
     bool
-        True if clipping to the target type limits is safe (no overflow will occur and the target
-        limit can be expressed in the input data type with precision), False otherwise.
+        True if clipping to the target type limits is safe (no overflow
+        will occur and the target limit can be expressed in the input
+        data type with precision), False otherwise.
 
     Notes
     -----
-    This function is necessary when performing type conversions between different numerical
-    data types, especially when converting between floating-point and integer types or
-    between different floating-point precisions. The main concern is to prevent overflow
-    when clipping values to the target type's limits.
+    This function is necessary when performing type conversions between
+    different numerical data types, especially when converting between
+    floating-point and integer types or between different floating-point
+    precisions. The main concern is to prevent overflow when clipping
+    values to the target type's limits.
 
     The function performs the following checks:
 
-        1. Only floating-point input types are considered for this check (integer inputs
-           are assumed to be safe by default).
+        1. Only floating-point input types are considered for this check
+           (integer inputs are assumed to be safe by default).
 
-        2. Checks if clipping is actually required between the input and output types.
+        2. Checks if clipping is actually required between the input and
+           output types.
 
-        3. Attempts to convert the maximum value of the output type to the input type and convert it
-           back to the output type.
+        3. Attempts to convert the maximum value of the output type to
+           the input type and convert it back to the output type.
 
-        4. If this conversion results in an OverflowError or if the converted value
-           doesn't match the expected maximum value of the output type, returns False.
+        4. If this conversion results in an OverflowError or if the
+           converted value doesn't match the expected maximum value of
+           the output type, returns False.
 
-    The function is particularly important when processing numerical data where preserving
-    the integrity of values is critical, such as in scientific computing, financial
-    applications, or any domain where numerical precision matters.
-
-    The test is only performed on the max as the min of an integer type is a power of 2 and can
-    safely expressed when clipping is required.
+    The test is only performed on the max as the min of an integer type
+    is a power of 2 and can safely expressed when clipping is required.
     """
     is_safe = True
     # The test has only to be done considering float inputs
@@ -391,9 +419,9 @@ def is_clip_to_dtype_limits_safe(in_dtype: np.dtype, out_dtype: np.dtype) -> boo
 def array_convert(
     array_in: np.ndarray,
     array_out: np.ndarray,
-    clip: Union[Literal["auto"], Tuple[Any, Any]] = "auto",
+    clip: Literal["auto"] | tuple[Any, Any] = "auto",
     safe: bool = True,
-    rounding_method: Optional[Literal["round", "ceil", "floor"]] = "round",
+    rounding_method: Literal["round", "ceil", "floor"] | None = "round",
 ) -> None:
     """
     Convert an input array to a target dtype with optional clipping and rounding.
@@ -419,8 +447,9 @@ def array_convert(
                  The tuple values should correspond to the target dtype's range
 
     safe : bool
-        If True, check are performed to garanty that the automatic clipping can be performed without
-        overflow caused by floating point precision loss.
+        If True, check are performed to garanty that the automatic
+        clipping can be performed without overflow caused by floating
+        point precision loss.
 
     rounding_method : Optional[Literal['round', 'ceil', 'floor']], optional
         Specifies the rounding method to use when converting from float to integer:
@@ -443,8 +472,8 @@ def array_convert(
         dtypes and the specified clipping range.
     -   When 'auto' clipping is specified, the function automatically clips to the
         range of the output dtype.
-    -   The function currently raises an Exception if clipping from input type to output type is not
-        safe.
+    -   The function currently raises an Exception if clipping from
+        input type to output type is not safe.
     -   The function raises ValueError if the specified clipping range is invalid
         for the output dtype.
     -   No safety check is performed when the clipping range is not automatic
@@ -454,7 +483,9 @@ def array_convert(
     out_dtype = array_out.dtype
 
     # Get output dtype min and max codable values.
-    out_dtype_info = np.iinfo(out_dtype) if out_dtype.kind in "iu" else np.finfo(out_dtype)
+    out_dtype_info = (
+        np.iinfo(out_dtype) if out_dtype.kind in "iu" else np.finfo(out_dtype)
+    )
     out_dtype_range = (out_dtype_info.min, out_dtype_info.max)
 
     # Determines from types if clip is required
@@ -467,13 +498,16 @@ def array_convert(
 
         if safe and not is_clip_to_dtype_limits_safe(in_dtype, out_dtype):
             raise Exception(
-                f"Clipping to output dtype limits is not safe from {in_dtype} to {out_dtype}"
+                "Clipping to output dtype limits is not safe "
+                f"from {in_dtype} to {out_dtype}"
             )
 
     elif clip != "auto":
         clip_range = clip
         if min(clip_range) < out_dtype_info.min or max(clip_range) > out_dtype_info.max:
-            raise ValueError(f"Clipping range {clip_range} is not allowed on type {out_dtype}")
+            raise ValueError(
+                f"Clipping range {clip_range} is not allowed on type {out_dtype}"
+            )
 
     match rounding_method:
         case "round":
@@ -493,7 +527,9 @@ def array_convert(
         np.clip(array_in, a_min=clip_range_in[0], a_max=clip_range_in[1], out=array_in)
         overflow = (array_in < clip_range[0]) | (array_in > clip_range[1])
         if np.any(overflow):
-            raise Exception(f"Some value(s) are out of {out_dtype} range after clipping")
+            raise Exception(
+                f"Some value(s) are out of {out_dtype} range after clipping"
+            )
         # raise Exception(array_in)
         array_out[:] = array_in
 
@@ -501,7 +537,7 @@ def array_convert(
         array_out[:] = array_in
 
 
-class ArrayProfile(object):
+class ArrayProfile:
     """
     A class to define array attributes for mocking or descriptive purposes.
 
@@ -511,7 +547,7 @@ class ArrayProfile(object):
     instantiating a full array.
     """
 
-    def __init__(self, shape: Tuple[int, ...], ndim: int, dtype: np.dtype):
+    def __init__(self, shape: tuple[int, ...], ndim: int, dtype: np.dtype):
         """
         Initializes an `ArrayProfile` object.
 

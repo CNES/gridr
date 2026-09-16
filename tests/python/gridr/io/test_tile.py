@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2024 Centre National d'Etudes Spatiales (CNES).
 #
@@ -12,6 +11,7 @@ Tests for the gridr.core.io.tile module
 Command to run test :
 PYTHONPATH=${PWD}/python/:$PYTHONPATH pytest tests/python/gridr/io/test_tile.py
 """
+
 import numpy as np
 import pytest
 from rasterio.io import MemoryFile
@@ -50,7 +50,8 @@ class TestReadTileEdges:
                 self.ds = ds
                 self.data = data[0]
                 self.shape = shape
-                yield  # The dataset and associated info are available as class attributes
+                # The dataset and associated info are available as class attributes
+                yield
 
     @pytest.mark.parametrize("merge", [False, True])
     @pytest.mark.parametrize("check", [False, True])
@@ -76,7 +77,12 @@ class TestReadTileEdges:
 
         # Call the function under test
         rows_idx, cols_idx, edge_rows, edge_cols = read_tile_edges(
-            ds=ds, ds_band=1, tile_shape=tile_shape, merge=merge, window=window, check=check
+            ds=ds,
+            ds_band=1,
+            tile_shape=tile_shape,
+            merge=merge,
+            window=window,
+            check=check,
         )
 
         # Compute the expected edge indices for rows or columns given a tile size.
@@ -98,10 +104,16 @@ class TestReadTileEdges:
             return sorted(set(edges))
 
         expected_row_idx = np.array(
-            [row_start + i for i in expected_edges(row_start, row_stop, tile_shape[0], merge)]
+            [
+                row_start + i
+                for i in expected_edges(row_start, row_stop, tile_shape[0], merge)
+            ]
         )
         expected_col_idx = np.array(
-            [col_start + i for i in expected_edges(col_start, col_stop, tile_shape[1], merge)]
+            [
+                col_start + i
+                for i in expected_edges(col_start, col_stop, tile_shape[1], merge)
+            ]
         )
 
         # Check that the returned indices match the expected ones
@@ -148,7 +160,7 @@ class TestReadTileEdges:
 
         # Case 2: check=False should raise an error
         with pytest.raises(ValueError):
-            row_idx, col_idx, edge_rows, edge_cols = read_tile_edges(
+            _row_idx, _col_idx, _edge_rows, _edge_cols = read_tile_edges(
                 ds=ds,
                 ds_band=1,
                 tile_shape=tile_shape,

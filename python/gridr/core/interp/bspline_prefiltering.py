@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -24,8 +23,9 @@ This module wraps the rust functions implementing the prefiltering operations
 required for cardinal B-spline interpolation, following the theoretical
 framework described in Briand & Monasse (2018) :cite:`briand2018theory`
 """
+
 # pylint: disable=C0413
-from typing import NoReturn, Optional
+from typing import NoReturn
 
 import numpy as np
 
@@ -86,14 +86,16 @@ def compute_2d_domain_extension(n: int, precision: int = 6) -> np.ndarray:
 
     .. math::
         L_{\tilde{n}}^{(n, \epsilon)} = \tilde{n}
-        L_{j}^{(n, \epsilon)} = L_{j+1}^{(n, \epsilon)} + N^{(j+1, \epsilon)}, j = \tilde{n}-1 \to 0
+        L_{j}^{(n, \epsilon)} = L_{j+1}^{(n, \epsilon)} + N^{(j+1, \epsilon)},
+        \; j = \tilde{n}-1 \to 0
 
     Where:
 
       - :math:`n` is the spline order
       - :math:`\epsilon` is the precision parameter
       - :math:`\tilde{n} = \lfloor \frac{n}{2} \rfloor`
-      - :math:`N^{(i, \epsilon)}` is the truncation index computed by `compute_2d_truncation_index`
+      - :math:`N^{(i, \epsilon)}` is the truncation index computed by
+        `compute_2d_truncation_index`
 
     Parameters
     ----------
@@ -144,12 +146,12 @@ def compute_bspline_total_margin(
 
 def array_bspline_prefiltering(
     array_in: np.ndarray,
-    array_in_mask: Optional[np.ndarray] = None,
-    interp: Optional[BSplineInterpolator] = None,
-    n: Optional[int] = None,
-    trunc_idx: Optional[np.ndarray] = None,
-    precision: Optional[int] = 6,
-    mask_influence_threshold: Optional[float] = 0.001,
+    array_in_mask: np.ndarray | None = None,
+    interp: BSplineInterpolator | None = None,
+    n: int | None = None,
+    trunc_idx: np.ndarray | None = None,
+    precision: int | None = 6,
+    mask_influence_threshold: float | None = 0.001,
 ) -> NoReturn:
     """In-place B-spline prefiltering for cardinal B-spline interpolation.
 
@@ -253,8 +255,9 @@ def array_bspline_prefiltering(
 
     References
     ----------
-    :cite:`briand2018theory` Briand, T., & Monasse, P. (2018). Theory and Practice of Image B-Spline
-    Interpolation. *Image Processing On Line*, 8, 99-141.
+    :cite:`briand2018theory`
+        Briand, T., & Monasse, P. (2018). Theory and Practice of Image B-Spline
+        Interpolation. *Image Processing On Line*, 8, 99-141.
 
     Examples
     --------
@@ -268,8 +271,9 @@ def array_bspline_prefiltering(
     >>> # With mask
     >>> mask = np.ones((100, 100), dtype=np.uint8)
     >>> mask[40:60, 40:60] = 0  # Invalid region
-    >>> array_bspline_prefiltering(data, array_in_mask=mask, n=5,
-    ...                            mask_influence_threshold=0.001)
+    >>> array_bspline_prefiltering(
+    ...     data, array_in_mask=mask, n=5, mask_influence_threshold=0.001
+    ... )
 
     """
     # Manage interpolator definition mode
@@ -288,7 +292,7 @@ def array_bspline_prefiltering(
 
     array_in_shape = array_in.shape
     if len(array_in_shape) == 2:
-        array_in_shape = (1,) + array_in_shape
+        array_in_shape = (1, *array_in_shape)
     array_in = array_in.reshape(-1)
 
     # Manage optional input mask
@@ -311,7 +315,8 @@ def array_bspline_prefiltering(
             )
         if trunc_idx is not None and precision is not None:
             raise Exception(
-                "The `precision` parameter and the `trunc_idx` parameter are" " mutually exclusive"
+                "The `precision` parameter and the `trunc_idx` parameter are"
+                " mutually exclusive"
             )
 
         # Manage optional trunc_idx and precision
@@ -328,7 +333,9 @@ def array_bspline_prefiltering(
             precision = 10 ** (-precision)
 
         if array_in_mask is not None and mask_influence_threshold is None:
-            raise Exception("Missing a value for the `mask_influence_threshold` parameter")
+            raise Exception(
+                "Missing a value for the `mask_influence_threshold` parameter"
+            )
 
         # Call the rust method
         py_array1_bspline_prefiltering_f64(
@@ -344,7 +351,9 @@ def array_bspline_prefiltering(
     # Object branch
     else:
         if not is_bspline(interp):
-            raise ValueError(f"The interpolator {interp} is not a B-Spline interpolator")
+            raise ValueError(
+                f"The interpolator {interp} is not a B-Spline interpolator"
+            )
 
         interp.array1_bspline_prefiltering_ext_f64(
             array_in=array_in,
@@ -356,11 +365,11 @@ def array_bspline_prefiltering(
 def array_bspline_prefiltering_mask_safe_win(
     array_in_mask: np.ndarray,
     array_in_mask_safe_win: np.ndarray,
-    interp: Optional[BSplineInterpolator] = None,
-    n: Optional[int] = None,
-    trunc_idx: Optional[np.ndarray] = None,
-    precision: Optional[int] = 6,
-    mask_influence_threshold: Optional[float] = 0.001,
+    interp: BSplineInterpolator | None = None,
+    n: int | None = None,
+    trunc_idx: np.ndarray | None = None,
+    precision: int | None = 6,
+    mask_influence_threshold: float | None = 0.001,
 ) -> NoReturn:
     """Compute the safe-valid window after B-spline prefiltering with mask propagation
 
@@ -471,7 +480,8 @@ def array_bspline_prefiltering_mask_safe_win(
             )
         if trunc_idx is not None and precision is not None:
             raise Exception(
-                "The `precision` parameter and the `trunc_idx` parameter are" " mutually exclusive"
+                "The `precision` parameter and the `trunc_idx` parameter are"
+                " mutually exclusive"
             )
 
         # Manage optional trunc_idx and precision
@@ -488,7 +498,9 @@ def array_bspline_prefiltering_mask_safe_win(
             precision = 10 ** (-precision)
 
         if mask_influence_threshold is None:
-            raise Exception("Missing a value for the `mask_influence_threshold` parameter")
+            raise Exception(
+                "Missing a value for the `mask_influence_threshold` parameter"
+            )
 
         # Call the rust method
         updated_win = py_array1_bspline_prefiltering_mask_safe_win_f64(
@@ -504,7 +516,9 @@ def array_bspline_prefiltering_mask_safe_win(
     # Object branch
     else:
         if not is_bspline(interp):
-            raise ValueError(f"The interpolator {interp} is not a B-Spline interpolator")
+            raise ValueError(
+                f"The interpolator {interp} is not a B-Spline interpolator"
+            )
 
         updated_win = interp.array1_bspline_prefiltering_ext_mask_safe_win(
             array_in_mask=array_in_mask,

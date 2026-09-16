@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2024 Centre National d'Etudes Spatiales (CNES).
 #
@@ -11,7 +10,8 @@ Tests for the gridr.core.grid.grid_utils module
 
 Command to run test :
 PYTHONPATH=${PWD}/python/:$PYTHONPATH pytest tests/python/gridr/core/grid/test_grid_utils.py
-"""
+"""  # noqa: E501
+
 import numpy as np
 import pytest
 from scipy.interpolate import RegularGridInterpolator
@@ -166,17 +166,27 @@ SHAPE_OUT_x100 = (
 )
 
 # Define GRID
-Y_x100 = np.linspace(0, (SHAPE_x100[0] - 1) * RESOLUTION_x100[0], SHAPE_x100[0], dtype=DTYPE_X100)
-X_x100 = np.linspace(0, (SHAPE_x100[1] - 1) * RESOLUTION_x100[1], SHAPE_x100[1], dtype=DTYPE_X100)
+Y_x100 = np.linspace(
+    0, (SHAPE_x100[0] - 1) * RESOLUTION_x100[0], SHAPE_x100[0], dtype=DTYPE_X100
+)
+X_x100 = np.linspace(
+    0, (SHAPE_x100[1] - 1) * RESOLUTION_x100[1], SHAPE_x100[1], dtype=DTYPE_X100
+)
 # Target grid coordinates
-Y_OUT_x100 = np.linspace(0, (SHAPE_OUT_x100[0] - 1), SHAPE_OUT_x100[0], dtype=DTYPE_X100)
-X_OUT_x100 = np.linspace(0, (SHAPE_OUT_x100[1] - 1), SHAPE_OUT_x100[1], dtype=DTYPE_X100)
+Y_OUT_x100 = np.linspace(
+    0, (SHAPE_OUT_x100[0] - 1), SHAPE_OUT_x100[0], dtype=DTYPE_X100
+)
+X_OUT_x100 = np.linspace(
+    0, (SHAPE_OUT_x100[1] - 1), SHAPE_OUT_x100[1], dtype=DTYPE_X100
+)
 
 
-GRID_IN_ARRAY_ROW_x100 = np.arange(np.prod(SHAPE_x100), dtype=np.float32).reshape(SHAPE_x100)
-GRID_IN_ARRAY_COL_x100 = 10 + 10.0 * np.arange(np.prod(SHAPE_x100), dtype=np.float32).reshape(
+GRID_IN_ARRAY_ROW_x100 = np.arange(np.prod(SHAPE_x100), dtype=np.float32).reshape(
     SHAPE_x100
 )
+GRID_IN_ARRAY_COL_x100 = 10 + 10.0 * np.arange(
+    np.prod(SHAPE_x100), dtype=np.float32
+).reshape(SHAPE_x100)
 GRID_IN_ARRAY_x100 = np.stack((GRID_IN_ARRAY_ROW_x100, GRID_IN_ARRAY_COL_x100))
 # Compute expected output
 
@@ -185,23 +195,40 @@ x_new_sparse_x100, y_new_sparse_x100 = np.meshgrid(
     X_OUT_x100, Y_OUT_x100, indexing="xy", sparse=True
 )
 # rows
-GRID_OUT_ARRAY_ROW_x100 = np.empty((SHAPE_OUT_x100[0], SHAPE_OUT_x100[1]), dtype=DTYPE_X100)
-GRID_OUT_ARRAY_COL_x100 = np.empty((SHAPE_OUT_x100[0], SHAPE_OUT_x100[1]), dtype=DTYPE_X100)
+GRID_OUT_ARRAY_ROW_x100 = np.empty(
+    (SHAPE_OUT_x100[0], SHAPE_OUT_x100[1]), dtype=DTYPE_X100
+)
+GRID_OUT_ARRAY_COL_x100 = np.empty(
+    (SHAPE_OUT_x100[0], SHAPE_OUT_x100[1]), dtype=DTYPE_X100
+)
 interpolator_row_x100 = RegularGridInterpolator(
-    (Y_x100, X_x100), GRID_IN_ARRAY_ROW_x100, method="linear", bounds_error=False, fill_value=np.nan
+    (Y_x100, X_x100),
+    GRID_IN_ARRAY_ROW_x100,
+    method="linear",
+    bounds_error=False,
+    fill_value=np.nan,
 )
 interpolator_col_x100 = RegularGridInterpolator(
-    (Y_x100, X_x100), GRID_IN_ARRAY_COL_x100, method="linear", bounds_error=False, fill_value=np.nan
+    (Y_x100, X_x100),
+    GRID_IN_ARRAY_COL_x100,
+    method="linear",
+    bounds_error=False,
+    fill_value=np.nan,
 )
-GRID_OUT_ARRAY_ROW_x100[:, :] = interpolator_row_x100((y_new_sparse_x100, x_new_sparse_x100))
-GRID_OUT_ARRAY_COL_x100[:, :] = interpolator_col_x100((y_new_sparse_x100, x_new_sparse_x100))
+GRID_OUT_ARRAY_ROW_x100[:, :] = interpolator_row_x100(
+    (y_new_sparse_x100, x_new_sparse_x100)
+)
+GRID_OUT_ARRAY_COL_x100[:, :] = interpolator_col_x100(
+    (y_new_sparse_x100, x_new_sparse_x100)
+)
 GRID_OUT_ARRAY_x100 = np.stack((GRID_OUT_ARRAY_ROW_x100, GRID_OUT_ARRAY_COL_x100))
 assert np.all(
     GRID_OUT_ARRAY_x100[:, :: RESOLUTION_x100[0], :: RESOLUTION_x100[1]].shape
     == GRID_IN_ARRAY_x100.shape
 )
 np.testing.assert_array_equal(
-    GRID_OUT_ARRAY_x100[:, :: RESOLUTION_x100[0], :: RESOLUTION_x100[1]], GRID_IN_ARRAY_x100
+    GRID_OUT_ARRAY_x100[:, :: RESOLUTION_x100[0], :: RESOLUTION_x100[1]],
+    GRID_IN_ARRAY_x100,
 )
 
 # Test data for array_compute_resampling_grid_geometries
@@ -298,19 +325,25 @@ class TestGridUtils:
             ),  # check empty window => w1 and w2 cannot be computed
         ],
     )
-    def test_array_compute_resampling_grid_geometries(self, data, expected, testing_decimal):
+    def test_array_compute_resampling_grid_geometries(
+        self, data, expected, testing_decimal
+    ):
         """Test a regular grid interpolation with mask
 
         Args:
-            data : input data as a tuple (grid, resolution, mask, mask_value, mask_nodata, window)
+            data : input data as a tuple (grid, resolution, mask,
+                mask_value, mask_nodata, window)
             expected: expected data as a tuple containing :
-                    - expected_grid_metrics indicator : None or True or Exception
+                    - expected_grid_metrics indicator : None or True or
+                      Exception
                     - the expected w1 vector
                     - the expected w2 vector
-            testing_decimal: decimal precision used for np.testing.assert_array_almost_equal
+            testing_decimal: decimal precision used for
+                np.testing.assert_array_almost_equal
         """
         # data : (grid, resolution, mask, mask_value, mask_nodata, window)
-        # expected : (grid_metrics (object or None), transition_matrix_w1, transition_matrix_w2)
+        # expected : (grid_metrics (object or None), transition_matrix_w1,
+        #     transition_matrix_w2)
         grid, resolution, grid_mask, grid_mask_valid_value, grid_nodata, window = data
         expected_grid_metrics, expected_w1, expected_w2 = expected
 
@@ -324,15 +357,15 @@ class TestGridUtils:
                 grid_mask_valid_value=grid_mask_valid_value,
                 grid_nodata=grid_nodata,
             )
-        except Exception as e:
+        except Exception:
             try:
                 if issubclass(expected_grid_metrics, Exception):
                     # its ok but do not go further
                     return
                 else:
-                    raise e
+                    raise
             except TypeError:
-                raise e
+                raise
         else:
             try:
                 if issubclass(expected_grid_metrics, Exception):
@@ -428,7 +461,9 @@ class TestGridUtils:
             ),  # check empty window => w1 and w2 cannot be computed
         ],
     )
-    def test_array_compute_resampling_grid_src_boundaries(self, data, expected, testing_decimal):
+    def test_array_compute_resampling_grid_src_boundaries(
+        self, data, expected, testing_decimal
+    ):
         """Test grid source boundaries computation
 
         Args:
@@ -437,10 +472,12 @@ class TestGridUtils:
                     - expected_grid_metrics indicator : None or True or Exception
                     - the expected w1 vector
                     - the expected w2 vector
-            testing_decimal: decimal precision used for np.testing.assert_array_almost_equal
+            testing_decimal: decimal precision used for
+                np.testing.assert_array_almost_equal
         """
         # data : (grid, resolution, mask, mask_value, mask_nodata, window)
-        # expected : (grid_metrics (object or None), transition_matrix_w1, transition_matrix_w2)
+        # expected : (grid_metrics (object or None), transition_matrix_w1,
+        #     transition_matrix_w2)
         grid, grid_mask, grid_mask_valid_value, grid_nodata, window = data
         (expected_boundaries,) = expected
 
@@ -453,15 +490,15 @@ class TestGridUtils:
                 grid_mask_valid_value=grid_mask_valid_value,
                 grid_nodata=grid_nodata,
             )
-        except Exception as e:
+        except Exception:
             try:
                 if issubclass(expected_boundaries, Exception):
                     # its ok but do not go further
                     return
                 else:
-                    raise e
+                    raise
             except TypeError:
-                raise e
+                raise
         else:
             try:
                 if issubclass(expected_boundaries, Exception):
@@ -517,8 +554,8 @@ class TestGridUtils:
                 np.array([GRIDx00_r4_c3[0] + 1, GRIDx00_r4_c3[1] + 2]),
                 6,
             ),
-            # Test shift in both row and col with grid_nodata - here we use integer type as
-            # grid_nodata with float value is not yet supported in v0.4.3
+            # Test shift in both row and col with grid_nodata - here we use integer type
+            # as grid_nodata with float value is not yet supported in v0.4.3
             (
                 (
                     get_array3_with_nodata(GRIDx00_r4_c3, -9, 0, 1).astype(np.int8),
@@ -528,44 +565,85 @@ class TestGridUtils:
                     -9,
                 ),
                 get_array3_with_nodata(
-                    np.array([GRIDx00_r4_c3[0] + 1, GRIDx00_r4_c3[1] + 2]).astype(np.int8), -9, 0, 1
+                    np.array([GRIDx00_r4_c3[0] + 1, GRIDx00_r4_c3[1] + 2]).astype(
+                        np.int8
+                    ),
+                    -9,
+                    0,
+                    1,
                 ),
                 6,
             ),
-            # Test shift in both row and col with grid_nodata - here we do not cast as integer :
-            # it must raise an Exception
+            # Test shift in both row and col with grid_nodata - here we do not cast as
+            # integer : it must raise an Exception
             (
-                (get_array3_with_nodata(GRIDx00_r4_c3, -9, 0, 1), (1, 2), None, None, -9),
+                (
+                    get_array3_with_nodata(GRIDx00_r4_c3, -9, 0, 1),
+                    (1, 2),
+                    None,
+                    None,
+                    -9,
+                ),
                 Exception,
                 6,
             ),
             # Test shift with a grid mask (full valid)
             (
-                (GRIDx00_r4_c3, (1, 2), np.ones(GRIDx00_r4_c3[0].shape, dtype=np.uint8), 1, None),
+                (
+                    GRIDx00_r4_c3,
+                    (1, 2),
+                    np.ones(GRIDx00_r4_c3[0].shape, dtype=np.uint8),
+                    1,
+                    None,
+                ),
                 np.array([GRIDx00_r4_c3[0] + 1, GRIDx00_r4_c3[1] + 2]),
                 6,
             ),
             # Test shift with a grid mask (full invalid)
             (
-                (GRIDx00_r4_c3, (1, 2), np.ones(GRIDx00_r4_c3[0].shape, dtype=np.uint8), 0, None),
+                (
+                    GRIDx00_r4_c3,
+                    (1, 2),
+                    np.ones(GRIDx00_r4_c3[0].shape, dtype=np.uint8),
+                    0,
+                    None,
+                ),
                 GRIDx00_r4_c3,
                 6,
             ),
             # Test shift with a grid mask - bad shape : expect an Assertion error
             (
-                (GRIDx00_r4_c3, (1, 2), np.ones(GRIDx00_r4_c3.shape, dtype=np.uint8), 1, None),
+                (
+                    GRIDx00_r4_c3,
+                    (1, 2),
+                    np.ones(GRIDx00_r4_c3.shape, dtype=np.uint8),
+                    1,
+                    None,
+                ),
                 AssertionError,
                 6,
             ),
             # Test shift with a grid mask - bad shape : expect an Assertion error
             (
-                (GRIDx00_r4_c3, (1, 2), np.ones(GRIDx00_r4_c3.shape, dtype=np.int8), 1, None),
+                (
+                    GRIDx00_r4_c3,
+                    (1, 2),
+                    np.ones(GRIDx00_r4_c3.shape, dtype=np.int8),
+                    1,
+                    None,
+                ),
                 AssertionError,
                 6,
             ),
             # Test shift with a grid mask - bad type : expect an Assertion error
             (
-                (GRIDx00_r4_c3, (1, 2), np.ones(GRIDx00_r4_c3[0].shape, dtype=np.float32), 1, None),
+                (
+                    GRIDx00_r4_c3,
+                    (1, 2),
+                    np.ones(GRIDx00_r4_c3[0].shape, dtype=np.float32),
+                    1,
+                    None,
+                ),
                 AssertionError,
                 6,
             ),
@@ -614,7 +692,7 @@ class TestGridUtils:
                 grid_mask_valid_value=grid_mask_valid_value,
                 grid_nodata=grid_nodata,
             )
-        except Exception as e:
+        except Exception:
             try:
                 if not window_ok:
                     return
@@ -622,9 +700,9 @@ class TestGridUtils:
                     # its ok but do not go further
                     return
                 else:
-                    raise e
+                    raise
             except TypeError:
-                raise e
+                raise
         else:
             if not window_ok:
                 raise Exception("Should have raised an outside of domain exception")
@@ -634,8 +712,12 @@ class TestGridUtils:
             except TypeError:
                 pass
 
-        np.testing.assert_array_almost_equal(grid_row, expected_grid[0], decimal=testing_decimal)
-        np.testing.assert_array_almost_equal(grid_col, expected_grid[1], decimal=testing_decimal)
+        np.testing.assert_array_almost_equal(
+            grid_row, expected_grid[0], decimal=testing_decimal
+        )
+        np.testing.assert_array_almost_equal(
+            grid_col, expected_grid[1], decimal=testing_decimal
+        )
 
     @pytest.mark.parametrize(
         "data, expected, testing_decimal",
@@ -667,28 +749,36 @@ class TestGridUtils:
         """Test a regular grid interpolation with mask
 
         Args:
-            data : input data as a tuple containing the grid and the mask_binarize_precision
+            data : input data as a tuple containing the grid and the
+                mask_binarize_precision
             expected: expected data as a tuple containing :
                     - the oversampling tuple (oversampling_y, oversampling_x)
                     - the expected interpolated grid
                     - a tuple containing (expected_grid_mask, mask_precision)
-            testing_decimal: decimal precision used for np.testing.assert_array_almost_equal
+            testing_decimal: decimal precision used for
+                np.testing.assert_array_almost_equal
         """
         # Create intial coordinates so that new coordinates match an integer sequence
         grid, grid_mask = data
-        (oversampling_y, oversampling_x), expected_grid, (expected_grid_mask, mask_precision) = (
-            expected
-        )
+        (
+            (oversampling_y, oversampling_x),
+            expected_grid,
+            (expected_grid_mask, mask_precision),
+        ) = expected
         _, nrow, ncol = grid.shape
 
         x = np.arange(ncol) * oversampling_x
         y = np.arange(nrow) * oversampling_y
-        x_new = np.linspace(x[0], x[-1], num=(ncol - 1) * oversampling_x + 1, endpoint=True)
+        x_new = np.linspace(
+            x[0], x[-1], num=(ncol - 1) * oversampling_x + 1, endpoint=True
+        )
         assert x_new[0] == x[0]
         assert x_new[-1] == x[-1]
         np.testing.assert_almost_equal(x_new[1], x[0] + 1)
 
-        y_new = np.linspace(y[0], y[-1], num=(nrow - 1) * oversampling_y + 1, endpoint=True)
+        y_new = np.linspace(
+            y[0], y[-1], num=(nrow - 1) * oversampling_y + 1, endpoint=True
+        )
         assert y_new[0] == y[0]
         assert y_new[-1] == y[-1]
         np.testing.assert_almost_equal(y_new[1], y[0] + 1)
@@ -705,7 +795,9 @@ class TestGridUtils:
 
         # Check
         np.testing.assert_array_equal(interp_grid.shape, expected_grid.shape)
-        np.testing.assert_array_almost_equal(interp_grid, expected_grid, decimal=testing_decimal)
+        np.testing.assert_array_almost_equal(
+            interp_grid, expected_grid, decimal=testing_decimal
+        )
         if grid_mask is None:
             assert expected_grid_mask is None
         else:
@@ -751,20 +843,24 @@ class TestGridUtils:
         """Test the get_oversampled_grid method
 
         Args:
-            data : input data as a tuple containing the grid and the mask_binarize_precision
+            data : input data as a tuple containing the grid and the
+                mask_binarize_precision
             expected: expected data as a tuple containing :
                     - the oversampling tuple (oversampling_y, oversampling_x)
                     - the expected interpolated grid
                     - a tuple containing (expected_grid_mask, mask_precision)
             window: computing window
-            testing_decimal: decimal precision used for np.testing.assert_array_almost_equal
+            testing_decimal: decimal precision used for
+                np.testing.assert_array_almost_equal
         """
         # Create intial coordinates so that new coordinates match an integer sequence
         grid, grid_mask = data
-        (oversampling_y, oversampling_x), expected_grid, (expected_grid_mask, mask_precision) = (
-            expected
-        )
-        _, nrow, ncol = grid.shape
+        (
+            (oversampling_y, oversampling_x),
+            expected_grid,
+            (expected_grid_mask, mask_precision),
+        ) = expected
+        _, _nrow, _ncol = grid.shape
         window, window_ok = window
         if window is not None:
             expected_grid = expected_grid[
@@ -849,18 +945,20 @@ class TestGridUtils:
         """Test the get_oversampled_grid method
 
         Args:
-            data : input data as a tuple containing the grid and the mask_binarize_precision
+            data : input data as a tuple containing the grid and the
+                mask_binarize_precision
             expected: expected data as a tuple containing :
                     - the oversampling tuple (oversampling_y, oversampling_x)
                     - the expected interpolated grid
                     - a tuple containing (expected_grid_mask, mask_precision)
             window: computing window
-            testing_decimal: decimal precision used for np.testing.assert_array_almost_equal
+            testing_decimal: decimal precision used for
+                np.testing.assert_array_almost_equal
         """
         # Create intial coordinates so that new coordinates match an integer sequence
         grid = data
         grid_resolution, out_resolution, expected_grid = expected
-        _, nrow, ncol = grid.shape
+        _, _nrow, _ncol = grid.shape
         window, window_ok = window
 
         if window is not None:

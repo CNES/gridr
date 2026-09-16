@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -21,7 +20,6 @@
 """
 Grid commons module
 """
-from typing import Optional, Tuple
 
 import numpy as np
 import rasterio
@@ -35,11 +33,11 @@ from gridr.core.utils.chunks import get_chunk_boundaries
 def read_tile_edges(
     ds: rasterio.io.DatasetReader,
     ds_band: int,
-    tile_shape: Tuple[int, int],
+    tile_shape: tuple[int, int],
     merge: bool = False,
-    window: Optional[Window] = None,
+    window: Window | None = None,
     check: bool = True,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Extracts the row and column edges of tiles within a specified window of a
     raster dataset.
@@ -119,7 +117,8 @@ def read_tile_edges(
         arr_win = from_rio_window(window)
         if not window_check(arr, arr_win, axes=None):
             raise ValueError(
-                f"window check fails : check window {arr_win} / " f"array {arr.shape} consistency"
+                f"window check fails : check window {arr_win} / "
+                f"array {arr.shape} consistency"
             )
 
     row_start = int(window.row_off)

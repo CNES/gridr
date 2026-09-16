@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -21,15 +20,21 @@
 """
 Shared Memory Utils module
 """
-from datetime import datetime
-from functools import wraps
-from multiprocessing import shared_memory
-from typing import List, NoReturn, Optional, Tuple, Any, Callable, Optional, Type, TypeVar, Union, overload
-from uuid import uuid4
+
 import functools
 import inspect
 import sys
-
+import warnings
+from collections.abc import Callable
+from datetime import datetime
+from functools import wraps
+from multiprocessing import shared_memory
+from typing import (
+    Any,
+    NoReturn,
+    TypeVar,
+)
+from uuid import uuid4
 
 import numpy as np
 
@@ -43,13 +48,12 @@ else:
     T = TypeVar("T", bound=Callable[..., Any])
     C = TypeVar("C", bound=type)
 
-
     def deprecated(
-            message: str,
-            *,
-            category: Optional[Type[Warning]] = DeprecationWarning,
-            stacklevel: int = 1,
-    ) -> Callable[[Union[T, C]], Union[T, C]]:
+        message: str,
+        *,
+        category: type[Warning] | None = DeprecationWarning,
+        stacklevel: int = 1,
+    ) -> Callable[[T | C], T | C]:
         """
         Mark a callable, class or method as deprecated.
 
@@ -62,7 +66,7 @@ else:
                 f"{type(message).__name__!r}"
             )
 
-        def decorator(arg: Union[T, C]) -> Union[T, C]:
+        def decorator(arg: T | C) -> T | C:
             # ---- Class deprecation -------------------------------------
             if isinstance(arg, type):
                 cls: C = arg  # type: ignore[assignment]
@@ -87,6 +91,7 @@ else:
                 func: T = arg  # type: ignore[assignment]
 
                 if inspect.iscoroutinefunction(func):
+
                     @functools.wraps(func)
                     async def async_wrapper(*args, **kwargs):  # type: ignore[no-untyped-def]
                         if category is not None:
@@ -122,7 +127,7 @@ else:
 
 
 @deprecated("Use shared_array.SharedArray instead")
-class SharedMemoryArray(object):
+class SharedMemoryArray:
     """
     A class handler for managing shared memory buffers and their associated
     NumPy array views.
@@ -162,10 +167,10 @@ class SharedMemoryArray(object):
 
     def __init__(
         self,
-        shape: Tuple[int, ...],
+        shape: tuple[int, ...],
         dtype: np.dtype,
         name: str,
-        array_slice: Optional[Tuple[slice, ...]] = None,
+        array_slice: tuple[slice, ...] | None = None,
     ):
         """
         Initializes a SharedMemoryArray instance.
@@ -302,12 +307,17 @@ class SharedMemoryArray(object):
             prefix = ""
         cls.COUNTER += 1
         sma_name = "-".join(
-            (str(cls.COUNTER), prefix, datetime.now().strftime("%Y%m-%d%H-%M%S"), str(uuid4()))
+            (
+                str(cls.COUNTER),
+                prefix,
+                datetime.now().strftime("%Y%m-%d%H-%M%S"),
+                str(uuid4()),
+            )
         )
         return sma_name
 
     @classmethod
-    def clear_buffers(cls, buffer_names: List[str]) -> NoReturn:
+    def clear_buffers(cls, buffer_names: list[str]) -> NoReturn:
         """
         Clears (unlinks) a list of named shared memory buffers.
 
@@ -420,8 +430,8 @@ def shmarray_wrap(func):
 def create_and_register_sma(
     shape,
     dtype,
-    register: List[str],
-    prefix: str = None,
+    register: list[str],
+    prefix: str | None = None,
 ) -> SharedMemoryArray:
     """Creates a `SharedMemoryArray` and registers its name in a list.
 

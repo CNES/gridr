@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -11,10 +10,11 @@ Tests for the gridr.core.grid.grid_mask module
 
 Command to run test :
 PYTHONPATH=${PWD}/python/:$PYTHONPATH pytest tests/python/gridr/core/grid/test_grid_resampling.py
-"""
+"""  # noqa: E501
+
 import copy
 from functools import partialmethod
-from typing import Optional, Tuple
+from typing import ClassVar
 
 import numpy as np
 import pytest
@@ -55,14 +55,18 @@ def create_grid(
 
 ARRAY_IN_001_SHAPE = (4, 5)
 ARRAY_IN_001_DTYPE = np.float64
-ARRAY_IN_001_ARRAY = np.arange(np.prod(ARRAY_IN_001_SHAPE), dtype=ARRAY_IN_001_DTYPE).reshape(
-    ARRAY_IN_001_SHAPE
-)
+ARRAY_IN_001_ARRAY = np.arange(
+    np.prod(ARRAY_IN_001_SHAPE), dtype=ARRAY_IN_001_DTYPE
+).reshape(ARRAY_IN_001_SHAPE)
 MASK_IN_001_DTYPE = np.uint8
 # Full valid
-MASK_IN_001_ARRAY_01 = np.full(ARRAY_IN_001_SHAPE, UNMASKED_VALUE, dtype=MASK_IN_001_DTYPE)
+MASK_IN_001_ARRAY_01 = np.full(
+    ARRAY_IN_001_SHAPE, UNMASKED_VALUE, dtype=MASK_IN_001_DTYPE
+)
 # Full invalid
-MASK_IN_001_ARRAY_02 = np.full(ARRAY_IN_001_SHAPE, MASKED_VALUE, dtype=MASK_IN_001_DTYPE)
+MASK_IN_001_ARRAY_02 = np.full(
+    ARRAY_IN_001_SHAPE, MASKED_VALUE, dtype=MASK_IN_001_DTYPE
+)
 
 # First grid is idendity
 GRID_IN_001_01_SHAPE = ARRAY_IN_001_SHAPE
@@ -159,7 +163,9 @@ class TestGridResampling:
             ),
         ],
     )
-    def test_get_array_padded_shape(self, array_src, pad, expected_shape, expected_window):
+    def test_get_array_padded_shape(
+        self, array_src, pad, expected_shape, expected_window
+    ):
         """Test get_array_padded_shape with various inputs."""
         shape, window = get_array_padded_shape(array_src, pad)
         assert window == expected_window
@@ -181,7 +187,9 @@ class TestGridResampling:
             padded = np.pad(array_src, pad_width=pad, mode="constant")
         else:
             # 3D: pad only last 2 dims
-            padded = np.pad(array_src, pad_width=((0, 0), pad[0], pad[1]), mode="constant")
+            padded = np.pad(
+                array_src, pad_width=((0, 0), pad[0], pad[1]), mode="constant"
+            )
 
         assert shape == padded.shape
 
@@ -226,7 +234,9 @@ class TestGridResampling:
             (np.ones((3, 10, 10)), ((2, 2), (2, 2)), None, -999),
         ],
     )
-    def test_source_extent_pad_vs_np_pad(self, array_src, pad, boundary_condition, fill):
+    def test_source_extent_pad_vs_np_pad(
+        self, array_src, pad, boundary_condition, fill
+    ):
         """Compare source_extent_pad with np.pad for 2D and 3D arrays."""
         result = source_extent_pad(array_src, pad, boundary_condition, fill)
 
@@ -237,12 +247,16 @@ class TestGridResampling:
 
         # Check shape matches np.pad
         if array_src.ndim == 2:
-            np_padded = np.pad(array_src, pad_width=pad, mode=boundary_condition, **np_kwargs)
+            np_padded = np.pad(
+                array_src, pad_width=pad, mode=boundary_condition, **np_kwargs
+            )
         else:
             # For 3D: pad only last 2 dims
-            np_pad_width = ((0, 0),) + pad
+            np_pad_width = ((0, 0), *pad)
             np_mode = boundary_condition
-            np_padded = np.pad(array_src, pad_width=np_pad_width, mode=np_mode, **np_kwargs)
+            np_padded = np.pad(
+                array_src, pad_width=np_pad_width, mode=np_mode, **np_kwargs
+            )
 
         assert result.shape == np_padded.shape
         assert result.flags["C_CONTIGUOUS"]
@@ -694,7 +708,9 @@ class TestGridResampling:
                     safe_region=(
                         (0, 6),
                         (0, 7),
-                    ),  # no input mask / trust pad / safe_region is all data before prefiltering
+                    ),
+                    # no input mask / trust pad / safe_region is all data before
+                    # prefiltering
                     needs_mask_alloc=True,
                     pad_fill=Validity.VALID,
                     boundary_condition=None,
@@ -719,7 +735,9 @@ class TestGridResampling:
                     safe_region=(
                         (0, 6),
                         (0, 7),
-                    ),  # no input mask / trust pad / safe_region is all data before prefiltering
+                    ),
+                    # no input mask / trust pad / safe_region is all data before
+                    # prefiltering
                     needs_mask_alloc=False,
                     pad_fill=Validity.VALID,
                     boundary_condition="reflect",
@@ -2614,9 +2632,9 @@ class TestGridResampling:
     )
     def test_apply_mask_strategy(
         self,
-        array_in_mask: Optional[np.ndarray],
+        array_in_mask: np.ndarray | None,
         pad: np.ndarray,
-        array_in_shape: Tuple[int, ...],
+        array_in_shape: tuple[int, ...],
         strategy: ResamplingMaskStrategy,
         expected,
     ):
@@ -2645,7 +2663,17 @@ class TestGridResampling:
         "array, grid, interp, mask, grid_mask, grid_mask_valid_value, grid_nodata, "
         "check_boundaries, testing_decimal",
         [
-            (ARRAY_IN_001_ARRAY, GRID_IN_001_01_GRID, "nearest", None, None, None, None, True, 6),
+            (
+                ARRAY_IN_001_ARRAY,
+                GRID_IN_001_01_GRID,
+                "nearest",
+                None,
+                None,
+                None,
+                None,
+                True,
+                6,
+            ),
             (
                 ARRAY_IN_001_ARRAY,
                 GRID_IN_001_01_GRID,
@@ -2679,7 +2707,17 @@ class TestGridResampling:
                 False,
                 6,
             ),  # with nearest idendity we can deactivate boundaries check
-            (ARRAY_IN_001_ARRAY, GRID_IN_001_01_GRID, "linear", None, None, None, None, True, 6),
+            (
+                ARRAY_IN_001_ARRAY,
+                GRID_IN_001_01_GRID,
+                "linear",
+                None,
+                None,
+                None,
+                None,
+                True,
+                6,
+            ),
             (
                 ARRAY_IN_001_ARRAY,
                 GRID_IN_001_01_GRID,
@@ -2702,7 +2740,17 @@ class TestGridResampling:
                 True,
                 6,
             ),
-            (ARRAY_IN_001_ARRAY, GRID_IN_001_01_GRID, "cubic", None, None, None, None, True, 6),
+            (
+                ARRAY_IN_001_ARRAY,
+                GRID_IN_001_01_GRID,
+                "cubic",
+                None,
+                None,
+                None,
+                None,
+                True,
+                6,
+            ),
             (
                 ARRAY_IN_001_ARRAY,
                 GRID_IN_001_01_GRID,
@@ -2811,8 +2859,18 @@ class TestGridResampling:
                     )
 
     @pytest.mark.parametrize(
-        "array, grid, interp, interp_kwargs, mask, grid_mask, grid_mask_valid_value, grid_nodata, "
-        "check_boundaries, testing_decimal",
+        (
+            "array",
+            "grid",
+            "interp",
+            "interp_kwargs",
+            "mask",
+            "grid_mask",
+            "grid_mask_valid_value",
+            "grid_nodata",
+            "check_boundaries",
+            "testing_decimal",
+        ),
         [
             (
                 ARRAY_IN_001_ARRAY,
@@ -3226,7 +3284,6 @@ class TestGridResampling:
 
 
 class TestGridResamplingMonoPointGrid:
-
     NODATA_OUT = -9999.0
 
     # -- helper function for general mono point grid case --
@@ -3290,13 +3347,15 @@ class TestGridResamplingMonoPointGrid:
         # -- array_in --
         if array_in_cst_value is not None:
             kwargs["array_in"] = (
-                np.ones(np.prod(shape_array_in), dtype=np.float64).reshape(shape_array_in)
+                np.ones(np.prod(shape_array_in), dtype=np.float64).reshape(
+                    shape_array_in
+                )
                 * array_in_cst_value
             )
         else:
-            kwargs["array_in"] = np.arange(np.prod(shape_array_in), dtype=np.float64).reshape(
-                shape_array_in
-            )
+            kwargs["array_in"] = np.arange(
+                np.prod(shape_array_in), dtype=np.float64
+            ).reshape(shape_array_in)
         # -- array_in_origin --
         kwargs["array_in_origin"] = array_in_origin
         # -- resolution --
@@ -3343,7 +3402,9 @@ class TestGridResamplingMonoPointGrid:
 
         grid_mask = None
         if use_grid_mask:
-            grid_mask = np.full(np.asarray(grid_row).shape, grid_mask_valid_value, dtype=np.uint8)
+            grid_mask = np.full(
+                np.asarray(grid_row).shape, grid_mask_valid_value, dtype=np.uint8
+            )
             # make last column invalid
             grid_mask[:, -1] = grid_mask_valid_value - 1
         kwargs["grid_mask"] = grid_mask
@@ -3355,8 +3416,9 @@ class TestGridResamplingMonoPointGrid:
         if kwargs["win"] is not None:
             kwargs["win"] = np.asarray(kwargs["win"])
 
-        # interp = get_interpolator("bspline3", **{'epsilon': 1e-2, 'mask_influence_threshold': 1})
-        interp = get_interpolator("linear")
+        # interp = get_interpolator(
+        #     "bspline3", **{'epsilon': 1e-2, 'mask_influence_threshold': 1})
+        # interp = get_interpolator("linear")
         interp = get_interpolator("cubic")
         interp.initialize()
 
@@ -3403,130 +3465,360 @@ class TestGridResamplingMonoPointGrid:
             )
         )
 
-    # Default BSpline arguments - here we deactivate the mask dilatation during prefiltering
-    DFLT_BSPLINES_ARGS = {"epsilon": 1e-2, "mask_influence_threshold": 1}
+    # Default BSpline arguments - here we deactivate the mask dilatation during
+    # prefiltering
+    DFLT_BSPLINES_ARGS: ClassVar[dict] = {
+        "epsilon": 1e-2,
+        "mask_influence_threshold": 1,
+    }
     # Here we activate the mask dilatation during prefiltering
-    PREFIL_MSK_DILATE_BSPLINES_ARGS = {"epsilon": 1e-2, "mask_influence_threshold": 0.001}
+    PREFIL_MSK_DILATE_BSPLINES_ARGS: ClassVar[dict] = {
+        "epsilon": 1e-2,
+        "mask_influence_threshold": 0.001,
+    }
 
     @pytest.mark.parametrize(
         "args, expected_resampled_array, expected_resampled_mask",
         [
             # -- Tests idendity --
             # -- Test identity at center --
-            ((10.0, 15.0, False, False, False, "nearest", "reflect", True, {}), [[315.0]], [[1]]),
-            ((10.0, 15.0, False, False, False, "linear", "reflect", True, {}), [[315.0]], [[1]]),
-            ((10.0, 15.0, False, False, False, "cubic", "reflect", True, {}), [[315.0]], [[1]]),
             (
-                (10.0, 15.0, False, False, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (10.0, 15.0, False, False, False, "nearest", "reflect", True, {}),
+                [[315.0]],
+                [[1]],
+            ),
+            (
+                (10.0, 15.0, False, False, False, "linear", "reflect", True, {}),
+                [[315.0]],
+                [[1]],
+            ),
+            (
+                (10.0, 15.0, False, False, False, "cubic", "reflect", True, {}),
+                [[315.0]],
+                [[1]],
+            ),
+            (
+                (
+                    10.0,
+                    15.0,
+                    False,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[315.0]],
                 [[1]],
             ),
             # -- Test idendity at Upper Left Corner --
             #   pad = "reflect" && trust_padding = "True"
-            ((0.0, 0.0, False, False, False, "nearest", "reflect", True, {}), [[0.0]], [[1]]),
-            ((0.0, 0.0, False, False, False, "linear", "reflect", True, {}), [[0.0]], [[1]]),
-            ((0.0, 0.0, False, False, False, "cubic", "reflect", True, {}), [[0.0]], [[1]]),
             (
-                (0.0, 0.0, False, False, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (0.0, 0.0, False, False, False, "nearest", "reflect", True, {}),
+                [[0.0]],
+                [[1]],
+            ),
+            (
+                (0.0, 0.0, False, False, False, "linear", "reflect", True, {}),
+                [[0.0]],
+                [[1]],
+            ),
+            (
+                (0.0, 0.0, False, False, False, "cubic", "reflect", True, {}),
+                [[0.0]],
+                [[1]],
+            ),
+            (
+                (
+                    0.0,
+                    0.0,
+                    False,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[0.0]],
                 [[1]],
             ),
             # -- Test idendity at Upper Left Corner -
             #   pad = "reflect" && trust_padding = "False"
-            ((0.0, 0.0, False, False, False, "nearest", "reflect", False, {}), [[0.0]], [[1]]),
-            ((0.0, 0.0, False, False, False, "linear", "reflect", False, {}), [[0.0]], [[1]]),
-            ((0.0, 0.0, False, False, False, "cubic", "reflect", False, {}), [[0.0]], [[1]]),
+            (
+                (0.0, 0.0, False, False, False, "nearest", "reflect", False, {}),
+                [[0.0]],
+                [[1]],
+            ),
+            (
+                (0.0, 0.0, False, False, False, "linear", "reflect", False, {}),
+                [[0.0]],
+                [[1]],
+            ),
+            (
+                (0.0, 0.0, False, False, False, "cubic", "reflect", False, {}),
+                [[0.0]],
+                [[1]],
+            ),
             # There is a BSpline specificity here as the prefiltering
             # requires untrusted area and the idendity transform requires
             # to convolve the prefiltered image.
             (
-                (0.0, 0.0, False, False, False, "bspline3", "reflect", False, DFLT_BSPLINES_ARGS),
+                (
+                    0.0,
+                    0.0,
+                    False,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    False,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[0]],
             ),
             # -- Test idendity at Upper Left Corner -
             #   pad = None && trust_padding = "False"
-            ((0.0, 0.0, False, False, False, "nearest", None, False, {}), [[0.0]], [[1]]),
-            ((0.0, 0.0, False, False, False, "linear", None, False, {}), [[0.0]], [[1]]),
+            (
+                (0.0, 0.0, False, False, False, "nearest", None, False, {}),
+                [[0.0]],
+                [[1]],
+            ),
+            (
+                (0.0, 0.0, False, False, False, "linear", None, False, {}),
+                [[0.0]],
+                [[1]],
+            ),
             ((0.0, 0.0, False, False, False, "cubic", None, False, {}), [[0.0]], [[1]]),
             # There is a BSpline specificity here as the prefiltering
             # requires untrusted area and the idendity transform requires
             # to convolve the prefiltered image.
             (
-                (0.0, 0.0, False, False, False, "bspline3", None, False, DFLT_BSPLINES_ARGS),
+                (
+                    0.0,
+                    0.0,
+                    False,
+                    False,
+                    False,
+                    "bspline3",
+                    None,
+                    False,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[0]],
             ),
             # -- Test idendity at Upper Left Corner -
             #   pad = None && trust_padding = "True"
-            ((0.0, 0.0, False, False, False, "nearest", None, True, {}), [[0.0]], [[1]]),
+            (
+                (0.0, 0.0, False, False, False, "nearest", None, True, {}),
+                [[0.0]],
+                [[1]],
+            ),
             ((0.0, 0.0, False, False, False, "linear", None, True, {}), [[0.0]], [[1]]),
             ((0.0, 0.0, False, False, False, "cubic", None, True, {}), [[0.0]], [[1]]),
             # There is a BSpline specificity here as the prefiltering
             # requires untrusted area and the idendity transform requires
             # to convolve the prefiltered image.
-            # Trust padding is ignore with boundary condition at None - we must use "constant"
+            # Trust padding is ignore with boundary condition at None - we must use
+            # "constant"
             (
-                (0.0, 0.0, False, False, False, "bspline3", None, True, DFLT_BSPLINES_ARGS),
+                (
+                    0.0,
+                    0.0,
+                    False,
+                    False,
+                    False,
+                    "bspline3",
+                    None,
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[0]],
             ),
             (
-                (0.0, 0.0, False, False, False, "bspline3", "constant", True, DFLT_BSPLINES_ARGS),
+                (
+                    0.0,
+                    0.0,
+                    False,
+                    False,
+                    False,
+                    "bspline3",
+                    "constant",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[0.0]],
                 [[1]],
             ),
             # -- Test idendity at Bottom Right Corner -
             #   pad = None && trust_padding = "True"
-            ((19.0, 29.0, False, False, False, "nearest", None, True, {}), [[599.0]], [[1]]),
-            ((19.0, 29.0, False, False, False, "linear", None, True, {}), [[599.0]], [[1]]),
-            ((19.0, 29.0, False, False, False, "cubic", None, True, {}), [[599.0]], [[1]]),
-            # Trust padding is ignore with boundary condition at None - we must use "constant"
             (
-                (19.0, 29.0, False, False, False, "bspline3", None, True, DFLT_BSPLINES_ARGS),
+                (19.0, 29.0, False, False, False, "nearest", None, True, {}),
+                [[599.0]],
+                [[1]],
+            ),
+            (
+                (19.0, 29.0, False, False, False, "linear", None, True, {}),
+                [[599.0]],
+                [[1]],
+            ),
+            (
+                (19.0, 29.0, False, False, False, "cubic", None, True, {}),
+                [[599.0]],
+                [[1]],
+            ),
+            # Trust padding is ignore with boundary condition at None - we must use
+            # "constant"
+            (
+                (
+                    19.0,
+                    29.0,
+                    False,
+                    False,
+                    False,
+                    "bspline3",
+                    None,
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[0]],
             ),
             (
-                (19.0, 29.0, False, False, False, "bspline3", "constant", True, DFLT_BSPLINES_ARGS),
+                (
+                    19.0,
+                    29.0,
+                    False,
+                    False,
+                    False,
+                    "bspline3",
+                    "constant",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[599.0]],
                 [[1]],
             ),
-            # -- Tests idendity with raster mask - invalid at (0, 0) and (17, 27) when enabled --
+            # -- Tests idendity with raster mask
+            # - invalid at (0, 0) and (17, 27) when enabled
+            # --
             # ---- full valid mask ----
-            ((0.0, 0.0, True, False, False, "nearest", "reflect", True, {}), [[0.0]], [[1]]),
-            ((0.0, 0.0, True, False, False, "linear", "reflect", True, {}), [[0.0]], [[1]]),
-            ((0.0, 0.0, True, False, False, "cubic", "reflect", True, {}), [[0.0]], [[1]]),
             (
-                (0.0, 0.0, True, False, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (0.0, 0.0, True, False, False, "nearest", "reflect", True, {}),
+                [[0.0]],
+                [[1]],
+            ),
+            (
+                (0.0, 0.0, True, False, False, "linear", "reflect", True, {}),
+                [[0.0]],
+                [[1]],
+            ),
+            (
+                (0.0, 0.0, True, False, False, "cubic", "reflect", True, {}),
+                [[0.0]],
+                [[1]],
+            ),
+            (
+                (
+                    0.0,
+                    0.0,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[0.0]],
                 [[1]],
             ),
             # ---- invalid at (0,0) only - target (0,0) ----
-            ((0.0, 0.0, True, True, False, "nearest", "reflect", True, {}), [[NODATA_OUT]], [[0]]),
-            ((0.0, 0.0, True, True, False, "linear", "reflect", True, {}), [[NODATA_OUT]], [[0]]),
-            ((0.0, 0.0, True, True, False, "cubic", "reflect", True, {}), [[NODATA_OUT]], [[0]]),
             (
-                (0.0, 0.0, True, True, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (0.0, 0.0, True, True, False, "nearest", "reflect", True, {}),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
+            (
+                (0.0, 0.0, True, True, False, "linear", "reflect", True, {}),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
+            (
+                (0.0, 0.0, True, True, False, "cubic", "reflect", True, {}),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
+            (
+                (
+                    0.0,
+                    0.0,
+                    True,
+                    True,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[0]],
             ),
             # ---- invalid at (0,0) only - target (1,1) ----
-            ((1.0, 1.0, True, True, False, "nearest", "reflect", True, {}), [[31.0]], [[1]]),
-            ((1.0, 1.0, True, True, False, "linear", "reflect", True, {}), [[31.0]], [[1]]),
-            ((1.0, 1.0, True, True, False, "cubic", "reflect", True, {}), [[31.0]], [[1]]),
-            # Bspline results in nodata because of the required convolution after prefiltering
-            # (even for idendity)
-            # Here the invalid point after prefiltering lies within the convolution stencil
             (
-                (1.0, 1.0, True, True, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (1.0, 1.0, True, True, False, "nearest", "reflect", True, {}),
+                [[31.0]],
+                [[1]],
+            ),
+            (
+                (1.0, 1.0, True, True, False, "linear", "reflect", True, {}),
+                [[31.0]],
+                [[1]],
+            ),
+            (
+                (1.0, 1.0, True, True, False, "cubic", "reflect", True, {}),
+                [[31.0]],
+                [[1]],
+            ),
+            # Bspline results in nodata because of the required convolution after
+            # prefiltering (even for idendity)
+            # Here the invalid point after prefiltering lies within the convolution
+            # stencil
+            (
+                (
+                    1.0,
+                    1.0,
+                    True,
+                    True,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[0]],
             ),
-            # If we target (2., 2.), the invalid data do not lie within the convnolution stencil
-            # Note default bspline args deactivate mask dilatation during prefiltering (value 1)
+            # If we target (2., 2.), the invalid data do not lie within the convolution
+            # stencil
+            # Note default bspline args deactivate mask dilatation during prefiltering
+            # (value 1)
             (
-                (2.0, 2.0, True, True, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (
+                    2.0,
+                    2.0,
+                    True,
+                    True,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[62.0]],
                 [[1]],
             ),
@@ -3547,26 +3839,67 @@ class TestGridResamplingMonoPointGrid:
                 [[0]],
             ),
             # Tests shift on col (with valid / invalid mask)
-            # -- Tests shift on col / idendity on row - invalid at (0, 0) and (17, 27) if enabled --
+            # -- Tests shift on col / idendity on row - invalid at (0, 0) and (17, 27)
+            # if enabled --
             # ---- full valid mask ----
             # ------ nearest ------
             # -------- within domain --------
-            ((0.0, 0.49, True, False, False, "nearest", "reflect", True, {}), [[0.000000]], [[1]]),
-            ((0.0, 0.49, True, False, False, "nearest", "reflect", False, {}), [[0.000000]], [[1]]),
-            ((0.0, 0.49, True, False, False, "nearest", None, False, {}), [[0.000000]], [[1]]),
-            ((0.0, 0.5, True, False, False, "nearest", "reflect", True, {}), [[1.000000]], [[1]]),
-            ((0.0, 0.51, True, False, False, "nearest", "reflect", True, {}), [[1.000000]], [[1]]),
+            (
+                (0.0, 0.49, True, False, False, "nearest", "reflect", True, {}),
+                [[0.000000]],
+                [[1]],
+            ),
+            (
+                (0.0, 0.49, True, False, False, "nearest", "reflect", False, {}),
+                [[0.000000]],
+                [[1]],
+            ),
+            (
+                (0.0, 0.49, True, False, False, "nearest", None, False, {}),
+                [[0.000000]],
+                [[1]],
+            ),
+            (
+                (0.0, 0.5, True, False, False, "nearest", "reflect", True, {}),
+                [[1.000000]],
+                [[1]],
+            ),
+            (
+                (0.0, 0.51, True, False, False, "nearest", "reflect", True, {}),
+                [[1.000000]],
+                [[1]],
+            ),
             (
                 (0.0, 29.49, True, False, False, "nearest", "reflect", True, {}),
                 [[29.000000]],
                 [[1]],
             ),
             # -------- outside of domain --------
-            ((0.0, -0.49, True, False, False, "nearest", "reflect", True, {}), [[0.0]], [[1]]),
-            ((0.0, -0.49, True, False, False, "nearest", "reflect", False, {}), [[0.0]], [[1]]),
-            ((0.0, -0.49, True, False, False, "nearest", None, False, {}), [[0.0]], [[1]]),
-            ((0.0, -0.5, True, False, False, "nearest", "reflect", True, {}), [[0.0]], [[1]]),
-            ((0.0, -0.5, True, False, False, "nearest", "reflect", False, {}), [[0.0]], [[1]]),
+            (
+                (0.0, -0.49, True, False, False, "nearest", "reflect", True, {}),
+                [[0.0]],
+                [[1]],
+            ),
+            (
+                (0.0, -0.49, True, False, False, "nearest", "reflect", False, {}),
+                [[0.0]],
+                [[1]],
+            ),
+            (
+                (0.0, -0.49, True, False, False, "nearest", None, False, {}),
+                [[0.0]],
+                [[1]],
+            ),
+            (
+                (0.0, -0.5, True, False, False, "nearest", "reflect", True, {}),
+                [[0.0]],
+                [[1]],
+            ),
+            (
+                (0.0, -0.5, True, False, False, "nearest", "reflect", False, {}),
+                [[0.0]],
+                [[1]],
+            ),
             (
                 (0.0, -0.51, True, False, False, "nearest", "reflect", True, {}),
                 [[NODATA_OUT]],
@@ -3583,20 +3916,48 @@ class TestGridResamplingMonoPointGrid:
                 [[0]],
             ),
             # ------ linear ------
-            # -------- target within domain - interpolation stencil outside the domain --------
-            ((0.0, 0.1, True, False, False, "linear", "reflect", True, {}), [[0.1]], [[1]]),
-            ((0.0, 0.1, True, False, False, "linear", "reflect", False, {}), [[0.1]], [[1]]),
-            ((0.0, 0.5, True, False, False, "linear", "reflect", True, {}), [[0.5]], [[1]]),
-            ((0.0, 0.8, True, False, False, "linear", "reflect", False, {}), [[0.8]], [[1]]),
-            ((0.0, 28.99, True, False, False, "linear", "reflect", True, {}), [[28.990000]], [[1]]),
+            # -------- target within domain - interpolation stencil outside the domain
+            (
+                (0.0, 0.1, True, False, False, "linear", "reflect", True, {}),
+                [[0.1]],
+                [[1]],
+            ),
+            (
+                (0.0, 0.1, True, False, False, "linear", "reflect", False, {}),
+                [[0.1]],
+                [[1]],
+            ),
+            (
+                (0.0, 0.5, True, False, False, "linear", "reflect", True, {}),
+                [[0.5]],
+                [[1]],
+            ),
+            (
+                (0.0, 0.8, True, False, False, "linear", "reflect", False, {}),
+                [[0.8]],
+                [[1]],
+            ),
+            (
+                (0.0, 28.99, True, False, False, "linear", "reflect", True, {}),
+                [[28.990000]],
+                [[1]],
+            ),
             (
                 (0.0, 28.99, True, False, False, "linear", "reflect", False, {}),
                 [[28.990000]],
                 [[1]],
             ),
-            ((0.0, 29.0, True, False, False, "linear", "reflect", False, {}), [[29.0]], [[1]]),
-            # -------- outside of domain  - interpolation stencil outside of the domain --------
-            ((0.0, -0.1, True, False, False, "linear", "reflect", True, {}), [[NODATA_OUT]], [[0]]),
+            (
+                (0.0, 29.0, True, False, False, "linear", "reflect", False, {}),
+                [[29.0]],
+                [[1]],
+            ),
+            # -------- outside of domain  - interpolation stencil outside of the domain
+            (
+                (0.0, -0.1, True, False, False, "linear", "reflect", True, {}),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
             (
                 (0.0, -0.1, True, False, False, "linear", "reflect", False, {}),
                 [[NODATA_OUT]],
@@ -3608,73 +3969,199 @@ class TestGridResamplingMonoPointGrid:
                 [[0]],
             ),
             # ------ cubic ------
-            # -------- target within domain - interpolation stencil outside the domain --------
-            ((0.0, 0.1, True, False, False, "cubic", "reflect", True, {}), [[0.019000]], [[1]]),
-            ((0.0, 0.1, True, False, False, "cubic", "reflect", False, {}), [[NODATA_OUT]], [[0]]),
-            ((0.0, 0.1, True, False, False, "cubic", "constant", True, {}), [[0.059500]], [[1]]),
+            # -------- target within domain - interpolation stencil outside the domain
+            (
+                (0.0, 0.1, True, False, False, "cubic", "reflect", True, {}),
+                [[0.019000]],
+                [[1]],
+            ),
+            (
+                (0.0, 0.1, True, False, False, "cubic", "reflect", False, {}),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
+            (
+                (0.0, 0.1, True, False, False, "cubic", "constant", True, {}),
+                [[0.059500]],
+                [[1]],
+            ),
             (
                 (0.0, 0.999, True, False, False, "cubic", "reflect", False, {}),
                 [[NODATA_OUT]],
                 [[0]],
             ),
-            ((0.0, 28.999, True, False, False, "cubic", "reflect", True, {}), [[28.999998]], [[1]]),
+            (
+                (0.0, 28.999, True, False, False, "cubic", "reflect", True, {}),
+                [[28.999998]],
+                [[1]],
+            ),
             (
                 (0.0, 28.999, True, False, False, "cubic", "reflect", False, {}),
                 [[NODATA_OUT]],
                 [[0]],
             ),
-            # -------- target within domain - interpolation stencil within the domain --------
-            ((0.0, 1.001, True, False, False, "cubic", "reflect", False, {}), [[1.001000]], [[1]]),
-            ((0.0, 1.1, True, False, False, "cubic", "reflect", True, {}), [[1.100000]], [[1]]),
-            ((0.0, 1.1, True, False, False, "cubic", "reflect", False, {}), [[1.100000]], [[1]]),
-            # -------- outside of domain  - interpolation stencil outside of the domain --------
-            ((0.0, -0.1, True, False, False, "cubic", "reflect", True, {}), [[NODATA_OUT]], [[0]]),
-            ((0.0, -0.1, True, False, False, "cubic", "reflect", False, {}), [[NODATA_OUT]], [[0]]),
-            # ------ bspline3 ------
-            # -------- target within domain - interpolation stencil outside the domain --------
+            # -------- target within domain - interpolation stencil within the domain
             (
-                (0.0, 0.001, True, False, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (0.0, 1.001, True, False, False, "cubic", "reflect", False, {}),
+                [[1.001000]],
+                [[1]],
+            ),
+            (
+                (0.0, 1.1, True, False, False, "cubic", "reflect", True, {}),
+                [[1.100000]],
+                [[1]],
+            ),
+            (
+                (0.0, 1.1, True, False, False, "cubic", "reflect", False, {}),
+                [[1.100000]],
+                [[1]],
+            ),
+            # -------- outside of domain  - interpolation stencil outside of the domain
+            (
+                (0.0, -0.1, True, False, False, "cubic", "reflect", True, {}),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
+            (
+                (0.0, -0.1, True, False, False, "cubic", "reflect", False, {}),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
+            # ------ bspline3 ------
+            # -------- target within domain - interpolation stencil outside the domain
+            (
+                (
+                    0.0,
+                    0.001,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[0.000001]],
                 [[1]],
             ),
             (
-                (0.0, 0.999, True, False, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (
+                    0.0,
+                    0.999,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[0.998731]],
                 [[1]],
             ),
             (
-                (1.0, 0.999, True, False, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (
+                    1.0,
+                    0.999,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[30.998731]],
                 [[1]],
             ),
             (
-                (1.0, 0.999, True, False, False, "bspline3", "reflect", False, DFLT_BSPLINES_ARGS),
+                (
+                    1.0,
+                    0.999,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    False,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[0]],
             ),
             (
-                (0.0, 28.999, True, False, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (
+                    0.0,
+                    28.999,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[28.999997]],
                 [[1]],
             ),
             (
-                (0.0, 28.999, True, False, False, "bspline3", "reflect", False, DFLT_BSPLINES_ARGS),
+                (
+                    0.0,
+                    28.999,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    False,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[0]],
             ),
-            # -------- target within domain - interpolation stencil within the domain --------
+            # -------- target within domain - interpolation stencil within the domain
             (
-                (0.0, 1.001, True, False, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (
+                    0.0,
+                    1.001,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[1.001267]],
                 [[1]],
             ),
             (
-                (0.0, 1.001, True, False, False, "bspline3", "reflect", False, DFLT_BSPLINES_ARGS),
+                (
+                    0.0,
+                    1.001,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    False,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[0]],
             ),
             (
-                (1.0, 1.001, True, False, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (
+                    1.0,
+                    1.001,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[31.001265]],
                 [[1]],
             ),
@@ -3693,37 +4180,98 @@ class TestGridResamplingMonoPointGrid:
                 [[NODATA_OUT]],
                 [[0]],
             ),
-            # -------- outside of domain  - interpolation stencil outside of the domain --------
+            # -------- outside of domain  - interpolation stencil outside of the domain
             (
-                (0.0, -0.001, True, False, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (
+                    0.0,
+                    -0.001,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[1]],
             ),
             (
-                (0.0, -0.001, True, False, False, "bspline3", "reflect", False, DFLT_BSPLINES_ARGS),
+                (
+                    0.0,
+                    -0.001,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    False,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[1]],
             ),
-            # -- Tests shift on row / idendity on col - invalid at (0, 0) and (17, 27) if enabled --
+            # -- Tests shift on row / idendity on col - invalid at (0, 0) and (17, 27)
+            # if enabled --
             # ---- full valid mask ----
             # ------ nearest ------
             # -------- within domain --------
-            ((0.49, 0.0, True, False, False, "nearest", "reflect", True, {}), [[0.0]], [[1]]),
-            ((0.49, 0.0, True, False, False, "nearest", "reflect", False, {}), [[0.0]], [[1]]),
-            ((0.49, 0.0, True, False, False, "nearest", None, False, {}), [[0.0]], [[1]]),
-            ((0.5, 0.0, True, False, False, "nearest", "reflect", True, {}), [[30.0]], [[1]]),
-            ((0.51, 0.0, True, False, False, "nearest", "reflect", True, {}), [[30.0]], [[1]]),
+            (
+                (0.49, 0.0, True, False, False, "nearest", "reflect", True, {}),
+                [[0.0]],
+                [[1]],
+            ),
+            (
+                (0.49, 0.0, True, False, False, "nearest", "reflect", False, {}),
+                [[0.0]],
+                [[1]],
+            ),
+            (
+                (0.49, 0.0, True, False, False, "nearest", None, False, {}),
+                [[0.0]],
+                [[1]],
+            ),
+            (
+                (0.5, 0.0, True, False, False, "nearest", "reflect", True, {}),
+                [[30.0]],
+                [[1]],
+            ),
+            (
+                (0.51, 0.0, True, False, False, "nearest", "reflect", True, {}),
+                [[30.0]],
+                [[1]],
+            ),
             (
                 (19.49, 0.0, True, False, False, "nearest", "reflect", True, {}),
                 [[570.000000]],
                 [[1]],
             ),
             # -------- outside of domain --------
-            ((-0.49, 0.0, True, False, False, "nearest", "reflect", True, {}), [[0.0]], [[1]]),
-            ((-0.49, 0.0, True, False, False, "nearest", "reflect", False, {}), [[0.0]], [[1]]),
-            ((-0.49, 0.0, True, False, False, "nearest", None, False, {}), [[0.0]], [[1]]),
-            ((-0.5, 0.0, True, False, False, "nearest", "reflect", True, {}), [[0.0]], [[1]]),
-            ((-0.5, 0.0, True, False, False, "nearest", "reflect", False, {}), [[0.0]], [[1]]),
+            (
+                (-0.49, 0.0, True, False, False, "nearest", "reflect", True, {}),
+                [[0.0]],
+                [[1]],
+            ),
+            (
+                (-0.49, 0.0, True, False, False, "nearest", "reflect", False, {}),
+                [[0.0]],
+                [[1]],
+            ),
+            (
+                (-0.49, 0.0, True, False, False, "nearest", None, False, {}),
+                [[0.0]],
+                [[1]],
+            ),
+            (
+                (-0.5, 0.0, True, False, False, "nearest", "reflect", True, {}),
+                [[0.0]],
+                [[1]],
+            ),
+            (
+                (-0.5, 0.0, True, False, False, "nearest", "reflect", False, {}),
+                [[0.0]],
+                [[1]],
+            ),
             (
                 (-0.51, 0.0, True, False, False, "nearest", "reflect", True, {}),
                 [[NODATA_OUT]],
@@ -3740,11 +4288,27 @@ class TestGridResamplingMonoPointGrid:
                 [[0]],
             ),
             # ------ linear ------
-            # -------- target within domain - interpolation stencil outside the domain --------
-            ((0.1, 0.0, True, False, False, "linear", "reflect", True, {}), [[3.0]], [[1]]),
-            ((0.1, 0.0, True, False, False, "linear", "reflect", False, {}), [[3.0]], [[1]]),
-            ((0.5, 0.0, True, False, False, "linear", "reflect", True, {}), [[15.0]], [[1]]),
-            ((0.8, 0.0, True, False, False, "linear", "reflect", True, {}), [[24.0]], [[1]]),
+            # -------- target within domain - interpolation stencil outside the domain
+            (
+                (0.1, 0.0, True, False, False, "linear", "reflect", True, {}),
+                [[3.0]],
+                [[1]],
+            ),
+            (
+                (0.1, 0.0, True, False, False, "linear", "reflect", False, {}),
+                [[3.0]],
+                [[1]],
+            ),
+            (
+                (0.5, 0.0, True, False, False, "linear", "reflect", True, {}),
+                [[15.0]],
+                [[1]],
+            ),
+            (
+                (0.8, 0.0, True, False, False, "linear", "reflect", True, {}),
+                [[24.0]],
+                [[1]],
+            ),
             (
                 (18.99, 0.0, True, False, False, "linear", "reflect", True, {}),
                 [[569.700000]],
@@ -3755,9 +4319,17 @@ class TestGridResamplingMonoPointGrid:
                 [[569.700000]],
                 [[1]],
             ),
-            ((19.0, 0.0, True, False, False, "linear", "reflect", True, {}), [[570.000000]], [[1]]),
-            # -------- outside of domain  - interpolation stencil outside of the domain --------
-            ((-0.1, 0.0, True, False, False, "linear", "reflect", True, {}), [[NODATA_OUT]], [[0]]),
+            (
+                (19.0, 0.0, True, False, False, "linear", "reflect", True, {}),
+                [[570.000000]],
+                [[1]],
+            ),
+            # -------- outside of domain  - interpolation stencil outside of the domain
+            (
+                (-0.1, 0.0, True, False, False, "linear", "reflect", True, {}),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
             (
                 (-0.1, 0.0, True, False, False, "linear", "reflect", False, {}),
                 [[NODATA_OUT]],
@@ -3769,73 +4341,199 @@ class TestGridResamplingMonoPointGrid:
                 [[0]],
             ),
             # ------ cubic ------
-            # -------- target within domain - interpolation stencil outside the domain --------
-            ((0.1, 0.0, True, False, False, "cubic", "reflect", True, {}), [[0.57]], [[1]]),
-            ((0.1, 0.0, True, False, False, "cubic", "reflect", False, {}), [[NODATA_OUT]], [[0]]),
-            ((0.1, 0.0, True, False, False, "cubic", "constant", True, {}), [[1.785]], [[1]]),
+            # -------- target within domain - interpolation stencil outside the domain
+            (
+                (0.1, 0.0, True, False, False, "cubic", "reflect", True, {}),
+                [[0.57]],
+                [[1]],
+            ),
+            (
+                (0.1, 0.0, True, False, False, "cubic", "reflect", False, {}),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
+            (
+                (0.1, 0.0, True, False, False, "cubic", "constant", True, {}),
+                [[1.785]],
+                [[1]],
+            ),
             (
                 (0.999, 0.0, True, False, False, "cubic", "reflect", False, {}),
                 [[NODATA_OUT]],
                 [[0]],
             ),
-            ((18.99, 0.0, True, False, False, "cubic", "reflect", True, {}), [[569.994030]], [[1]]),
+            (
+                (18.99, 0.0, True, False, False, "cubic", "reflect", True, {}),
+                [[569.994030]],
+                [[1]],
+            ),
             (
                 (18.99, 0.0, True, False, False, "cubic", "reflect", False, {}),
                 [[NODATA_OUT]],
                 [[0]],
             ),
-            # -------- target within domain - interpolation stencil within the domain --------
-            ((1.001, 0.0, True, False, False, "cubic", "reflect", False, {}), [[30.03]], [[1]]),
-            ((1.1, 0.0, True, False, False, "cubic", "reflect", True, {}), [[33.0]], [[1]]),
-            ((1.1, 0.0, True, False, False, "cubic", "reflect", False, {}), [[33.0]], [[1]]),
-            # -------- outside of domain  - interpolation stencil outside of the domain --------
-            ((-0.1, 0.0, True, False, False, "cubic", "reflect", True, {}), [[NODATA_OUT]], [[0]]),
-            ((-0.1, 0.0, True, False, False, "cubic", "reflect", False, {}), [[NODATA_OUT]], [[0]]),
-            # ------ bspline3 ------
-            # -------- target within domain - interpolation stencil outside the domain --------
+            # -------- target within domain - interpolation stencil within the domain
             (
-                (0.001, 0.0, True, False, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (1.001, 0.0, True, False, False, "cubic", "reflect", False, {}),
+                [[30.03]],
+                [[1]],
+            ),
+            (
+                (1.1, 0.0, True, False, False, "cubic", "reflect", True, {}),
+                [[33.0]],
+                [[1]],
+            ),
+            (
+                (1.1, 0.0, True, False, False, "cubic", "reflect", False, {}),
+                [[33.0]],
+                [[1]],
+            ),
+            # -------- outside of domain  - interpolation stencil outside of the domain
+            (
+                (-0.1, 0.0, True, False, False, "cubic", "reflect", True, {}),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
+            (
+                (-0.1, 0.0, True, False, False, "cubic", "reflect", False, {}),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
+            # ------ bspline3 ------
+            # -------- target within domain - interpolation stencil outside the domain
+            (
+                (
+                    0.001,
+                    0.0,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[0.000037]],
                 [[1]],
             ),
             (
-                (0.999, 0.0, True, False, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (
+                    0.999,
+                    0.0,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[29.961944]],
                 [[1]],
             ),
             (
-                (0.999, 1.0, True, False, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (
+                    0.999,
+                    1.0,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[30.961944]],
                 [[1]],
             ),
             (
-                (0.999, 1.0, True, False, False, "bspline3", "reflect", False, DFLT_BSPLINES_ARGS),
+                (
+                    0.999,
+                    1.0,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    False,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[0]],
             ),
             (
-                (18.99, 0.0, True, False, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (
+                    18.99,
+                    0.0,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[569.994618]],
                 [[1]],
             ),
             (
-                (18.99, 0.0, True, False, False, "bspline3", "reflect", False, DFLT_BSPLINES_ARGS),
+                (
+                    18.99,
+                    0.0,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    False,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[0]],
             ),
-            # -------- target within domain - interpolation stencil within the domain --------
+            # -------- target within domain - interpolation stencil within the domain
             (
-                (1.001, 0.0, True, False, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (
+                    1.001,
+                    0.0,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[30.038012]],
                 [[1]],
             ),
             (
-                (1.001, 0.0, True, False, False, "bspline3", "reflect", False, DFLT_BSPLINES_ARGS),
+                (
+                    1.001,
+                    0.0,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    False,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[-9999.000000]],
                 [[0]],
             ),
             (
-                (1.001, 1.0, True, False, False, "bspline3", "reflect", False, DFLT_BSPLINES_ARGS),
+                (
+                    1.001,
+                    1.0,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    False,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[31.038012]],
                 [[1]],
             ),
@@ -3854,40 +4552,104 @@ class TestGridResamplingMonoPointGrid:
                 [[NODATA_OUT]],
                 [[0]],
             ),
-            # -------- outside of domain  - interpolation stencil outside of the domain --------
+            # -------- outside of domain  - interpolation stencil outside of the domain
             (
-                (-0.001, 0.0, True, False, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (
+                    -0.001,
+                    0.0,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[1]],
             ),
             (
-                (-0.001, 0.0, True, False, False, "bspline3", "reflect", False, DFLT_BSPLINES_ARGS),
+                (
+                    -0.001,
+                    0.0,
+                    True,
+                    False,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    False,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[1]],
             ),
             # ---- invalid mask ----
             # ------ nearest ------
             # -------- target invalid point --------
-            ((0.0, 0.0, True, True, False, "nearest", "reflect", True, {}), [[NODATA_OUT]], [[0]]),
+            (
+                (0.0, 0.0, True, True, False, "nearest", "reflect", True, {}),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
             (
                 (17.0, 27.0, True, True, False, "nearest", "reflect", True, {}),
                 [[NODATA_OUT]],
                 [[0]],
             ),
             # -------- target valid point --------
-            ((18.0, 27.0, True, True, False, "nearest", "reflect", True, {}), [[567.0]], [[1]]),
-            ((16.0, 27.0, True, True, False, "nearest", "reflect", True, {}), [[507]], [[1]]),
-            ((17.0, 26.0, True, True, False, "nearest", "reflect", True, {}), [[536.0]], [[1]]),
-            ((17.0, 28.0, True, True, False, "nearest", "reflect", True, {}), [[538.0]], [[1]]),
+            (
+                (18.0, 27.0, True, True, False, "nearest", "reflect", True, {}),
+                [[567.0]],
+                [[1]],
+            ),
+            (
+                (16.0, 27.0, True, True, False, "nearest", "reflect", True, {}),
+                [[507]],
+                [[1]],
+            ),
+            (
+                (17.0, 26.0, True, True, False, "nearest", "reflect", True, {}),
+                [[536.0]],
+                [[1]],
+            ),
+            (
+                (17.0, 28.0, True, True, False, "nearest", "reflect", True, {}),
+                [[538.0]],
+                [[1]],
+            ),
             # ------ linear ------
             # -------- target invalid point --------
-            ((0.0, 0.0, True, True, False, "linear", "reflect", True, {}), [[NODATA_OUT]], [[0]]),
-            ((17.0, 27.0, True, True, False, "linear", "reflect", True, {}), [[NODATA_OUT]], [[0]]),
-            # -------- target neighbor point - weight for invalid data should be 0 --------
-            ((18.0, 27.0, True, True, False, "linear", "reflect", True, {}), [[567.0]], [[1]]),
-            ((16.0, 27.0, True, True, False, "linear", "reflect", True, {}), [[507]], [[1]]),
-            ((17.0, 26.0, True, True, False, "linear", "reflect", True, {}), [[536.0]], [[1]]),
-            ((17.0, 28.0, True, True, False, "linear", "reflect", True, {}), [[538.0]], [[1]]),
+            (
+                (0.0, 0.0, True, True, False, "linear", "reflect", True, {}),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
+            (
+                (17.0, 27.0, True, True, False, "linear", "reflect", True, {}),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
+            # -------- target neighbor point - weight for invalid data should be 0
+            (
+                (18.0, 27.0, True, True, False, "linear", "reflect", True, {}),
+                [[567.0]],
+                [[1]],
+            ),
+            (
+                (16.0, 27.0, True, True, False, "linear", "reflect", True, {}),
+                [[507]],
+                [[1]],
+            ),
+            (
+                (17.0, 26.0, True, True, False, "linear", "reflect", True, {}),
+                [[536.0]],
+                [[1]],
+            ),
+            (
+                (17.0, 28.0, True, True, False, "linear", "reflect", True, {}),
+                [[538.0]],
+                [[1]],
+            ),
             # -------- target neighbor point - interpolation required --------
             (
                 (17.99, 27.0, True, True, False, "linear", "reflect", True, {}),
@@ -3931,58 +4693,175 @@ class TestGridResamplingMonoPointGrid:
             ),
             # ------ cubic ------
             # -------- target invalid point --------
-            ((0.0, 0.0, True, True, False, "cubic", "reflect", True, {}), [[NODATA_OUT]], [[0]]),
-            ((17.0, 27.0, True, True, False, "cubic", "reflect", True, {}), [[NODATA_OUT]], [[0]]),
-            # -------- target neighbor point - weight for invalid data should be 0 --------
-            ((19.0, 27.0, True, True, False, "cubic", "reflect", True, {}), [[597.0]], [[1]]),
-            ((15.0, 27.0, True, True, False, "cubic", "reflect", True, {}), [[477.0]], [[1]]),
-            ((17.0, 25.0, True, True, False, "cubic", "reflect", True, {}), [[535.0]], [[1]]),
-            ((17.0, 29.0, True, True, False, "cubic", "reflect", True, {}), [[539.0]], [[1]]),
-            # -------- target neighbor point - interpolation required --------
-            ((14.99, 27.0, True, True, False, "cubic", "reflect", True, {}), [[476.700000]], [[1]]),
-            ((15.01, 27.0, True, True, False, "cubic", "reflect", True, {}), [[NODATA_OUT]], [[0]]),
-            ((18.99, 27.0, True, True, False, "cubic", "reflect", True, {}), [[NODATA_OUT]], [[0]]),
-            # 19.01 is outside of source domain => nodata
-            ((19.01, 27.0, True, True, False, "cubic", "reflect", True, {}), [[NODATA_OUT]], [[0]]),
-            ((17.0, 24.99, True, True, False, "cubic", "reflect", True, {}), [[534.990000]], [[1]]),
-            ((17.0, 25.01, True, True, False, "cubic", "reflect", True, {}), [[NODATA_OUT]], [[0]]),
-            ((17.0, 28.99, True, True, False, "cubic", "reflect", True, {}), [[NODATA_OUT]], [[0]]),
-            # 29.01 is outside of source domain => nodata
-            ((17.0, 29.01, True, True, False, "cubic", "reflect", True, {}), [[NODATA_OUT]], [[0]]),
-            # ------ bspline3 ------
-            # -------- target invalid point --------
             (
-                (0.0, 0.0, True, True, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (0.0, 0.0, True, True, False, "cubic", "reflect", True, {}),
                 [[NODATA_OUT]],
                 [[0]],
             ),
             (
-                (17.0, 27.0, True, True, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (17.0, 27.0, True, True, False, "cubic", "reflect", True, {}),
                 [[NODATA_OUT]],
                 [[0]],
             ),
-            # -------- target neighbor point - weight for invalid data should be 0 --------
+            # -------- target neighbor point - weight for invalid data should be 0
             (
-                (19.0, 27.0, True, True, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (19.0, 27.0, True, True, False, "cubic", "reflect", True, {}),
                 [[597.0]],
                 [[1]],
             ),
             (
-                (15.0, 27.0, True, True, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (15.0, 27.0, True, True, False, "cubic", "reflect", True, {}),
                 [[477.0]],
                 [[1]],
             ),
             (
-                (17.0, 25.0, True, True, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (17.0, 25.0, True, True, False, "cubic", "reflect", True, {}),
                 [[535.0]],
                 [[1]],
             ),
             (
-                (17.0, 29.0, True, True, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (17.0, 29.0, True, True, False, "cubic", "reflect", True, {}),
                 [[539.0]],
                 [[1]],
             ),
-            # activating mask dilatation during prefiltering results in invalid data on stencil
+            # -------- target neighbor point - interpolation required --------
+            (
+                (14.99, 27.0, True, True, False, "cubic", "reflect", True, {}),
+                [[476.700000]],
+                [[1]],
+            ),
+            (
+                (15.01, 27.0, True, True, False, "cubic", "reflect", True, {}),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
+            (
+                (18.99, 27.0, True, True, False, "cubic", "reflect", True, {}),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
+            # 19.01 is outside of source domain => nodata
+            (
+                (19.01, 27.0, True, True, False, "cubic", "reflect", True, {}),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
+            (
+                (17.0, 24.99, True, True, False, "cubic", "reflect", True, {}),
+                [[534.990000]],
+                [[1]],
+            ),
+            (
+                (17.0, 25.01, True, True, False, "cubic", "reflect", True, {}),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
+            (
+                (17.0, 28.99, True, True, False, "cubic", "reflect", True, {}),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
+            # 29.01 is outside of source domain => nodata
+            (
+                (17.0, 29.01, True, True, False, "cubic", "reflect", True, {}),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
+            # ------ bspline3 ------
+            # -------- target invalid point --------
+            (
+                (
+                    0.0,
+                    0.0,
+                    True,
+                    True,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
+            (
+                (
+                    17.0,
+                    27.0,
+                    True,
+                    True,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
+                [[NODATA_OUT]],
+                [[0]],
+            ),
+            # -------- target neighbor point - weight for invalid data should be 0
+            (
+                (
+                    19.0,
+                    27.0,
+                    True,
+                    True,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
+                [[597.0]],
+                [[1]],
+            ),
+            (
+                (
+                    15.0,
+                    27.0,
+                    True,
+                    True,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
+                [[477.0]],
+                [[1]],
+            ),
+            (
+                (
+                    17.0,
+                    25.0,
+                    True,
+                    True,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
+                [[535.0]],
+                [[1]],
+            ),
+            (
+                (
+                    17.0,
+                    29.0,
+                    True,
+                    True,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
+                [[539.0]],
+                [[1]],
+            ),
+            # activating mask dilatation during prefiltering results in invalid data on
+            # stencil
             (
                 (
                     19.0,
@@ -4045,44 +4924,124 @@ class TestGridResamplingMonoPointGrid:
             ),
             # -------- target neighbor point - interpolation required --------
             (
-                (14.99, 27.0, True, True, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (
+                    14.99,
+                    27.0,
+                    True,
+                    True,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[476.701221]],
                 [[1]],
             ),
             (
-                (15.01, 27.0, True, True, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (
+                    15.01,
+                    27.0,
+                    True,
+                    True,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[0]],
             ),
             (
-                (18.99, 27.0, True, True, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (
+                    18.99,
+                    27.0,
+                    True,
+                    True,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[0]],
             ),
             # 19.01 is outside of source domain => nodata
             (
-                (19.01, 27.0, True, True, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (
+                    19.01,
+                    27.0,
+                    True,
+                    True,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[0]],
             ),
             (
-                (17.0, 24.99, True, True, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (
+                    17.0,
+                    24.99,
+                    True,
+                    True,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[534.98972]],
                 [[1]],
             ),
             (
-                (17.0, 25.01, True, True, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (
+                    17.0,
+                    25.01,
+                    True,
+                    True,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[0]],
             ),
             (
-                (17.0, 28.99, True, True, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (
+                    17.0,
+                    28.99,
+                    True,
+                    True,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[0]],
             ),
             # 29.01 is outside of source domain => nodata
             (
-                (17.0, 29.01, True, True, False, "bspline3", "reflect", True, DFLT_BSPLINES_ARGS),
+                (
+                    17.0,
+                    29.01,
+                    True,
+                    True,
+                    False,
+                    "bspline3",
+                    "reflect",
+                    True,
+                    DFLT_BSPLINES_ARGS,
+                ),
                 [[NODATA_OUT]],
                 [[0]],
             ),
@@ -4094,7 +5053,9 @@ class TestGridResamplingMonoPointGrid:
         testing_decimal = 6
         """Test Mono Point Grid for Nominal Cases"""
         kwargs = self._mono_point_grid_generate_input__partial_nominal_case(
-            **self._mono_point_grid_generate_input__partial_nominal_case_build_kwargs(args)
+            **self._mono_point_grid_generate_input__partial_nominal_case_build_kwargs(
+                args
+            )
         )
         kwargs["array_out"] = None  # Force array out allocation
         array_out, mask_out = array_grid_resampling(**kwargs)
@@ -4112,7 +5073,8 @@ class TestGridResamplingMonoPointGrid:
     @pytest.mark.parametrize("args", [(0, 0), (2, 1), (1, 2), (2, 2)])
     def test_mono_point_grid__invalid_resolution(self, args):
         """Using no (1, 1) resolution with a mono point grid must raise an Exception"""
-        # Fake resolution to be (1, 1) for data initialization in order to avoid divide by zero
+        # Fake resolution to be (1, 1) for data initialization in order to avoid divide
+        # by zero
         kwargs = self._mono_point_grid_generate_input(
             row_target=1.0,
             col_target=1.0,
@@ -4145,12 +5107,20 @@ class TestGridResamplingMonoPointGrid:
 
 
 class TestGridResamplingMultiPointGrid:
-
     NODATA_OUT = -9999.0
 
     # -- helper function for general grid case --
     def _create_grid(
-        self, nrow, ncol, origin_pos, origin_node, v_row_y, v_row_x, v_col_y, v_col_x, grid_dtype
+        self,
+        nrow,
+        ncol,
+        origin_pos,
+        origin_node,
+        v_row_y,
+        v_row_x,
+        v_col_y,
+        v_col_x,
+        grid_dtype,
     ):
         """Create a grid"""
         x = np.arange(0, ncol, dtype=grid_dtype)
@@ -4208,10 +5178,6 @@ class TestGridResamplingMultiPointGrid:
         boundary_condition=boundary_condition,
         trust_padding=trust_padding,
         """
-        if len(shape_array_in) == 3:
-            _, array_in_row, array_in_col = shape_array_in
-        else:
-            array_in_row, array_in_col = shape_array_in
         kwargs = {}
         # -- interp --
         if "bspline" in interp:
@@ -4225,13 +5191,15 @@ class TestGridResamplingMultiPointGrid:
         # -- array_in --
         if array_in_cst_value is not None:
             kwargs["array_in"] = (
-                np.ones(np.prod(shape_array_in), dtype=np.float64).reshape(shape_array_in)
+                np.ones(np.prod(shape_array_in), dtype=np.float64).reshape(
+                    shape_array_in
+                )
                 * array_in_cst_value
             )
         else:
-            kwargs["array_in"] = np.arange(np.prod(shape_array_in), dtype=np.float64).reshape(
-                shape_array_in
-            )
+            kwargs["array_in"] = np.arange(
+                np.prod(shape_array_in), dtype=np.float64
+            ).reshape(shape_array_in)
         # -- array_in_origin --
         kwargs["array_in_origin"] = array_in_origin
         # -- resolution --
@@ -4255,7 +5223,9 @@ class TestGridResamplingMultiPointGrid:
 
         grid_mask = None
         if use_grid_mask:
-            grid_mask = np.full(np.asarray(grid_row).shape, grid_mask_valid_value, dtype=np.uint8)
+            grid_mask = np.full(
+                np.asarray(grid_row).shape, grid_mask_valid_value, dtype=np.uint8
+            )
             if grid_mask_novalid_slice is not None:
                 grid_mask[grid_mask_novalid_slice] = grid_mask_valid_value - 1
         kwargs["grid_mask"] = grid_mask
@@ -4275,22 +5245,24 @@ class TestGridResamplingMultiPointGrid:
         return kwargs
 
     # -- Helper for simple general cases without array mask--
-    _multi_point_grid_generate_input__partial_nominal_case_no_array_mask = partialmethod(
-        _multi_points_grid_generate_input,
-        shape_array_in=(10, 15),
-        # resolution = (1, 1),
-        use_array_in_mask=False,
-        array_in_mask_invalid_slice=None,
-        array_in_mask_safe_window=None,
-        array_out_mask=True,
-        use_standalone=True,
-        nodata_out=-9999.0,
-        array_in_origin=(0.0, 0.0),
-        win=None,
-        check_boundaries=True,
+    _multi_point_grid_generate_input__partial_nominal_case_no_array_mask = (
+        partialmethod(
+            _multi_points_grid_generate_input,
+            shape_array_in=(10, 15),
+            # resolution = (1, 1),
+            use_array_in_mask=False,
+            array_in_mask_invalid_slice=None,
+            array_in_mask_safe_window=None,
+            array_out_mask=True,
+            use_standalone=True,
+            nodata_out=-9999.0,
+            array_in_origin=(0.0, 0.0),
+            win=None,
+            check_boundaries=True,
+        )
     )
 
-    def _multi_point_grid_generate_input__partial_nominal_case_no_array_mask_build_kwargs(
+    def _multi_point_grid_generate_input__partial_nominal_case_no_array_mask_build_kwargs(  # noqa: E501
         self, args
     ):
         return dict(
@@ -4312,7 +5284,7 @@ class TestGridResamplingMultiPointGrid:
             )
         )
 
-    IDENDITY_GRID_2x3_KWARGS = {
+    IDENDITY_GRID_2x3_KWARGS: ClassVar[dict] = {
         "nrow": 2,
         "ncol": 3,
         "origin_pos": (0, 0),
@@ -4339,7 +5311,8 @@ class TestGridResamplingMultiPointGrid:
                 "cubic",
                 {},
             ),
-            # Force good enough precision for epsilon to check for uniformity preservation
+            # Force good enough precision for epsilon to check for uniformity
+            # preservation
             (
                 "bspline3",
                 {"epsilon": 1e-6, "mask_influence_threshold": 1},
@@ -4361,12 +5334,25 @@ class TestGridResamplingMultiPointGrid:
                     "reflect",
                     True,
                 ),
-                [[100.000000, 100.000000, 100.000000], [100.000000, 100.000000, 100.000000]],
+                [
+                    [100.000000, 100.000000, 100.000000],
+                    [100.000000, 100.000000, 100.000000],
+                ],
                 [[1, 1, 1], [1, 1, 1]],
             ),
             (
-                # -- Test resolution on uniform array => this also checks uniformity preservation --
-                (IDENDITY_GRID_2x3_KWARGS, (2, 3), 100.0, False, 1, None, "reflect", True),
+                # -- Test resolution on uniform array => this also checks uniformity
+                # preservation --
+                (
+                    IDENDITY_GRID_2x3_KWARGS,
+                    (2, 3),
+                    100.0,
+                    False,
+                    1,
+                    None,
+                    "reflect",
+                    True,
+                ),
                 [
                     [
                         100.000000,
@@ -4399,21 +5385,36 @@ class TestGridResamplingMultiPointGrid:
                 [[1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1]],
             ),
             (
-                # -- Test resolution on uniform array => this also checks uniformity preservation --
-                (IDENDITY_GRID_2x3_KWARGS, (200, 300), 100.0, False, 1, None, "reflect", True),
+                # -- Test resolution on uniform array => this also checks uniformity
+                # preservation --
+                (
+                    IDENDITY_GRID_2x3_KWARGS,
+                    (200, 300),
+                    100.0,
+                    False,
+                    1,
+                    None,
+                    "reflect",
+                    True,
+                ),
                 np.full((201, 601), 100.0),
                 np.ones((201, 601)),
             ),
         ],
     )
     def test_multi_point_grid__nominal_case_no_array_mask_uniform_data(
-        self, interp, interp_kwargs, args, expected_resampled_array, expected_resampled_mask
+        self,
+        interp,
+        interp_kwargs,
+        args,
+        expected_resampled_array,
+        expected_resampled_mask,
     ):
         testing_decimal = 6
         """Test Mono Point Grid for Nominal Cases"""
-        args = args + (interp, interp_kwargs)
-        kwargs = self._multi_point_grid_generate_input__partial_nominal_case_no_array_mask(
-            **self._multi_point_grid_generate_input__partial_nominal_case_no_array_mask_build_kwargs(  # noqa: E501
+        args = (*args, interp, interp_kwargs)
+        kwargs = self._multi_point_grid_generate_input__partial_nominal_case_no_array_mask(  # noqa: E501
+            **self._multi_point_grid_generate_input__partial_nominal_case_no_array_mask_build_kwargs(
                 args
             )
         )
@@ -4519,8 +5520,8 @@ class TestGridResamplingMultiPointGrid:
     ):
         testing_decimal = 6
         """Test Multi Point Grid for Nominal Cases - shift"""
-        kwargs = self._multi_point_grid_generate_input__partial_nominal_case_no_array_mask(
-            **self._multi_point_grid_generate_input__partial_nominal_case_no_array_mask_build_kwargs(  # noqa: E501
+        kwargs = self._multi_point_grid_generate_input__partial_nominal_case_no_array_mask(  # noqa: E501
+            **self._multi_point_grid_generate_input__partial_nominal_case_no_array_mask_build_kwargs(
                 args
             )
         )
@@ -4552,7 +5553,9 @@ class TestGridResamplingMultiPointGrid:
         check_boundaries=True,
     )
 
-    def _multi_point_grid_generate_input__partial_grid_mask_and_win_build_kwargs(self, args):
+    def _multi_point_grid_generate_input__partial_grid_mask_and_win_build_kwargs(
+        self, args
+    ):
         return dict(
             zip(
                 (
@@ -4572,7 +5575,7 @@ class TestGridResamplingMultiPointGrid:
             )
         )
 
-    IDENDITY_GRID_3x3_KWARGS = {
+    IDENDITY_GRID_3x3_KWARGS: ClassVar[dict] = {
         "nrow": 3,
         "ncol": 3,
         "origin_pos": (0, 0),
@@ -4771,7 +5774,9 @@ class TestGridResamplingMultiPointGrid:
         assert args[2] is None
         """Test Multi Point Grid for Nominal Cases - shift"""
         kwargs = self._multi_point_grid_generate_input__partial_grid_mask_and_win(
-            **self._multi_point_grid_generate_input__partial_grid_mask_and_win_build_kwargs(args)
+            **self._multi_point_grid_generate_input__partial_grid_mask_and_win_build_kwargs(
+                args
+            )
         )
         kwargs["array_out"] = None  # Force array out allocation
         array_out, mask_out = array_grid_resampling(**kwargs)
@@ -4789,7 +5794,7 @@ class TestGridResamplingMultiPointGrid:
         # Run with param win
         # overwrite window args component
         if win is not None:
-            args = args[:2] + (win,) + args[3:]
+            args = (*args[:2], win, *args[3:])
             kwargs = self._multi_point_grid_generate_input__partial_grid_mask_and_win(
                 **self._multi_point_grid_generate_input__partial_grid_mask_and_win_build_kwargs(
                     args
@@ -4858,11 +5863,51 @@ class TestGridResamplingMultiPointGrid:
                     {},
                 ),
                 [
-                    [16.200000, 17.200000, 18.200000, 19.200000, 20.200000, 21.200000, 22.200000],
-                    [31.200000, 32.200000, 33.200000, 34.200000, 35.200000, 36.200000, 37.200000],
-                    [46.200000, 47.200000, 48.200000, 49.200000, 50.200000, 51.200000, 52.200000],
-                    [61.200000, 62.200000, 63.200000, 64.200000, 65.200000, 66.200000, 67.200000],
-                    [76.200000, 77.200000, 78.200000, 79.200000, 80.200000, 81.200000, 82.200000],
+                    [
+                        16.200000,
+                        17.200000,
+                        18.200000,
+                        19.200000,
+                        20.200000,
+                        21.200000,
+                        22.200000,
+                    ],
+                    [
+                        31.200000,
+                        32.200000,
+                        33.200000,
+                        34.200000,
+                        35.200000,
+                        36.200000,
+                        37.200000,
+                    ],
+                    [
+                        46.200000,
+                        47.200000,
+                        48.200000,
+                        49.200000,
+                        50.200000,
+                        51.200000,
+                        52.200000,
+                    ],
+                    [
+                        61.200000,
+                        62.200000,
+                        63.200000,
+                        64.200000,
+                        65.200000,
+                        66.200000,
+                        67.200000,
+                    ],
+                    [
+                        76.200000,
+                        77.200000,
+                        78.200000,
+                        79.200000,
+                        80.200000,
+                        81.200000,
+                        82.200000,
+                    ],
                 ],
                 np.full((5, 7), 1),
             ),
@@ -4899,9 +5944,33 @@ class TestGridResamplingMultiPointGrid:
                         36.200000,
                         37.200000,
                     ],
-                    [46.200000, 47.200000, 48.200000, 49.200000, 50.200000, 51.200000, 52.200000],
-                    [61.200000, 62.200000, 63.200000, 64.200000, 65.200000, 66.200000, 67.200000],
-                    [76.200000, 77.200000, 78.200000, 79.200000, 80.200000, 81.200000, 82.200000],
+                    [
+                        46.200000,
+                        47.200000,
+                        48.200000,
+                        49.200000,
+                        50.200000,
+                        51.200000,
+                        52.200000,
+                    ],
+                    [
+                        61.200000,
+                        62.200000,
+                        63.200000,
+                        64.200000,
+                        65.200000,
+                        66.200000,
+                        67.200000,
+                    ],
+                    [
+                        76.200000,
+                        77.200000,
+                        78.200000,
+                        79.200000,
+                        80.200000,
+                        81.200000,
+                        82.200000,
+                    ],
                 ],
                 [
                     [0, 0, 0, 1, 1, 1, 1],
@@ -4926,9 +5995,33 @@ class TestGridResamplingMultiPointGrid:
                     {},
                 ),
                 [
-                    [16.200000, 17.200000, 18.200000, 19.200000, 20.200000, 21.200000, 22.200000],
-                    [31.200000, 32.200000, 33.200000, 34.200000, 35.200000, 36.200000, 37.200000],
-                    [46.200000, 47.200000, 48.200000, 49.200000, 50.200000, 51.200000, 52.200000],
+                    [
+                        16.200000,
+                        17.200000,
+                        18.200000,
+                        19.200000,
+                        20.200000,
+                        21.200000,
+                        22.200000,
+                    ],
+                    [
+                        31.200000,
+                        32.200000,
+                        33.200000,
+                        34.200000,
+                        35.200000,
+                        36.200000,
+                        37.200000,
+                    ],
+                    [
+                        46.200000,
+                        47.200000,
+                        48.200000,
+                        49.200000,
+                        50.200000,
+                        51.200000,
+                        52.200000,
+                    ],
                     [
                         NODATA_OUT,
                         NODATA_OUT,
@@ -4989,9 +6082,33 @@ class TestGridResamplingMultiPointGrid:
                         NODATA_OUT,
                         NODATA_OUT,
                     ],
-                    [46.200000, 47.200000, 48.200000, 49.200000, 50.200000, 51.200000, 52.200000],
-                    [61.200000, 62.200000, 63.200000, 64.200000, 65.200000, 66.200000, 67.200000],
-                    [76.200000, 77.200000, 78.200000, 79.200000, 80.200000, 81.200000, 82.200000],
+                    [
+                        46.200000,
+                        47.200000,
+                        48.200000,
+                        49.200000,
+                        50.200000,
+                        51.200000,
+                        52.200000,
+                    ],
+                    [
+                        61.200000,
+                        62.200000,
+                        63.200000,
+                        64.200000,
+                        65.200000,
+                        66.200000,
+                        67.200000,
+                    ],
+                    [
+                        76.200000,
+                        77.200000,
+                        78.200000,
+                        79.200000,
+                        80.200000,
+                        81.200000,
+                        82.200000,
+                    ],
                 ],
                 [
                     [1, 1, 1, 1, 0, 0, 0],
@@ -5016,9 +6133,33 @@ class TestGridResamplingMultiPointGrid:
                     {},
                 ),
                 [
-                    [16.200000, 17.200000, 18.200000, 19.200000, 20.200000, 21.200000, 22.200000],
-                    [31.200000, 32.200000, 33.200000, 34.200000, 35.200000, 36.200000, 37.200000],
-                    [46.200000, 47.200000, 48.200000, 49.200000, 50.200000, 51.200000, 52.200000],
+                    [
+                        16.200000,
+                        17.200000,
+                        18.200000,
+                        19.200000,
+                        20.200000,
+                        21.200000,
+                        22.200000,
+                    ],
+                    [
+                        31.200000,
+                        32.200000,
+                        33.200000,
+                        34.200000,
+                        35.200000,
+                        36.200000,
+                        37.200000,
+                    ],
+                    [
+                        46.200000,
+                        47.200000,
+                        48.200000,
+                        49.200000,
+                        50.200000,
+                        51.200000,
+                        52.200000,
+                    ],
                     [
                         61.200000,
                         62.200000,
@@ -5061,7 +6202,15 @@ class TestGridResamplingMultiPointGrid:
                     {},
                 ),
                 [
-                    [16.200000, 17.200000, 18.200000, 19.200000, 20.200000, 21.200000, 22.200000],
+                    [
+                        16.200000,
+                        17.200000,
+                        18.200000,
+                        19.200000,
+                        20.200000,
+                        21.200000,
+                        22.200000,
+                    ],
                     [
                         31.200000,
                         NODATA_OUT,
@@ -5089,7 +6238,15 @@ class TestGridResamplingMultiPointGrid:
                         NODATA_OUT,
                         67.200000,
                     ],
-                    [76.200000, 77.200000, 78.200000, 79.200000, 80.200000, 81.200000, 82.200000],
+                    [
+                        76.200000,
+                        77.200000,
+                        78.200000,
+                        79.200000,
+                        80.200000,
+                        81.200000,
+                        82.200000,
+                    ],
                 ],
                 [
                     [1, 1, 1, 1, 1, 1, 1],
@@ -5109,7 +6266,9 @@ class TestGridResamplingMultiPointGrid:
         assert args[2] is None
         """Test Multi Point Grid for Nominal Cases - shift"""
         kwargs = self._multi_point_grid_generate_input__partial_grid_mask_and_win(
-            **self._multi_point_grid_generate_input__partial_grid_mask_and_win_build_kwargs(args)
+            **self._multi_point_grid_generate_input__partial_grid_mask_and_win_build_kwargs(
+                args
+            )
         )
         kwargs["array_out"] = None  # Force array out allocation
         array_out, mask_out = array_grid_resampling(**kwargs)
@@ -5127,7 +6286,7 @@ class TestGridResamplingMultiPointGrid:
         # Run with param win
         # overwrite window args component
         if win is not None:
-            args = args[:2] + (win,) + args[3:]
+            args = (*args[:2], win, *args[3:])
             kwargs = self._multi_point_grid_generate_input__partial_grid_mask_and_win(
                 **self._multi_point_grid_generate_input__partial_grid_mask_and_win_build_kwargs(
                     args
@@ -5156,7 +6315,9 @@ class TestGridResamplingMultiPointGrid:
             # ("bspline3", {"epsilon": 1e-6, "mask_influence_threshold": 1}),
         ],
     )
-    @pytest.mark.parametrize("boundary_condition", ["reflect", "symmetric", "constant", None])
+    @pytest.mark.parametrize(
+        "boundary_condition", ["reflect", "symmetric", "constant", None]
+    )
     @pytest.mark.parametrize("trust_padding", [True, False])
     @pytest.mark.parametrize("use_standalone", [True, False])
     def test_multi_point_grid__safe_window__nominal_case(

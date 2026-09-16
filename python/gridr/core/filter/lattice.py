@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -20,6 +19,7 @@
 """
 Lattice
 """
+
 from enum import Enum
 
 import numpy as np
@@ -34,7 +34,7 @@ class Domain(Enum):
     SPATIAL_DOMAIN = 1
 
 
-class Lattice2d(object):
+class Lattice2d:
     r"""
     Defines a 2D lattices by 2 vectors :math:`\mathbf{v}_1`, :math:`\mathbf{v}_2`
     and a definition domain
@@ -237,10 +237,7 @@ class Lattice2d(object):
             w3_b = w1 - w2
 
             # Select the candidate with the smallest norm
-            if np.dot(w3_b, w3_b) < np.dot(w3_a, w3_a):
-                w3 = w3_b
-            else:
-                w3 = w3_a
+            w3 = w3_b if np.dot(w3_b, w3_b) < np.dot(w3_a, w3_a) else w3_a
 
             # Normalize and adjust sign for consistent orientation
             w3 = w3 / np.dot(w3, w3)
@@ -283,19 +280,21 @@ class Lattice2d(object):
         -----
         The algorithm works as follows:
 
-        1.  If :math:`\|\mathbf{v}_2\| < \|\mathbf{v}_1\|`, swap :math:`\mathbf{v}_1` and
-            :math:`\mathbf{v}_2`.
+        1.  If :math:`\|\mathbf{v}_2\| < \|\mathbf{v}_1\|`, swap
+            :math:`\mathbf{v}_1` and :math:`\mathbf{v}_2`.
 
         2.  Compute the projection scalar :math:`m` :
-            :math:`m = \lfloor \frac{\mathbf{v}_1 \cdot \mathbf{v}_2}{\mathbf{v}_1 \cdot \mathbf{v}_1} \rfloor` # noqa: E501, B950
+            :math:`m = \lfloor \frac{\mathbf{v}_1 \cdot \mathbf{v}_2}
+                {\mathbf{v}_1 \cdot \mathbf{v}_1} \rfloor`
 
-        3.  If :math:`m = 0`, return the original basis vectors :math:`\mathbf{v}_1` and
-            :math:`\mathbf{v}_2`.
+        3.  If :math:`m = 0`, return the original basis vectors
+            :math:`\mathbf{v}_1` and :math:`\mathbf{v}_2`.
 
-        4.  Replace :math:`\mathbf{v}_2` with :math:`\mathbf{v}_2 - m \mathbf{v}_1`
+        4.  Replace :math:`\mathbf{v}_2` with
+            :math:`\mathbf{v}_2 - m \mathbf{v}_1`
 
-        5.  Repeat the process until convergence or until the vectors are orthogonal or `itermax`
-            is reached
+        5.  Repeat the process until convergence or until the vectors
+            are orthogonal or `itermax` is reached
 
         """
         u1 = lattice2d.v1.copy()

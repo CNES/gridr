@@ -1,4 +1,3 @@
-# coding: utf8
 #
 # Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
 #
@@ -11,7 +10,8 @@ Tests for the gridr.chain.grid_resampling_chain
 
 Command to run test :
 PYTHONPATH=${PWD}/python/:$PYTHONPATH pytest tests/python/gridr/chain/test_grid_resampling_chain.py
-"""
+"""  # noqa: E501
+
 import hashlib
 import os
 import tempfile
@@ -22,7 +22,10 @@ import pytest
 import rasterio
 import shapely
 
-from gridr.chain.grid_resampling_chain import GEOMETRY_RASTERIZE_KWARGS, basic_grid_resampling_chain
+from gridr.chain.grid_resampling_chain import (
+    GEOMETRY_RASTERIZE_KWARGS,
+    basic_grid_resampling_chain,
+)
 from gridr.core.grid.grid_commons import grid_full_resolution_shape
 from gridr.core.grid.grid_mask import Validity, build_mask
 from gridr.core.grid.grid_resampling import array_grid_resampling
@@ -58,7 +61,9 @@ def assert_allclose_with_details(actual, desired, rtol=1e-7, atol=1e-8, err_msg=
     desired = np.asarray(desired)
 
     if actual.shape != desired.shape:
-        raise AssertionError(f"Shape mismatch: actual {actual.shape} vs desired {desired.shape}")
+        raise AssertionError(
+            f"Shape mismatch: actual {actual.shape} vs desired {desired.shape}"
+        )
 
     diff = np.abs(actual - desired)
     max_diff = np.max(diff)
@@ -173,7 +178,10 @@ class TestGridResamplingChain:
         io_strip_size_target,
         tile_shape,
     ):
-        """Test the grid_resampling_chain - compare results with results in the core method"""
+        """
+        Test the grid_resampling_chain - compare results with results in the core
+        method.
+        """
         test_id = request.node.nodeid.split("::")[-1].replace("[", "-").replace("]", "")
         test_id = hashlib.md5(test_id.encode("utf-8")).hexdigest()[:8]
 
@@ -206,7 +214,9 @@ class TestGridResamplingChain:
             # Create a grid mask if True
             if grid_mask:
                 grid_mask_in_path = Path(output_dir) / "grid_mask_in.tif"
-                grid_mask_array = np.ones(grid_row.shape, dtype=np.uint8) * UNMASKED_VALUE
+                grid_mask_array = (
+                    np.ones(grid_row.shape, dtype=np.uint8) * UNMASKED_VALUE
+                )
                 grid_mask_array[
                     grid_row.shape[0] // 8 : grid_row.shape[0] // 8 + 3,
                     grid_row.shape[1] // 10 : grid_row.shape[1] // 10 + 2,
@@ -217,7 +227,9 @@ class TestGridResamplingChain:
             if array_in_mask_positions is not None:
                 array_mask_in_path = Path(output_dir) / "array_mask_in.tif"
                 array_mask = np.full(
-                    shape2(array_in), array_in_mask_validity_pair[0], dtype=array_in_mask_type
+                    shape2(array_in),
+                    array_in_mask_validity_pair[0],
+                    dtype=array_in_mask_type,
                 )
                 for pos in array_in_mask_positions:
                     array_mask[pos[0], pos[1]] = array_in_mask_validity_pair[1]
@@ -228,7 +240,9 @@ class TestGridResamplingChain:
                 shape=grid_row.shape, resolution=grid_resolution
             )
             if window is None:
-                window = np.array(((0, full_output_shape[0] - 1), (0, full_output_shape[1] - 1)))
+                window = np.array(
+                    ((0, full_output_shape[0] - 1), (0, full_output_shape[1] - 1))
+                )
                 output_shape = full_output_shape
             else:
                 output_shape = window[:, 1] - window[:, 0] + 1
@@ -259,14 +273,15 @@ class TestGridResamplingChain:
             with (
                 rasterio.open(grid_in_path, "r") as grid_in_ds,
                 rasterio.open(array_in_path, "r") as array_in_ds,
-                rasterio.open(array_out_path, "w", **array_out_open_kwargs) as array_out_ds,
+                rasterio.open(
+                    array_out_path, "w", **array_out_open_kwargs
+                ) as array_out_ds,
                 safe_raster_open(grid_mask_in_path) as grid_mask_in_ds,
                 safe_raster_open(array_mask_in_path) as array_mask_in_ds,
                 safe_raster_open(
                     array_mask_out_path, "w", **mask_out_open_kwargs
                 ) as array_mask_out_ds,
             ):
-
                 basic_grid_resampling_chain(
                     grid_ds=grid_in_ds,
                     grid_col_ds=grid_in_ds,
@@ -302,7 +317,9 @@ class TestGridResamplingChain:
 
                 # If array_src_geometry_pair is not None we have to compute
                 # a raster mask
-                validate_array_in_mask = array_mask_in_ds.read(1) if array_mask_in_ds else None
+                validate_array_in_mask = (
+                    array_mask_in_ds.read(1) if array_mask_in_ds else None
+                )
 
                 if validate_array_in_mask is not None:
                     array_replace(
@@ -314,7 +331,8 @@ class TestGridResamplingChain:
                     validate_array_in_mask = validate_array_in_mask.view(np.uint8)
 
                 if array_in_geometry_pair is not None and (
-                    array_in_geometry_pair[0] is not None or array_in_geometry_pair[1] is not None
+                    array_in_geometry_pair[0] is not None
+                    or array_in_geometry_pair[1] is not None
                 ):
                     # rasterize mask on full input array domain
                     geometry_mask = build_mask(
@@ -341,9 +359,9 @@ class TestGridResamplingChain:
                 grid_in_col_validate = grid_in_ds.read(2)
 
                 if grid_shift is not None:
-                    # Note : The window parameter here is defined in the grid native sampling which
-                    # is different from the `window` parameter passed to the array_grid_resampling
-                    # method.
+                    # Note : The window parameter here is defined in the grid native
+                    # sampling which is different from the `window` parameter passed to
+                    # the array_grid_resampling method.
                     array_shift_grid_coordinates(
                         grid_row=grid_in_row_validate,
                         grid_col=grid_in_col_validate,
@@ -401,16 +419,22 @@ class TestGridResamplingChain:
                     array_out_validate,
                     rtol=1e-7,
                     atol=1e-8,
-                    err_msg="Output image computed with the basic_grid_resampling_chain differs"
-                    "from the image computed with the corresponding core method",
+                    err_msg=(
+                        "Output image computed with the basic_grid_resampling_chain",
+                        "differs from the image computed with the corresponding core ",
+                        "method",
+                    ),
                 )
 
                 if mask_out:
                     np.testing.assert_array_equal(
                         np.squeeze(array_mask_out_ds.read()),
                         mask_out_validate,
-                        err_msg="Output mask computed with the basic_grid_resampling_chain differs"
-                        "from the mask computed with the corresponding core method",
+                        err_msg=(
+                            "Output mask computed with the basic_grid_resampling_chain",
+                            "differs from the mask computed with the corresponding "
+                            "core method",
+                        ),
                     )
 
         finally:
@@ -459,7 +483,14 @@ class TestGridResamplingChain:
     )
     @pytest.mark.parametrize("array_in_dtype", [np.float64])
     @pytest.mark.parametrize(
-        "grid_vec_row, grid_vec_col, grid_origin_pos, grid_origin_node, grid_dtype, grid_mask",
+        (
+            "grid_vec_row",
+            "grid_vec_col",
+            "grid_origin_pos",
+            "grid_origin_node",
+            "grid_dtype",
+            "grid_mask",
+        ),
         [
             ((5.2, 1.2), (-2.7, 7.1), (0.3, 0.2), (0.0, 0.0), np.float64, True),
             ((5.2, 1.2), (-2.7, 7.1), (0.3, 0.2), (0.0, 0.0), np.float64, False),
@@ -558,7 +589,10 @@ class TestGridResamplingChain:
         io_strip_size_target,
         tile_shape,
     ):
-        """Test the grid_resampling_chain - compare results with results in the core method"""
+        """
+        Test the grid_resampling_chain - compare results with results
+        in the core method.
+        """
         self._generic_test_grid_resampling_chain(
             request=request,
             interp=interp,
@@ -606,7 +640,14 @@ class TestGridResamplingChain:
     )
     @pytest.mark.parametrize("array_in_dtype", [np.float64])
     @pytest.mark.parametrize(
-        "grid_vec_row, grid_vec_col, grid_origin_pos, grid_origin_node, grid_dtype, grid_mask",
+        (
+            "grid_vec_row",
+            "grid_vec_col",
+            "grid_origin_pos",
+            "grid_origin_node",
+            "grid_dtype",
+            "grid_mask",
+        ),
         [((5.2, 1.2), (-2.7, 7.1), (0.3, 0.2), (0.0, 0.0), np.float64, False)],
     )
     @pytest.mark.parametrize(
@@ -687,7 +728,10 @@ class TestGridResamplingChain:
         io_strip_size_target,
         tile_shape,
     ):
-        """Test the grid_resampling_chain - compare results with results in the core method"""
+        """
+        Test the grid_resampling_chain - compare results with results in
+        the core method.
+        """
         self._generic_test_grid_resampling_chain(
             request=request,
             interp=interp,
@@ -735,7 +779,14 @@ class TestGridResamplingChain:
     )
     @pytest.mark.parametrize("array_in_dtype", [np.float64])
     @pytest.mark.parametrize(
-        "grid_vec_row, grid_vec_col, grid_origin_pos, grid_origin_node, grid_dtype, grid_mask",
+        (
+            "grid_vec_row",
+            "grid_vec_col",
+            "grid_origin_pos",
+            "grid_origin_node",
+            "grid_dtype",
+            "grid_mask",
+        ),
         [((5.2, 1.2), (-2.7, 7.1), (0.3, 0.2), (0.0, 0.0), np.float64, False)],
     )
     @pytest.mark.parametrize(
@@ -817,7 +868,10 @@ class TestGridResamplingChain:
         io_strip_size_target,
         tile_shape,
     ):
-        """Test the grid_resampling_chain - compare results with results in the core method"""
+        """
+        Test the grid_resampling_chain - compare results with results in
+        the core method.
+        """
         self._generic_test_grid_resampling_chain(
             request=request,
             interp=interp,
@@ -865,7 +919,14 @@ class TestGridResamplingChain:
     )
     @pytest.mark.parametrize("array_in_dtype", [np.float64])
     @pytest.mark.parametrize(
-        "grid_vec_row, grid_vec_col, grid_origin_pos, grid_origin_node, grid_dtype, grid_mask",
+        (
+            "grid_vec_row",
+            "grid_vec_col",
+            "grid_origin_pos",
+            "grid_origin_node",
+            "grid_dtype",
+            "grid_mask",
+        ),
         [((5.2, 1.2), (-2.7, 7.1), (0.3, 0.2), (0.0, 0.0), np.float64, False)],
     )
     @pytest.mark.parametrize(
@@ -961,7 +1022,10 @@ class TestGridResamplingChain:
         io_strip_size_target,
         tile_shape,
     ):
-        """Test the grid_resampling_chain - compare results with results in the core method"""
+        """
+        Test the grid_resampling_chain - compare results with results in
+        the core method.
+        """
         self._generic_test_grid_resampling_chain(
             request=request,
             interp=interp,
@@ -1004,7 +1068,10 @@ class TestGridResamplingChain:
         io_strip_size_target,
         tile_shape,
     ):
-        """Test the grid_resampling_chain - compare results with results with prepadded inputs"""
+        """
+        Test the grid_resampling_chain - compare results with results
+        with prepadded inputs.
+        """
         test_id = request.node.nodeid.split("::")[-1].replace("[", "-").replace("]", "")
         test_id = hashlib.md5(test_id.encode("utf-8")).hexdigest()[:8]
 
@@ -1070,8 +1137,11 @@ class TestGridResamplingChain:
         grid_bis[1] += margins[2]
         # mask_bis = None
         # if do_mask:
-        #    mask_bis = np.pad(mask, np.asarray(margins).reshape((2, 2)), mode=boundary_condition)
-
+        #    mask_bis = np.pad(
+        #        mask,
+        #        np.asarray(margins).reshape((2, 2)),
+        #        mode=boundary_condition
+        #    )
         try:
             # Write input array
             write_array(array_in, array_in_dtype, array_in_path)
@@ -1107,7 +1177,9 @@ class TestGridResamplingChain:
             )
             output_shape = None
             if window is None:
-                window = np.array(((0, full_output_shape[0] - 1), (0, full_output_shape[1] - 1)))
+                window = np.array(
+                    ((0, full_output_shape[0] - 1), (0, full_output_shape[1] - 1))
+                )
                 output_shape = full_output_shape
             else:
                 output_shape = window[:, 1] - window[:, 0] + 1
@@ -1138,7 +1210,9 @@ class TestGridResamplingChain:
             with (
                 rasterio.open(grid_in_path, "r") as grid_in_ds,
                 rasterio.open(array_in_path, "r") as array_in_ds,
-                rasterio.open(array_out_path, "w", **array_out_open_kwargs) as array_out_ds,
+                rasterio.open(
+                    array_out_path, "w", **array_out_open_kwargs
+                ) as array_out_ds,
                 safe_raster_open(grid_mask_in_path) as grid_mask_in_ds,
                 safe_raster_open(array_mask_in_path) as array_mask_in_ds,
                 safe_raster_open(
@@ -1146,7 +1220,9 @@ class TestGridResamplingChain:
                 ) as array_mask_out_ds,
                 rasterio.open(grid_in_path_bis, "r") as grid_in_ds_bis,
                 rasterio.open(array_in_path_bis, "r") as array_in_ds_bis,
-                rasterio.open(array_out_path_bis, "w", **array_out_open_kwargs) as array_out_ds_bis,
+                rasterio.open(
+                    array_out_path_bis, "w", **array_out_open_kwargs
+                ) as array_out_ds_bis,
                 safe_raster_open(grid_mask_in_path_bis) as grid_mask_in_ds_bis,
                 safe_raster_open(array_mask_in_path_bis) as array_mask_in_ds_bis,
                 safe_raster_open(
@@ -1227,16 +1303,23 @@ class TestGridResamplingChain:
                     np.squeeze(array_out_ds_bis.read()),
                     rtol=1e-7,
                     atol=1e-8,
-                    err_msg="Output image computed with the basic_grid_resampling_chain differs"
-                    "from the image computed with the corresponding core method",
+                    err_msg=(
+                        "Output image computed with the basic_grid_resampling_chain "
+                        "differs from the image computed with the corresponding core ",
+                        "method",
+                    ),
                 )
 
                 # if mask_out:
                 #    np.testing.assert_array_equal(
                 #        np.squeeze(array_mask_out_ds.read()),
                 #        mask_out_validate,
-                #        err_msg="Output mask computed with the basic_grid_resampling_chain differs"
-                #        "from the mask computed with the corresponding core method",
+                #        err_msg=(
+                #            "Output mask computed with the ",
+                #            "basic_grid_resampling_chain differs",
+                #            "from the mask computed with the corresponding ",
+                #            "core method",
+                #        )
                 #    )
 
         finally:
