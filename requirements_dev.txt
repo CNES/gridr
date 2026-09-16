@@ -20,13 +20,14 @@ bokeh==3.8.2
 auditwheel==6.4.2
 pre-commit==4.3.0
 pre-commit-hooks==6.0.0
-isort==5.8.0                   # Check imports
-black==26.3.1                  # PEP8 format code
-flake8==7.3.0                  # General linter
-flake8-pyproject>=1.2.3        # Support configuration in pyproject.toml
-flake8-comprehensions>=3.17.0   # Check list/dict/set
-flake8-bugbear>=21.4.3,<24.0.0 # Add some rules to flake8
+#isort==5.8.0                   # Check imports
+#black==26.3.1                  # PEP8 format code
+#flake8==7.3.0                  # General linter
+#flake8-pyproject>=1.2.3        # Support configuration in pyproject.toml
+#flake8-comprehensions>=3.17.0   # Check list/dict/set
+#flake8-bugbear>=21.4.3,<24.0.0 # Add some rules to flake8
 pip-licenses-lib==1.0.0        # For NOTICE generation
+ruff==0.16.*
 
 # benchmarks tests
 pytest-benchmark>=5.0

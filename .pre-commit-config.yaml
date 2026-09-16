@@ -1,6 +1,6 @@
 repos:
 - repo: local
-  hooks:   
+  hooks:
   - id: end-of-file-fixer
     name: end-of-file-fixer
     language: system
@@ -16,32 +16,24 @@ repos:
     language: system
     entry: mixed-line-ending
     args: [--fix=lf]
+  
+  - id: ruff-check
+    name: ruff-check
+    stages: [pre-commit]
+    language: system
+    entry: ruff check --fix --force-exclude
+    types_or: [python, pyi]
+  
+  - id: ruff-format
+    name: ruff-format
+    stages: [pre-commit]
+    language: system
+    entry: ruff format --force-exclude
+    types_or: [python, pyi]
     
-  - id: isort
-    name: isort
-    stages: [pre-commit]
-    language: system
-    entry: isort
-    types: [python]
-
-  - id: black
-    name: black
-    stages: [pre-commit]
-    language: system
-    entry: black
-    types: [python]
-
-  - id: flake8
-    name: flake8
-    stages: [pre-commit]
-    language: system
-    entry: flake8
-    types: [python]
-
   - id: jupyter-nb-clear-output
     name: jupyter-nb-clear-output
     files: \.ipynb$
     stages: [pre-commit]
     language: system
     entry: jupyter nbconvert --ClearOutputPreprocessor.enabled=True --inplace
-

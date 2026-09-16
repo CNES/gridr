@@ -278,76 +278,46 @@ Jupyter notebooks
 GRIDR contains notebooks in tutorials directory.
 
 
-Code quality
-=============
-GRIDR uses `Isort`_, `Black`_, `Flake8`_ and `Pylint`_ quality code checking.
+Python Code quality
+===================
 
+GRIDR uses `Ruff`_ for all Python code quality checks, including linting and formatting.
 
-Isort
+Ruff
+----
+`Ruff`_ is an extremely fast Python linter and code formatter, written in Rust.
+
+Configuration
+-------------
+GRIDR ``ruff`` configuration (both for linting and formatting) is centralized in `pyproject.toml`.
+
+Usage
 -----
-`Isort`_ is a Python utility / library to sort imports alphabetically, and automatically separated into sections and by type.
+`Ruff`_ can be used to check for linting errors, formatting issues, or to automatically fix them.
 
-GRIDR ``isort`` configuration is done in `pyproject.toml`
-
-`Isort`_ manual usage examples:
-
+**Linting**
+~~~~~~~~~~~
+To check for linting errors:
 .. code-block:: console
+    ruff check python/gridr tests/python  # Check code for linting errors
 
-    isort --check python/gridr tests/python  # Check code with isort, does nothing
-    isort --diff python/gridr tests/python   # Show isort diff modifications
-    isort python/gridr tests/python          # Apply modifications
-
-`Isort`_ messages can be avoided when really needed with **"# isort:skip"** on the incriminated line.
-
-Black
------
-`Black`_ is a quick and deterministic code formatter to help focus on the content.
-
-GRIDR ``black`` configuration is done in `pyproject.toml`
-
-If necessary, Black doesn’t reformat blocks that start with "# fmt: off" and end with # fmt: on, or lines that ends with "# fmt: skip". "# fmt: on/off" have to be on the same level of indentation.
-
-`Black`_ manual usage examples:
-
+To automatically fix fixable errors (like unused imports or sorting):
 .. code-block:: console
+    ruff check --fix python/gridr tests/python
 
-    black --check python/gridr tests/python  # Check code with black with no modifications
-    black --diff python/gridr tests/python   # Show black diff modifications
-    black python/gridr tests/python          # Apply modifications
+To ignore specific rules on a line, use the ``# noqa: <RULE_CODE>`` comment (e.g., ``# noqa: RUF012``).
 
-Flake8
-------
-`Flake8`_ is a command-line utility for enforcing style consistency across Python projects. By default it includes lint checks provided by the `PyFlakes project <https://github.com/PyCQA/pyflakes>`_ , PEP-0008 inspired style checks provided by the `PyCodeStyle project <https://github.com/PyCQA/pycodestyle>`_ , and McCabe complexity checking provided by the `McCabe project <https://github.com/PyCQA/mccabe>`_. It will also run third-party extensions if they are found and installed.
-
-GRIDR ``flake8`` configuration is done in `pyproject.toml`
-
-`Flake8`_ messages can be avoided (in particular cases !) adding "# noqa" in the file or line for all messages.
-It is better to choose filter message with "# noqa: E731" (with E371 example being the error number).
-Look at examples in source code.
-
-Flake8 manual usage examples:
-
+**Formatting**
+~~~~~~~~~~~~~~
+To check if the code follows the defined formatting rules:
 .. code-block:: console
+    ruff format --check python/gridr tests/python
 
-  flake8 python/gridr tests/python           # Run all flake8 tests
-
-
-Pylint
-------
-`Pylint`_ is a global linting tool which helps to have many information on source code.
-
-GRIDR ``pylint`` configuration is done in dedicated `.pylintrc <//https://raw.githubusercontent.com/CNES/gridr/master/.pylintrc_RNC2015_D>`_ file.
-
-`Pylint`_ messages can be avoided (in particular cases !) adding "# pylint: disable=error-message-name" in the file or line.
-Look at examples in source code.
-
-Pylint manual usage examples:
-
+To apply formatting changes:
 .. code-block:: console
+    ruff format python/gridr tests/python
 
-  pylint tests/python python/gridr       # Run all pylint tests
-  pylint --list-msgs                     # Get pylint detailed errors information
-
+To skip formatting on a specific block, use ``# fmt: off`` and ``# fmt: on``.
 
 Tests
 ======

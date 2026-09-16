@@ -39,6 +39,9 @@ dependencies = [
   "typing_extensions>=4.15.0",
 ]
 
+[dependency-groups]
+dev = ["ruff"]
+
 [project.urls]
 Homepage = "https://gridr.readthedocs.io"
 Documentation = "https://gridr.readthedocs.io/en/latest/"
@@ -61,36 +64,37 @@ binding = "PyO3"
 # This is used for abi3 wheel build
 # See Makefile option
 
-
-[tool.black]
-# https://github.com/psf/black
-line-length = 100 
-include = '\.pyi?$'
-exclude = "(.eggs|.git|.mypy_cache|.nox|.tox|_build|build|dist.*|venv.*|doc|docs|notebooks|benchmark)"
-
-[tool.isort]
-profile = 'black'
-line_length = 100 
-known_third_party = [ "dask" ]
-
-[tool.flake8]
-exclude = [".git", "venv*", "doc", "docs", "notebooks", "benchmark", "build", "dist*" ]
-extend-ignore = ["E203", "W503"]
-max-complexity = 27
-max-line-length = 100
-select = ["E", "F", "W", "C", "B9", "C4", "B"]
-
 [tool.ruff]
-line-length = 100 
-target-version = "py310"
+line-length = 88 
+src = ["python", "tests/python"] 
+
 
 [tool.ruff.lint]
 # E : pycodestyle errors (Flake8)
 # F : Pyflakes (Flake8)
 # I : isort
 # UP : pyupgrade
-select = ["E", "F", "I", "UP", "D"]
+select = [
+  "E", "W",  # pycodestyle
+  "F",       # pyflakes
+  "I",       # isort
+  "UP",      # pyupgrade
+  "B",       # bugbear
+  "SIM",     # simplifications
+  "NPY",     # numpy rules
+  "RUF",     # ruff rules
+]
 ignore = []
+
+[tool.ruff.lint.mccabe]
+max-complexity = 27
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011"]
+
+[tool.ruff.format]
+quote-style = "double"
+docstring-code-format = true
 
 [tool.ruff.lint.isort]
 known-first-party = ["gridr"]
