@@ -40,6 +40,8 @@ from bokeh.io.export import export_png
 
 from IPython.display import Markdown, Image, display
 
+FORCE_MPL_INTERACTIVE = True
+
 def create_local_firefox_webdriver():
     options = Options()
     options.add_argument("--headless")
@@ -98,7 +100,7 @@ def mpl_plot_wrapper(f):
             path = os.path.join(output_dir, unique_name)
             
             fig = f(*args, **kwargs)
-            
+
             plt.savefig(path, bbox_inches='tight', pad_inches=0.1) # Minimal padding around the whole figure
             plt.close(fig)
             
@@ -107,7 +109,9 @@ def mpl_plot_wrapper(f):
             display(Markdown(f"![{unique_name}]({rel_path})"))
         else:
             fig = f(*args, **kwargs)
-            #display(fig)
+            if FORCE_MPL_INTERACTIVE:
+                #display(fig)
+                return fig
     return wrapper
 
 
@@ -151,6 +155,15 @@ def plot_im(data, win_rect=None, prefix=None):
             rel_path = os.path.relpath(ret, os.path.dirname(output_notebook_path))
             display(Markdown(f"![{unique_name}]({rel_path})"))
 
+        elif FORCE_MPL_INTERACTIVE:
+            all_gray = all(img.ndim == 2 for img in data.values())
+            if not all_gray:
+                raise NotImplementedError(
+                    "Multi-plot static currently only supports 2D grayscale images."
+                )
+
+            mpl_export_multiple_gray_static(data_dict=data, win_rect=win_rect, export_name=None, display=True)
+                            
         else:
             # Bokeh: Create a row of interactive plots (as before)
             bokeh_plots = []
@@ -200,6 +213,12 @@ def _plot_single_im(data, win_rect, prefix):
 
         rel_path = os.path.relpath(ret, os.path.dirname(output_notebook_path))
         display(Markdown(f"![{unique_name}]({rel_path})"))
+    elif FORCE_MPL_INTERACTIVE:
+        if data.ndim == 2:
+            ret = mpl_export_gray_static(data=data, win_rect=win_rect, export_name=None, display=True)
+            return ret
+        else:
+            raise NotImplementedError("Static RGB export not implemented for doc build.")
     else:
         if data.ndim == 2:
             ret = bokeh_plot_gray(data=data, win_rect=win_rect, title=prefix)
@@ -207,7 +226,7 @@ def _plot_single_im(data, win_rect, prefix):
             ret = bokeh_plot_rgb(data=data, title=prefix)
         show_bokeh(ret)
 
-def mpl_export_multiple_gray_static(data_dict, win_rect=None, export_name=None, max_cols=4, subplot_width_inches=2, subplot_height_inches=2):
+def mpl_export_multiple_gray_static(data_dict, win_rect=None, export_name=None, max_cols=4, subplot_width_inches=2, subplot_height_inches=2, display=False):
     """
     Exports a single Matplotlib figure containing multiple grayscale images as subplots.
 
@@ -275,13 +294,16 @@ def mpl_export_multiple_gray_static(data_dict, win_rect=None, export_name=None, 
         fig.delaxes(axes[j])
 
     plt.tight_layout(pad=0.5) # Minimal padding between subplots
-    plt.savefig(export_name, bbox_inches='tight', pad_inches=0.1) # Minimal padding around the whole figure
-    plt.close(fig)
 
-    return export_name
+    if display:
+        return fig
+    else:
+        plt.savefig(export_name, bbox_inches='tight', pad_inches=0.1) # Minimal padding around the whole figure
+        plt.close(fig)
+        return export_name
 
 
-def mpl_export_gray_static(data, win_rect=None, export_name=None):
+def mpl_export_gray_static(data, win_rect=None, export_name=None, display=False):
     """
     Exports a static grayscale image (Matplotlib style) with NaN handling.
 
@@ -323,10 +345,14 @@ def mpl_export_gray_static(data, win_rect=None, export_name=None):
 
     ax.axis('off')
     plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
-    plt.savefig(export_name, bbox_inches='tight', pad_inches=0)
-    plt.close(fig)
 
-    return export_name
+    if display:
+        return fig
+    else:
+        plt.savefig(export_name, bbox_inches='tight', pad_inches=0)
+        plt.close(fig)
+
+        return export_name
 
 def bokeh_plot_gray(data, win_rect=None, title=None):
     """

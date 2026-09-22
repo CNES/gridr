@@ -14,6 +14,7 @@ also provided.
    :maxdepth: 1
 
    core_masking_index
+   fft_filtering_index
    grid_resampling_index
    
 
