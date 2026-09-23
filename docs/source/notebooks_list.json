@@ -7,6 +7,7 @@
     "fft_filtering_001_getting_started.ipynb",
     "fft_filtering_002_boundary_and_output_mode.ipynb",
     "fft_filtering_003_production_window.ipynb",
+    "fft_filtering_004_zooming.ipynb",
     "grid_resampling_001_getting_started.ipynb",
     "grid_resampling_002_geometric_transformations.ipynb",
     "grid_resampling_003_output_control.ipynb",
