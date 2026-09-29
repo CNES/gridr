@@ -130,11 +130,11 @@ def build_mask(
 
     **Conventions:**
 
-    * **Invalid (masked) pixels** are :py:attr:`~Validity.INVALID` (0);
+    *   **Invalid (masked) pixels** are :py:attr:`~Validity.INVALID` (0);
         otherwise, they're :py:attr:`~Validity.VALID` (1).
-    * Geometry points use `(x, y)` coordinates, where `x` is the column
+    *   Geometry points use `(x, y)` coordinates, where `x` is the column
         and `y` is the row.
-    * `shape`, `resolution`, and `geometry_origin` are provided as
+    *   `shape`, `resolution`, and `geometry_origin` are provided as
         `(value for row, value for column)`. Note that `geometry_origin`'s
         convention differs from geometry point definitions.
 
@@ -191,7 +191,8 @@ def build_mask(
         Dictionary of parameters for the rasterization process.
         For example:
 
-        ::
+        .. code-block:: python
+
             {
                 "alg": GridRasterizeAlg.SHAPELY,
                 "kwargs_alg": {"shapely_predicate": ShapelyPredicate.COVERS},

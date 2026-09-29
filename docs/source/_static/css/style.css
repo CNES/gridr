@@ -1,6 +1,10 @@
+.wy-nav-content {
+    max-width: 80% !important;
+}
+
 .rst-content {
-    max-width: 90%;  /* Ajuste ce pourcentage selon tes besoins */
+    max-width: none;
     margin-left: auto;
     margin-right: auto;
-    padding: 0 15px;  /* Espacement pour le texte */
+    padding: 0 15px;
 }

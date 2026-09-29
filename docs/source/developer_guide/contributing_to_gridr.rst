@@ -298,24 +298,32 @@ Usage
 **Linting**
 ~~~~~~~~~~~
 To check for linting errors:
+
 .. code-block:: console
-    ruff check python/gridr tests/python  # Check code for linting errors
+
+  ruff check python/gridr tests/python  # Check code for linting errors
 
 To automatically fix fixable errors (like unused imports or sorting):
+
 .. code-block:: console
-    ruff check --fix python/gridr tests/python
+
+  ruff check --fix python/gridr tests/python
 
 To ignore specific rules on a line, use the ``# noqa: <RULE_CODE>`` comment (e.g., ``# noqa: RUF012``).
 
 **Formatting**
 ~~~~~~~~~~~~~~
 To check if the code follows the defined formatting rules:
+
 .. code-block:: console
-    ruff format --check python/gridr tests/python
+
+  ruff format --check python/gridr tests/python
 
 To apply formatting changes:
+
 .. code-block:: console
-    ruff format python/gridr tests/python
+
+  ruff format python/gridr tests/python
 
 To skip formatting on a specific block, use ``# fmt: off`` and ``# fmt: on``.
 

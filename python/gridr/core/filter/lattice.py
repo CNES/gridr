@@ -284,8 +284,13 @@ class Lattice2d:
             :math:`\mathbf{v}_1` and :math:`\mathbf{v}_2`.
 
         2.  Compute the projection scalar :math:`m` :
-            :math:`m = \lfloor \frac{\mathbf{v}_1 \cdot \mathbf{v}_2}
-                {\mathbf{v}_1 \cdot \mathbf{v}_1} \rfloor`
+
+            .. math::
+
+              m = \left\lfloor
+                  \frac{\mathbf{v}_1 \cdot \mathbf{v}_2}
+                       {\mathbf{v}_1 \cdot \mathbf{v}_1}
+                  \right\rceil
 
         3.  If :math:`m = 0`, return the original basis vectors
             :math:`\mathbf{v}_1` and :math:`\mathbf{v}_2`.
@@ -294,7 +299,7 @@ class Lattice2d:
             :math:`\mathbf{v}_2 - m \mathbf{v}_1`
 
         5.  Repeat the process until convergence or until the vectors
-            are orthogonal or `itermax` is reached
+            are orthogonal or ``itermax`` is reached
 
         """
         u1 = lattice2d.v1.copy()
