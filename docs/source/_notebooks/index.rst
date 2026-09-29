@@ -27,5 +27,6 @@ Several pages are generated from Jupyter notebooks, with links to the original .
 .. toctree::
    :maxdepth: 1
 
+   fft_filtering_chain_index
    grid_resampling_chain_index
 

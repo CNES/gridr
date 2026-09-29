@@ -32,6 +32,14 @@
 
 
 *Module: `chain.fft_filtering_chain.py`*
+
+- **Options are plain strings, not enumerations.** `BoundaryPad` and `ConvolutionOutputMode` 
+  are removed. Boundary policies are now the `numpy.pad` mode strings — the ones 
+  `array_grid_resampling` already takes — and output modes those of
+  `scipy.signal.convolve`: `boundary="reflect"`, `out_mode="same"`. `None` is accepted for no
+  boundary synthesis.
+  The zero-padding policy is spelled `"constant"`, as in NumPy, not `ZERO`.
+- `fft_filtering_oa_strip_chain`: `fil` renamed `kernel`
 - `check_oa_strip_size` takes the number of produced rows (`nrow`) instead of the input array.
 
 ### Added
@@ -88,6 +96,9 @@
 #### Documentation
 
 - Added a new `Standards` section in the HTML documentation
+- Added two user's guides for FFT Filtering, *Core* and *Chain*, as series of executable
+  notebook tutorials covering boundary conditions, output modes, production window and
+  decimation, then the raster chain with its output dataset geometry and its strip loop
 
 ### Changed
 

@@ -467,7 +467,7 @@ def fft_filtering_oa_strip_chain(
     ds_in: rasterio.io.DatasetReader,
     ds_out: rasterio.io.DatasetWriter,
     band: int,
-    fil: np.ndarray,
+    kernel: np.ndarray,
     boundary: BoundarySpec,
     out_mode: OutputMode,
     win: np.ndarray | None = None,
@@ -501,7 +501,7 @@ def fft_filtering_oa_strip_chain(
     band : int
         Band to consider in the input dataset.
 
-    fil : numpy.ndarray
+    kernel : numpy.ndarray
         The filter given as an array in the spatial domain. An even-sized
         filter is zero-padded to an odd size, as in the core module.
 
@@ -628,7 +628,7 @@ def fft_filtering_oa_strip_chain(
     offset = decimation_offset(zoom_pq.q, decimation)
 
     # Currently limited to 2D data - set axes to None.
-    kernel = align_kernel(fil, ndim=2, axes=None)
+    kernel = align_kernel(kernel, ndim=2, axes=None)
     kernel = pad_kernel_to_odd(kernel, axes=None)
     margins = kernel_margin(kernel, axes=(0, 1))
 
