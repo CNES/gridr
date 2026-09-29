@@ -49,7 +49,7 @@ from gridr.core.grid.grid_commons import grid_full_resolution_shape
 from gridr.io.common import safe_raster_open
 from gridr.misc.mandrill import mandrill
 
-USE_ORION = True
+USE_ORION = False
 try:
     from artemis_io.formats import frmt_cnes_bsq
 except ImportError:
@@ -65,7 +65,7 @@ except KeyError:
 
 warnings.filterwarnings("ignore", category=rasterio.errors.NotGeoreferencedWarning)
 
-NROUNDS = 1
+NROUNDS = 10
 NITERATIONS = 1
 NWARMUP = 0
 RESOLUTIONS = [
@@ -74,11 +74,11 @@ RESOLUTIONS = [
     (100, 100),
 ]
 
-DO_TEST_001 = False
+DO_TEST_001 = True
 DO_TEST_INIT_ORION = False
-DO_TEST_002 = False
-DO_TEST_003 = False  # 12000x12000 size
-DO_TEST_004 = False  # 4000x4000 size
+DO_TEST_002 = True
+DO_TEST_003 = True  # 12000x12000 size
+DO_TEST_004 = True  # 4000x4000 size
 
 
 def write_array(array, dtype, fileout):
