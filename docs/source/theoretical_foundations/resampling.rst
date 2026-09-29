@@ -60,7 +60,7 @@ A **forward** (or *push-forward*) transformation specifies how each source sampl
 
 Conceptually:
 
-- each **soure pixel center** :math:`(x,y) \in \mathscr{G}_s` is mapped to a continuous location :math:`(x', y')`,
+- each **source pixel center** :math:`(x,y) \in \mathscr{G}_s` is mapped to a continuous location :math:`(x', y')`,
 - these mapped points must then be projected back onto the destination sampling grid :math:`\mathscr{G}_d` to produce the discrete image.
 
 Backward Mapping (Destination :math:`\to` Source)

@@ -138,6 +138,13 @@
   leaving the overlap-add buffer under-sized. Strip margins now derive from the odd-padded
   kernel, not the raw filter, which was off by one row for an even-sized filter.
 
+#### Documentation
+
+- Fixed **Image Geometry** page
+  - Rephrased the definition of the sampling grid.
+  - Fixed image footprint definition
+  - Fixed typos
+
 #### Workspace Architecture — Rust Doctests
 - Fixed doctests compilation errors resulting from the workspace migration - doctests were previously ignored.
 

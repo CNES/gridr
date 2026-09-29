@@ -54,19 +54,11 @@ Consequences :
 
 Sampling Grid
 *************
-To avoid ambiguity between array indices and geometric coordinates we define the **sampling grid** (the sampling lattice) explicitly :
+To avoid ambiguity between array indices and geometric coordinates we define the **sampling grid** :math:`\mathscr{G}` (the sampling lattice) as the input coordinates which is discrete and finite, over a 2D continuous plan: :math:`\mathscr{G} \subset \mathbb{Z}^{2} \subset \mathbb{R}^{2}`.
 
-.. math::
+In the :ref:`ogc-pixel-is-point` sampling convention used in `GridR`, :math:`\mathscr{G} = \{(i, j) | i = \{0, ..., H-1\}, j = \{0, ..., W-1\}\}` where a given tuple :math:`(i, j) \in \mathscr{G}` corresponds to the center of pixel :math:`(i, j)` in the discrete image :math:`I`.
 
-    \mathscr{G} = \{ (x,y) \in \mathbb{R}^{2}  | x \in \mathbb{Z}, y \in \mathbb{Z} \}
-
-In the :ref:`ogc-pixel-is-point` sampling convention used in `GridR`, each integer coordinate :math:`(j, i) \in \mathbb{Z}^{2}` corresponds to the center of pixel :math:`(i, j)` in the discrete image :math:`I`. We therefore use the mapping :
-
-.. math::
-
-    (i, j) \longleftrightarrow  (x, y) = (j, i) \in \mathscr{G}
-
-All geometric operations and transformation are expressed in this coordinate system.
+All geometric operations and transformations are expressed in this coordinate system.
 
 Image Footprint
 ***************
@@ -74,4 +66,4 @@ Given image width :math:`W` and height :math:`H`, the continuous domain covered 
 
 .. math::
 
-    \Omega_{I} = \left[ - \frac{1}{2}, H + \frac{1}{2} \right] \times \left[ - \frac{1}{2}, W + \frac{1}{2} \right]
+    \Omega_{I} = \left[ - \frac{1}{2}, H - \frac{1}{2} \right] \times \left[ - \frac{1}{2}, W - \frac{1}{2} \right]
