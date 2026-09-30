@@ -24,14 +24,8 @@ This section lists the licenses of the Python dependencies used in GRIDR.
   Website: https://github.com/rasterio/rasterio
   License: BSD License
 
-- Dependancy: pyparsing
-  Version: 3.3.2
-  Authors: Paul McGuire <ptmcg.gm+pyparsing@gmail.com>
-  Website: https://github.com/pyparsing/pyparsing/
-  License: MIT
-
 - Dependancy: certifi
-  Version: 2026.5.20
+  Version: 2026.7.22
   Authors: Kenneth Reitz
   Website: https://github.com/certifi/python-certifi
   License: Mozilla Public License 2.0 (MPL 2.0)
@@ -48,35 +42,29 @@ This section lists the licenses of the Python dependencies used in GRIDR.
   Website: https://scipy.org/
   License: BSD License
 
-- Dependancy: click
-  Version: 8.4.1
-  Authors: UNKNOWN
-  Website: https://github.com/pallets/click/
-  License: BSD-3-Clause
-
-- Dependancy: typing-extensions
-  Version: 4.15.0
-  Authors: "Guido van Rossum, Jukka Lehtosalo, Łukasz Langa, Michael Lee" <levkivskyi@gmail.com>
-  Website: https://github.com/python/typing_extensions
-  License: PSF-2.0
-
 - Dependancy: setuptools
   Version: 65.5.0
   Authors: Python Packaging Authority
   Website: https://github.com/pypa/setuptools
   License: MIT License
 
-- Dependancy: affine
-  Version: 2.4.0
-  Authors: Sean Gillies <sean.gillies@gmail.com>
-  Website: https://github.com/rasterio/affine
-  License: BSD License
+- Dependancy: pyparsing
+  Version: 3.3.3
+  Authors: Paul McGuire <ptmcg.gm+pyparsing@gmail.com>
+  Website: https://github.com/pyparsing/pyparsing/
+  License: MIT
 
 - Dependancy: click-plugins
   Version: 1.1.1.2
   Authors: Kevin Wurster, Sean Gillies
   Website: https://github.com/click-contrib/click-plugins
   License: BSD License
+
+- Dependancy: affine
+  Version: 3.0.1
+  Authors: Sean Gillies <sean.gillies@gmail.com>
+  Website: https://github.com/rasterio/affine
+  License: BSD-3-Clause
 
 - Dependancy: cligj
   Version: 0.7.2
@@ -90,416 +78,361 @@ This section lists the licenses of the Python dependencies used in GRIDR.
   Website: https://github.com/shapely/shapely
   License: BSD License
 
+- Dependancy: typing-extensions
+  Version: 4.16.0
+  Authors: "Guido van Rossum, Jukka Lehtosalo, Łukasz Langa, Michael Lee" <levkivskyi@gmail.com>
+  Website: https://github.com/python/typing_extensions
+  License: PSF-2.0
+
+- Dependancy: click
+  Version: 8.5.0
+  Authors: UNKNOWN
+  Website: https://github.com/pallets/click/
+  License: BSD-3-Clause
+
 
 ### Rust
 This section lists the licenses of the Rust dependencies used in GRIDR.
 
 
 - Dependancy: aho-corasick
-  Version: 1.1.4
-  Authors:  [Andrew Gallant <jamslam@gmail.com>]
-  Website:  https://github.com/BurntSushi/aho-corasick
+  Version: 1.1.5
+  Authors:  [Andrew Gallant <jamslam@gmail.com>] 
+  Website:  https://github.com/BurntSushi/aho-corasick 
   License: Unlicense OR MIT
 
 - Dependancy: approx
-  Version: 0.4.0
-  Authors:  [Brendan Zabarauskas <bjzaba@yahoo.com.au>]
-  Website:  https://github.com/brendanzab/approx
-  License: Apache-2.0
-
-- Dependancy: approx
   Version: 0.5.1
-  Authors:  [Brendan Zabarauskas <bjzaba@yahoo.com.au>]
-  Website:  https://github.com/brendanzab/approx
+  Authors:  [Brendan Zabarauskas <bjzaba@yahoo.com.au>] 
+  Website:  https://github.com/brendanzab/approx 
   License: Apache-2.0
 
 - Dependancy: autocfg
-  Version: 1.5.0
-  Authors:  [Josh Stone <cuviper@gmail.com>]
-  Website:  https://github.com/cuviper/autocfg
+  Version: 1.5.1
+  Authors:  [Josh Stone <cuviper@gmail.com>] 
+  Website:  https://github.com/cuviper/autocfg 
   License: Apache-2.0 OR MIT
 
 - Dependancy: cfg-if
-  Version: 1.0.4
-  Authors:  [Alex Crichton <alex@alexcrichton.com>]
-  Website:  https://github.com/rust-lang/cfg-if
-  License: MIT OR Apache-2.0
-
-- Dependancy: crossbeam-deque
-  Version: 0.8.6
-  Authors:  UNKNOWN
-  Website:  https://github.com/crossbeam-rs/crossbeam
-  License: MIT OR Apache-2.0
-
-- Dependancy: crossbeam-epoch
-  Version: 0.9.18
-  Authors:  UNKNOWN
-  Website:  https://github.com/crossbeam-rs/crossbeam
-  License: MIT OR Apache-2.0
-
-- Dependancy: crossbeam-utils
-  Version: 0.8.21
-  Authors:  UNKNOWN
-  Website:  https://github.com/crossbeam-rs/crossbeam
-  License: MIT OR Apache-2.0
-
-- Dependancy: either
-  Version: 1.15.0
-  Authors:  [bluss]
-  Website:  https://github.com/rayon-rs/either
+  Version: 1.0.5
+  Authors:  [Alex Crichton <alex@alexcrichton.com>] 
+  Website:  https://github.com/rust-lang/cfg-if 
   License: MIT OR Apache-2.0
 
 - Dependancy: equivalent
   Version: 1.0.2
-  Authors:  UNKNOWN
-  Website:  https://github.com/indexmap-rs/equivalent
+  Authors:  UNKNOWN 
+  Website:  https://github.com/indexmap-rs/equivalent 
   License: Apache-2.0 OR MIT
 
 - Dependancy: futures-core
-  Version: 0.3.31
-  Authors:  UNKNOWN
-  Website:  https://github.com/rust-lang/futures-rs
+  Version: 0.3.34
+  Authors:  UNKNOWN 
+  Website:  https://github.com/rust-lang/futures-rs 
   License: MIT OR Apache-2.0
 
 - Dependancy: futures-macro
-  Version: 0.3.31
-  Authors:  UNKNOWN
-  Website:  https://github.com/rust-lang/futures-rs
+  Version: 0.3.34
+  Authors:  UNKNOWN 
+  Website:  https://github.com/rust-lang/futures-rs 
   License: MIT OR Apache-2.0
 
 - Dependancy: futures-task
-  Version: 0.3.31
-  Authors:  UNKNOWN
-  Website:  https://github.com/rust-lang/futures-rs
+  Version: 0.3.34
+  Authors:  UNKNOWN 
+  Website:  https://github.com/rust-lang/futures-rs 
   License: MIT OR Apache-2.0
 
 - Dependancy: futures-timer
-  Version: 3.0.3
-  Authors:  [Alex Crichton <alex@alexcrichton.com>]
-  Website:  https://github.com/async-rs/futures-timer
+  Version: 3.0.4
+  Authors:  [Alex Crichton <alex@alexcrichton.com>] 
+  Website:  https://github.com/async-rs/futures-timer 
   License: MIT OR Apache-2.0
 
 - Dependancy: futures-util
-  Version: 0.3.31
-  Authors:  UNKNOWN
-  Website:  https://github.com/rust-lang/futures-rs
+  Version: 0.3.34
+  Authors:  UNKNOWN 
+  Website:  https://github.com/rust-lang/futures-rs 
   License: MIT OR Apache-2.0
 
 - Dependancy: glob
-  Version: 0.3.3
-  Authors:  [The Rust Project Developers]
-  Website:  https://github.com/rust-lang/glob
+  Version: 0.3.4
+  Authors:  [The Rust Project Developers] 
+  Website:  https://github.com/rust-lang/glob 
   License: MIT OR Apache-2.0
 
 - Dependancy: hashbrown
-  Version: 0.16.1
-  Authors:  [Amanieu d&#x27;Antras <amanieu@gmail.com>]
-  Website:  https://github.com/rust-lang/hashbrown
+  Version: 0.17.1
+  Authors:  UNKNOWN 
+  Website:  https://github.com/rust-lang/hashbrown 
   License: MIT OR Apache-2.0
 
 - Dependancy: heck
   Version: 0.5.0
-  Authors:  UNKNOWN
-  Website:  https://github.com/withoutboats/heck
+  Authors:  UNKNOWN 
+  Website:  https://github.com/withoutboats/heck 
   License: MIT OR Apache-2.0
 
 - Dependancy: indexmap
-  Version: 2.12.1
-  Authors:  UNKNOWN
-  Website:  https://github.com/indexmap-rs/indexmap
+  Version: 2.14.2
+  Authors:  UNKNOWN 
+  Website:  https://github.com/indexmap-rs/indexmap 
   License: Apache-2.0 OR MIT
 
-- Dependancy: indoc
-  Version: 2.0.6
-  Authors:  [David Tolnay <dtolnay@gmail.com>]
-  Website:  https://github.com/dtolnay/indoc
-  License: MIT OR Apache-2.0
-
 - Dependancy: libc
-  Version: 0.2.177
-  Authors:  [The Rust Project Developers]
-  Website:  https://github.com/rust-lang/libc
+  Version: 0.2.189
+  Authors:  UNKNOWN 
+  Website:  https://github.com/rust-lang/libc 
   License: MIT OR Apache-2.0
 
 - Dependancy: matrixmultiply
-  Version: 0.3.10
-  Authors:  [bluss, R. Janis Goldschmidt]
-  Website:  https://github.com/bluss/matrixmultiply/
+  Version: 0.3.11
+  Authors:  [bluss, R. Janis Goldschmidt] 
+  Website:  https://github.com/bluss/matrixmultiply/ 
   License: MIT OR Apache-2.0
 
 - Dependancy: memchr
-  Version: 2.7.6
-  Authors:  [Andrew Gallant <jamslam@gmail.com>, bluss]
-  Website:  https://github.com/BurntSushi/memchr
+  Version: 2.8.3
+  Authors:  [Andrew Gallant <jamslam@gmail.com>, bluss] 
+  Website:  https://github.com/BurntSushi/memchr 
   License: Unlicense OR MIT
 
-- Dependancy: memoffset
-  Version: 0.9.1
-  Authors:  [Gilad Naaman <gilad.naaman@gmail.com>]
-  Website:  https://github.com/Gilnaa/memoffset
-  License: MIT
-
 - Dependancy: ndarray
-  Version: 0.15.6
-  Authors:  [Ulrik Sverdrup &quot;bluss&quot;, Jim Turner]
-  Website:  https://github.com/rust-ndarray/ndarray
-  License: MIT OR Apache-2.0
-
-- Dependancy: ndarray
-  Version: 0.16.1
-  Authors:  [Ulrik Sverdrup &quot;bluss&quot;, Jim Turner]
-  Website:  https://github.com/rust-ndarray/ndarray
+  Version: 0.17.2
+  Authors:  [Ulrik Sverdrup &quot;bluss&quot;, Jim Turner] 
+  Website:  https://github.com/rust-ndarray/ndarray 
   License: MIT OR Apache-2.0
 
 - Dependancy: num-complex
   Version: 0.4.6
-  Authors:  [The Rust Project Developers]
-  Website:  https://github.com/rust-num/num-complex
+  Authors:  [The Rust Project Developers] 
+  Website:  https://github.com/rust-num/num-complex 
   License: MIT OR Apache-2.0
 
 - Dependancy: num-integer
-  Version: 0.1.46
-  Authors:  [The Rust Project Developers]
-  Website:  https://github.com/rust-num/num-integer
+  Version: 0.1.47
+  Authors:  [The Rust Project Developers] 
+  Website:  https://github.com/rust-num/num-integer 
   License: MIT OR Apache-2.0
 
 - Dependancy: num-traits
   Version: 0.2.19
-  Authors:  [The Rust Project Developers]
-  Website:  https://github.com/rust-num/num-traits
+  Authors:  [The Rust Project Developers] 
+  Website:  https://github.com/rust-num/num-traits 
   License: MIT OR Apache-2.0
 
 - Dependancy: numpy
-  Version: 0.27.1
-  Authors:  [The rust-numpy Project Developers, PyO3 Project and Contributors <https://github.com/PyO3>]
-  Website:  https://github.com/PyO3/rust-numpy
+  Version: 0.29.0
+  Authors:  [The rust-numpy Project Developers, PyO3 Project and Contributors <https://github.com/PyO3>] 
+  Website:  https://github.com/PyO3/rust-numpy 
   License: BSD-2-Clause
 
 - Dependancy: once_cell
-  Version: 1.21.3
-  Authors:  [Aleksey Kladov <aleksey.kladov@gmail.com>]
-  Website:  https://github.com/matklad/once_cell
+  Version: 1.21.4
+  Authors:  [Aleksey Kladov <aleksey.kladov@gmail.com>] 
+  Website:  https://github.com/matklad/once_cell 
   License: MIT OR Apache-2.0
 
 - Dependancy: pin-project-lite
-  Version: 0.2.16
-  Authors:  UNKNOWN
-  Website:  https://github.com/taiki-e/pin-project-lite
+  Version: 0.2.17
+  Authors:  UNKNOWN 
+  Website:  https://github.com/taiki-e/pin-project-lite 
   License: Apache-2.0 OR MIT
 
-- Dependancy: pin-utils
-  Version: 0.1.0
-  Authors:  [Josef Brandl <mail@josefbrandl.de>]
-  Website:  https://github.com/rust-lang-nursery/pin-utils
-  License: MIT OR Apache-2.0
-
 - Dependancy: portable-atomic
-  Version: 1.11.1
-  Authors:  UNKNOWN
-  Website:  https://github.com/taiki-e/portable-atomic
+  Version: 1.15.0
+  Authors:  UNKNOWN 
+  Website:  https://github.com/taiki-e/portable-atomic 
   License: Apache-2.0 OR MIT
 
 - Dependancy: portable-atomic-util
-  Version: 0.2.4
-  Authors:  UNKNOWN
-  Website:  https://github.com/taiki-e/portable-atomic
+  Version: 0.2.8
+  Authors:  UNKNOWN 
+  Website:  https://github.com/taiki-e/portable-atomic-util 
   License: Apache-2.0 OR MIT
 
 - Dependancy: proc-macro-crate
-  Version: 3.4.0
-  Authors:  [Bastian Köcher <git@kchr.de>]
-  Website:  https://github.com/bkchr/proc-macro-crate
+  Version: 3.5.0
+  Authors:  [Bastian Köcher <git@kchr.de>] 
+  Website:  https://github.com/bkchr/proc-macro-crate 
   License: MIT OR Apache-2.0
 
 - Dependancy: proc-macro2
-  Version: 1.0.101
-  Authors:  [David Tolnay <dtolnay@gmail.com>, Alex Crichton <alex@alexcrichton.com>]
-  Website:  https://github.com/dtolnay/proc-macro2
+  Version: 1.0.107
+  Authors:  [David Tolnay <dtolnay@gmail.com>, Alex Crichton <alex@alexcrichton.com>] 
+  Website:  https://github.com/dtolnay/proc-macro2 
   License: MIT OR Apache-2.0
 
 - Dependancy: pyo3
-  Version: 0.27.2
-  Authors:  [PyO3 Project and Contributors <https://github.com/PyO3>]
-  Website:  https://github.com/pyo3/pyo3
+  Version: 0.29.2
+  Authors:  [PyO3 Project and Contributors <https://github.com/PyO3>] 
+  Website:  https://github.com/pyo3/pyo3 
   License: MIT OR Apache-2.0
 
 - Dependancy: pyo3-build-config
-  Version: 0.27.2
-  Authors:  [PyO3 Project and Contributors <https://github.com/PyO3>]
-  Website:  https://github.com/pyo3/pyo3
+  Version: 0.29.2
+  Authors:  [PyO3 Project and Contributors <https://github.com/PyO3>] 
+  Website:  https://github.com/pyo3/pyo3 
   License: MIT OR Apache-2.0
 
 - Dependancy: pyo3-ffi
-  Version: 0.27.2
-  Authors:  [PyO3 Project and Contributors <https://github.com/PyO3>]
-  Website:  https://github.com/pyo3/pyo3
+  Version: 0.29.2
+  Authors:  [PyO3 Project and Contributors <https://github.com/PyO3>] 
+  Website:  https://github.com/pyo3/pyo3 
   License: MIT OR Apache-2.0
 
 - Dependancy: pyo3-macros
-  Version: 0.27.2
-  Authors:  [PyO3 Project and Contributors <https://github.com/PyO3>]
-  Website:  https://github.com/pyo3/pyo3
+  Version: 0.29.2
+  Authors:  [PyO3 Project and Contributors <https://github.com/PyO3>] 
+  Website:  https://github.com/pyo3/pyo3 
   License: MIT OR Apache-2.0
 
 - Dependancy: pyo3-macros-backend
-  Version: 0.27.2
-  Authors:  [PyO3 Project and Contributors <https://github.com/PyO3>]
-  Website:  https://github.com/pyo3/pyo3
+  Version: 0.29.2
+  Authors:  [PyO3 Project and Contributors <https://github.com/PyO3>] 
+  Website:  https://github.com/pyo3/pyo3 
   License: MIT OR Apache-2.0
 
 - Dependancy: quote
-  Version: 1.0.41
-  Authors:  [David Tolnay <dtolnay@gmail.com>]
-  Website:  https://github.com/dtolnay/quote
+  Version: 1.0.47
+  Authors:  [David Tolnay <dtolnay@gmail.com>] 
+  Website:  https://github.com/dtolnay/quote 
   License: MIT OR Apache-2.0
 
 - Dependancy: rawpointer
   Version: 0.2.1
-  Authors:  [bluss]
-  Website:  https://github.com/bluss/rawpointer/
-  License: MIT OR Apache-2.0
-
-- Dependancy: rayon
-  Version: 1.11.0
-  Authors:  UNKNOWN
-  Website:  https://github.com/rayon-rs/rayon
-  License: MIT OR Apache-2.0
-
-- Dependancy: rayon-core
-  Version: 1.13.0
-  Authors:  UNKNOWN
-  Website:  https://github.com/rayon-rs/rayon
+  Authors:  [bluss] 
+  Website:  https://github.com/bluss/rawpointer/ 
   License: MIT OR Apache-2.0
 
 - Dependancy: regex
-  Version: 1.12.2
-  Authors:  [The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>]
-  Website:  https://github.com/rust-lang/regex
+  Version: 1.13.1
+  Authors:  [The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>] 
+  Website:  https://github.com/rust-lang/regex 
   License: MIT OR Apache-2.0
 
 - Dependancy: regex-automata
-  Version: 0.4.13
-  Authors:  [The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>]
-  Website:  https://github.com/rust-lang/regex
+  Version: 0.4.18
+  Authors:  [The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>] 
+  Website:  https://github.com/rust-lang/regex 
   License: MIT OR Apache-2.0
 
 - Dependancy: regex-syntax
-  Version: 0.8.8
-  Authors:  [The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>]
-  Website:  https://github.com/rust-lang/regex
+  Version: 0.8.11
+  Authors:  [The Rust Project Developers, Andrew Gallant <jamslam@gmail.com>] 
+  Website:  https://github.com/rust-lang/regex 
   License: MIT OR Apache-2.0
 
 - Dependancy: relative-path
   Version: 1.9.3
-  Authors:  [John-John Tedro <udoprog@tedro.se>]
-  Website:  https://github.com/udoprog/relative-path
+  Authors:  [John-John Tedro <udoprog@tedro.se>] 
+  Website:  https://github.com/udoprog/relative-path 
   License: MIT OR Apache-2.0
 
 - Dependancy: rstest
   Version: 0.26.1
-  Authors:  [Michele d&#x27;Amico <michele.damico@gmail.com>]
-  Website:  https://github.com/la10736/rstest
+  Authors:  [Michele d&#x27;Amico <michele.damico@gmail.com>] 
+  Website:  https://github.com/la10736/rstest 
   License: MIT OR Apache-2.0
 
 - Dependancy: rstest_macros
   Version: 0.26.1
-  Authors:  [Michele d&#x27;Amico <michele.damico@gmail.com>]
-  Website:  https://github.com/la10736/rstest
+  Authors:  [Michele d&#x27;Amico <michele.damico@gmail.com>] 
+  Website:  https://github.com/la10736/rstest 
   License: MIT OR Apache-2.0
 
 - Dependancy: rustc-hash
-  Version: 2.1.1
-  Authors:  [The Rust Project Developers]
-  Website:  https://github.com/rust-lang/rustc-hash
+  Version: 2.1.3
+  Authors:  [The Rust Project Developers] 
+  Website:  https://github.com/rust-lang/rustc-hash 
   License: Apache-2.0 OR MIT
 
 - Dependancy: rustc_version
   Version: 0.4.1
-  Authors:  UNKNOWN
-  Website:  https://github.com/djc/rustc-version-rs
+  Authors:  UNKNOWN 
+  Website:  https://github.com/djc/rustc-version-rs 
   License: MIT OR Apache-2.0
 
 - Dependancy: semver
-  Version: 1.0.27
-  Authors:  [David Tolnay <dtolnay@gmail.com>]
-  Website:  https://github.com/dtolnay/semver
+  Version: 1.0.28
+  Authors:  [David Tolnay <dtolnay@gmail.com>] 
+  Website:  https://github.com/dtolnay/semver 
   License: MIT OR Apache-2.0
 
 - Dependancy: slab
-  Version: 0.4.11
-  Authors:  [Carl Lerche <me@carllerche.com>]
-  Website:  https://github.com/tokio-rs/slab
+  Version: 0.4.12
+  Authors:  [Carl Lerche <me@carllerche.com>] 
+  Website:  https://github.com/tokio-rs/slab 
   License: MIT
 
 - Dependancy: strength_reduce
   Version: 0.2.4
-  Authors:  [Elliott Mahler <join.together@gmail.com>]
-  Website:  http://github.com/ejmahler/strength_reduce
+  Authors:  [Elliott Mahler <join.together@gmail.com>] 
+  Website:  http://github.com/ejmahler/strength_reduce 
   License: MIT OR Apache-2.0
 
 - Dependancy: syn
-  Version: 2.0.107
-  Authors:  [David Tolnay <dtolnay@gmail.com>]
-  Website:  https://github.com/dtolnay/syn
+  Version: 2.0.119
+  Authors:  [David Tolnay <dtolnay@gmail.com>] 
+  Website:  https://github.com/dtolnay/syn 
+  License: MIT OR Apache-2.0
+
+- Dependancy: syn
+  Version: 3.0.6
+  Authors:  [David Tolnay <dtolnay@gmail.com>] 
+  Website:  https://github.com/dtolnay/syn 
   License: MIT OR Apache-2.0
 
 - Dependancy: target-lexicon
-  Version: 0.13.3
-  Authors:  [Dan Gohman <sunfish@mozilla.com>]
-  Website:  https://github.com/bytecodealliance/target-lexicon
+  Version: 0.13.5
+  Authors:  [Dan Gohman <sunfish@mozilla.com>] 
+  Website:  https://github.com/bytecodealliance/target-lexicon 
   License: Apache-2.0 WITH LLVM-exception
 
 - Dependancy: thiserror
-  Version: 1.0.69
-  Authors:  [David Tolnay <dtolnay@gmail.com>]
-  Website:  https://github.com/dtolnay/thiserror
+  Version: 2.0.21
+  Authors:  [David Tolnay <dtolnay@gmail.com>] 
+  Website:  https://github.com/dtolnay/thiserror 
   License: MIT OR Apache-2.0
 
 - Dependancy: thiserror-impl
-  Version: 1.0.69
-  Authors:  [David Tolnay <dtolnay@gmail.com>]
-  Website:  https://github.com/dtolnay/thiserror
+  Version: 2.0.21
+  Authors:  [David Tolnay <dtolnay@gmail.com>] 
+  Website:  https://github.com/dtolnay/thiserror 
   License: MIT OR Apache-2.0
 
 - Dependancy: toml_datetime
-  Version: 0.7.3
-  Authors:  UNKNOWN
-  Website:  https://github.com/toml-rs/toml
+  Version: 1.1.1+spec-1.1.0
+  Authors:  UNKNOWN 
+  Website:  https://github.com/toml-rs/toml 
   License: MIT OR Apache-2.0
 
 - Dependancy: toml_edit
-  Version: 0.23.7
-  Authors:  UNKNOWN
-  Website:  https://github.com/toml-rs/toml
+  Version: 0.25.15+spec-1.1.0
+  Authors:  UNKNOWN 
+  Website:  https://github.com/toml-rs/toml 
   License: MIT OR Apache-2.0
 
 - Dependancy: toml_parser
-  Version: 1.0.4
-  Authors:  UNKNOWN
-  Website:  https://github.com/toml-rs/toml
+  Version: 1.1.3+spec-1.1.0
+  Authors:  UNKNOWN 
+  Website:  https://github.com/toml-rs/toml 
   License: MIT OR Apache-2.0
 
 - Dependancy: transpose
   Version: 0.2.3
-  Authors:  [Elliott Mahler <join.together@gmail.com>]
-  Website:  https://github.com/ejmahler/transpose
+  Authors:  [Elliott Mahler <join.together@gmail.com>] 
+  Website:  https://github.com/ejmahler/transpose 
   License: MIT OR Apache-2.0
 
 - Dependancy: unicode-ident
-  Version: 1.0.19
-  Authors:  [David Tolnay <dtolnay@gmail.com>]
-  Website:  https://github.com/dtolnay/unicode-ident
+  Version: 1.0.26
+  Authors:  [David Tolnay <dtolnay@gmail.com>] 
+  Website:  https://github.com/dtolnay/unicode-ident 
   License: (MIT OR Apache-2.0) AND Unicode-3.0
 
-- Dependancy: unindent
-  Version: 0.2.4
-  Authors:  [David Tolnay <dtolnay@gmail.com>]
-  Website:  https://github.com/dtolnay/indoc
-  License: MIT OR Apache-2.0
-
 - Dependancy: winnow
-  Version: 0.7.14
-  Authors:  UNKNOWN
-  Website:  https://github.com/winnow-rs/winnow
+  Version: 1.0.4
+  Authors:  UNKNOWN 
+  Website:  https://github.com/winnow-rs/winnow 
   License: MIT
-

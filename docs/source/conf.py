@@ -5,28 +5,31 @@
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
-import sys
-import os
-from pathlib import Path
-import json
-import subprocess
 import inspect
+import json
+import os
 import shutil
+import subprocess
+import sys
+from pathlib import Path
+
 from sphinx.util import logging
 
 logger = logging.getLogger(__name__)
 
-project = 'GridR'
-copyright = '2026, Cnes'
-author = 'CNES'
-release = '0.7.0.dev0'
-contact_email = 'gridr-cnes@cnes.fr'
+project = "GridR"
+copyright = "2026, Cnes"
+author = "CNES"
+release = "0.7.0"
+contact_email = "gridr-cnes@cnes.fr"
 
 rst_prolog = """
 .. |contact_email| replace:: gridr-cnes@cnes.fr
 """
 
-sphinx_source_path = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+sphinx_source_path = os.path.dirname(
+    os.path.abspath(inspect.getfile(inspect.currentframe()))
+)
 print(sphinx_source_path)
 
 
@@ -44,51 +47,51 @@ extensions = [
     "sphinx.ext.mathjax",
     "sphinx_autodoc_typehints",
     "sphinxcontrib.bibtex",
-    #"sphinxcontrib.apidoc",
-    #"sphinxcontrib.rustdoc",  # Pour la doc Rust
+    # "sphinxcontrib.apidoc",
+    # "sphinxcontrib.rustdoc",  # Pour la doc Rust
 ]
 
 myst_enable_extensions = [
     "dollarmath",  # Enable $...$ et $$...$$ for math
-    "amsmath",     # Support advanced math environment
+    "amsmath",  # Support advanced math environment
 ]
 
 # Optionnel : configuration supplémentaire pour MyST
 myst_dmath_double_inline = True  # Enable inline $$...$$
 
-mathjax_path = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js'
-#mathjax_path = 'https://cdn.jsdelivr.net/npm/mathjax@2/MathJax.js?config=TeX-AMS-MML_HTMLorMML'
+mathjax_path = "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+# mathjax_path = 'https://cdn.jsdelivr.net/npm/mathjax@2/MathJax.js?config=TeX-AMS-MML_HTMLorMML'
 
 mathjax3_config = {
-    'tex': {
-        'inlineMath': [['$', '$'], ['\\(', '\\)']],
-        'displayMath': [['$$', '$$'], ['\\[', '\\]']],
+    "tex": {
+        "inlineMath": [["$", "$"], ["\\(", "\\)"]],
+        "displayMath": [["$$", "$$"], ["\\[", "\\]"]],
     }
 }
 
 # BibTeX file(s)
-bibtex_bibfiles = ['references.bib']
+bibtex_bibfiles = ["references.bib"]
 # Citation style (optional)
-bibtex_default_style = 'plain'  # or 'alpha', 'unsrt', etc.
+bibtex_default_style = "plain"  # or 'alpha', 'unsrt', etc.
 
 napoleon_google_docstring = True
 napoleon_numpy_docstring = True
 
 source_suffix = {
-    '.rst': 'restructuredtext',
-    '.md': 'markdown',
-        }
+    ".rst": "restructuredtext",
+    ".md": "markdown",
+}
 
-templates_path = ['_templates']
+templates_path = ["_templates"]
 exclude_patterns = [
-    '**/.ipynb_checkpoints',
-    '**/.ipynb_checkpoints/*',
+    "**/.ipynb_checkpoints",
+    "**/.ipynb_checkpoints/*",
 ]
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'sphinx_rtd_theme'  # Use read the doc theme
+html_theme = "sphinx_rtd_theme"  # Use read the doc theme
 html_theme_options = {
     "canonical_url": "",
     "logo_only": False,
@@ -98,30 +101,34 @@ html_theme_options = {
     "style_nav_header_background": "#2980B9",  # Header color
 }
 
-html_static_path = ['_static']
+html_static_path = ["_static"]
 html_css_files = [
-    'css/style.css',
+    "css/style.css",
 ]
 
 # Automatic generation of api_python
-#apidoc_module_dir = "../../python"
-#apidoc_output_dir = "source/api_python"
-#apidoc_excluded_paths = []
-#apidoc_separate_modules = True
+# apidoc_module_dir = "../../python"
+# apidoc_output_dir = "source/api_python"
+# apidoc_excluded_paths = []
+# apidoc_separate_modules = True
 
 # Notebooks management
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 notebooks_in_path = os.path.join(sphinx_source_path, "..", "..", "notebooks")
 notebooks_out_path = os.path.join(sphinx_source_path, "_notebooks", "generated")
 nbconvert_config_path = os.path.join(sphinx_source_path, "nbconvert_config.py")
 
-notebooks_list = json.load(open(Path(sphinx_source_path)/"notebooks_list.json"))
+with open(Path(sphinx_source_path) / "notebooks_list.json") as fp:
+    notebooks_list = json.load(fp)
 notebooks = [
-        {
-            "source": f"{notebooks_in_path}/{nb}",
-            "md_output": f"{notebooks_out_path}/{nb.replace('.ipynb','.md')}",
-            "img_dir": f"{notebooks_out_path}/{nb.replace('.ipynb','_files')}",
-        } for nb in notebooks_list ]
+    {
+        "source": f"{notebooks_in_path}/{nb}",
+        "md_output": f"{notebooks_out_path}/{nb.replace('.ipynb', '.md')}",
+        "img_dir": f"{notebooks_out_path}/{nb.replace('.ipynb', '_files')}",
+    }
+    for nb in notebooks_list
+]
+
 
 def run_notebook_builds():
     for nb in notebooks:
@@ -132,14 +139,25 @@ def run_notebook_builds():
             env["DOC_BUILD"] = "1"
             env["DOC_BUILD_FILES_OUTPUT_DIR_PATH"] = nb["img_dir"]
             env["DOC_BUILD_NOTEBOOK_OUTPUT_PATH"] = nb["md_output"]
-            subprocess.run([
-                "jupyter", "nbconvert",
-                "--to", "markdown",
-                "--execute", nb["source"],
-                "--output", nb["md_output"],
-                "--config", nbconvert_config_path,
-                "--ExecutePreprocessor.kernel_name=python3",
-            ], check=True, env=env, capture_output=True, text=True)
+            subprocess.run(
+                [
+                    "jupyter",
+                    "nbconvert",
+                    "--to",
+                    "markdown",
+                    "--execute",
+                    nb["source"],
+                    "--output",
+                    nb["md_output"],
+                    "--config",
+                    nbconvert_config_path,
+                    "--ExecutePreprocessor.kernel_name=python3",
+                ],
+                check=True,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
         except subprocess.CalledProcessError as e:
             print("stdout:\n", e.stdout)
             print("stderr:\n", e.stderr)
@@ -151,12 +169,13 @@ def copy_notebook_images(app, exception):
         for nb in notebooks:
             src = nb["img_dir"]
             dst = Path(app.outdir) / "_notebooks" / "generated" / Path(src).name
-        
+
             try:
                 shutil.copytree(src, str(dst), dirs_exist_ok=True)
                 logger.info("Copied notebook images to build folder.")
             except Exception as e:
                 logger.warning(f"Could not copy notebook images: {e}")
+
 
 def setup(app):
     app.connect("builder-inited", lambda app: run_notebook_builds())

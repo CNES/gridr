@@ -2,7 +2,7 @@
 
 ## GRIDR License
 
-GRIDR Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
+GRIDR Copyright (c) 2026 Centre National d'Etudes Spatiales (CNES).
 
 This software is distributed under the Apache Software License (ASL) v2.0, see
 LICENSE file or http://www.apache.org/licenses/LICENSE-2.0 for details.
@@ -32,7 +32,7 @@ This section lists the licenses of the Rust dependencies used in GRIDR.
   License: Apache-2.0 OR MIT
 
 - Dependancy: cfg-if
-  Version: 1.0.4
+  Version: 1.0.5
   Authors:  [Alex Crichton &lt;alex@alexcrichton.com&gt;] 
   Website:  https://github.com/rust-lang/cfg-if 
   License: MIT OR Apache-2.0
@@ -86,7 +86,7 @@ This section lists the licenses of the Rust dependencies used in GRIDR.
   License: MIT OR Apache-2.0
 
 - Dependancy: indexmap
-  Version: 2.14.0
+  Version: 2.14.2
   Authors:  UNKNOWN 
   Website:  https://github.com/indexmap-rs/indexmap 
   License: Apache-2.0 OR MIT
@@ -200,19 +200,19 @@ This section lists the licenses of the Rust dependencies used in GRIDR.
   License: MIT OR Apache-2.0
 
 - Dependancy: syn
-  Version: 3.0.3
+  Version: 3.0.6
   Authors:  [David Tolnay &lt;dtolnay@gmail.com&gt;] 
   Website:  https://github.com/dtolnay/syn 
   License: MIT OR Apache-2.0
 
 - Dependancy: thiserror
-  Version: 1.0.69
+  Version: 2.0.21
   Authors:  [David Tolnay &lt;dtolnay@gmail.com&gt;] 
   Website:  https://github.com/dtolnay/thiserror 
   License: MIT OR Apache-2.0
 
 - Dependancy: thiserror-impl
-  Version: 1.0.69
+  Version: 2.0.21
   Authors:  [David Tolnay &lt;dtolnay@gmail.com&gt;] 
   Website:  https://github.com/dtolnay/thiserror 
   License: MIT OR Apache-2.0
@@ -224,7 +224,7 @@ This section lists the licenses of the Rust dependencies used in GRIDR.
   License: MIT OR Apache-2.0
 
 - Dependancy: toml_edit
-  Version: 0.25.13+spec-1.1.0
+  Version: 0.25.15+spec-1.1.0
   Authors:  UNKNOWN 
   Website:  https://github.com/toml-rs/toml 
   License: MIT OR Apache-2.0
@@ -242,7 +242,7 @@ This section lists the licenses of the Rust dependencies used in GRIDR.
   License: MIT OR Apache-2.0
 
 - Dependancy: unicode-ident
-  Version: 1.0.24
+  Version: 1.0.26
   Authors:  [David Tolnay &lt;dtolnay@gmail.com&gt;] 
   Website:  https://github.com/dtolnay/unicode-ident 
   License: (MIT OR Apache-2.0) AND Unicode-3.0

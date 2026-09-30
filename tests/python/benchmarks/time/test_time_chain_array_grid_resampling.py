@@ -824,8 +824,10 @@ class OrionAdapter(BenchAdapter):
 
 ADAPTERS = [
     GridrAdapter(),
-    OrionAdapter(),
+    # OrionAdapter()
 ]
+if USE_ORION:
+    ADAPTERS.append(OrionAdapter())
 
 if DO_TEST_001:
 

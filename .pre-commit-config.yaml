@@ -10,6 +10,7 @@ repos:
     name: check-added-large-files
     language: system
     entry: check-added-large-files
+    exclude: ^benchmarks/results/pytest/.*\.json$
     
   - id: mixed-line-ending
     name: mixed-line-ending
