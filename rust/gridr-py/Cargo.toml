@@ -4,7 +4,9 @@ name = "gridr-py"
 # Own version line (see rust/Cargo.toml: versions are no longer shared
 # across the workspace). Purely cosmetic since this crate is never
 # published or depended on.
-version = "0.7.0"
+# This crate follows the versionning of the python project in order
+# to maintain only two versionning.
+version = "0.8.0-dev"
 edition.workspace = true
 license.workspace = true
 rust-version = "1.85.1"
@@ -16,12 +18,12 @@ rust-version = "1.85.1"
 # [package].version in ../gridr/Cargo.toml is ever bumped in a way that
 # breaks this constraint instead of silently picking up whatever happens to
 # be on disk.
-gridr = { path = "../gridr", version = "^0.7.0-dev" }
+gridr = { path = "../gridr", version = "^0.7.0" }
 pyo3 = { version = "0.29.2", features = ["abi3-py310"] }
 numpy = "0.29.0"
 
 [dev-dependencies]
-rstest = "0.26.1"
+rstest = "0.27.0"
 
 [build-dependencies]
 pyo3-build-config = "0.29.2"
