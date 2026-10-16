@@ -195,8 +195,6 @@ pub fn optimized_bicubic_kernel_weights(x: f64, weights: &mut [f64])
 ///
 /// - `y`: The relative coordinate for which the kernel weights should be computed.
 /// - `weights`: A mutable slice of length 5 where the computed weights will be stored.
-///
-/// ```
 #[inline]
 pub fn optimized_bicubic_kernel_weights_opt(y: f64, weights: &mut [f64])
 {

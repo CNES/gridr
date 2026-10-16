@@ -80,8 +80,8 @@ impl GxArrayViewInterpolator for GxNearestInterpolator
     }
     
     /// Direct implementation without delegation to the 
-    /// [`GxArrayViewInterpolatorCore`] trait : snaps directly to the nearest
-    /// integer position if valid.
+    /// [`GxArrayViewInterpolatorCore`](super::gx_array_view_interp::GxArrayViewInterpolatorCore)
+    /// trait : snaps directly to the nearest integer position if valid.
     fn array1_interp2<T, V, IC>(
             &self,
             _weights_buffer: &mut [f64],

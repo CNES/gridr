@@ -16,7 +16,7 @@
 // limitations under the License.
 
 #![warn(missing_docs)]
-//! Crate doc
+//! In-place value replacement and addition on array views.
 use crate::gx_array::{GxArrayWindow, GxArrayView, GxArrayViewMut};
 
 /// Replaces values in a 1D array based on a conditional value or an optional condition array.

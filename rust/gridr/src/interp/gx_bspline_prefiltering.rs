@@ -43,7 +43,7 @@
 //! # References
 //!
 //! Briand, T., & Monasse, P. (2018). Theory and Practice of Image B-Spline Interpolation.
-//! *Image Processing On Line*, 8, 99-141. https://doi.org/10.5201/ipol.2018.221
+//! *Image Processing On Line*, 8, 99-141. <https://doi.org/10.5201/ipol.2018.221>
 use crate::gx_array::{
     GxArrayView,
     GxArrayViewMut,
@@ -152,7 +152,7 @@ fn propagate_zeros_influence(mask: &mut [u8], width: usize, height: usize, radiu
 }
 
 /// Truncation indices computation
-/// Ref. Thibaud Briand, Pascal Monasse, "Theory and Practice of Image B-Spline Interpolation", https://doi.org/10.5201/ipol.2018.221
+/// Ref. Thibaud Briand, Pascal Monasse, "Theory and Practice of Image B-Spline Interpolation", <https://doi.org/10.5201/ipol.2018.221>
 /// Eq. (50).
 ///
 /// The computation of the truncation indice is detailed in the above mentioned article as :
@@ -692,7 +692,7 @@ fn array1_bspline_prefiltering_ext_var_iter(
 ///
 /// Briand, T., & Monasse, P. (2018). Theory and Practice of Image B-Spline 
 /// Interpolation. *Image Processing On Line*, 8, 99-141. 
-/// https://doi.org/10.5201/ipol.2018.221
+/// <https://doi.org/10.5201/ipol.2018.221>
 pub fn array1_bspline_prefiltering_ext_gene<'a>(
         n: usize,
         epsilon: f64,

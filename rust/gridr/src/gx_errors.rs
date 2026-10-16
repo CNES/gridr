@@ -131,7 +131,7 @@ pub enum GxError {
 
     /// A window is out of bounds relative to the dimensions of the associated array.
     ///
-    /// This error occurs when a [`GxArrayWindow`] references rows or columns
+    /// This error occurs when a [`GxArrayWindow`](crate::gx_array::GxArrayWindow) references rows or columns
     /// that exceed the shape of the target array, typically during subsetting,
     /// view extraction, or window-based operations.
     ///

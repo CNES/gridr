@@ -81,7 +81,7 @@
 //! # References
 //!
 //! Briand, T., & Monasse, P. (2018). Theory and Practice of Image B-Spline Interpolation.
-//! *Image Processing On Line*, 8, 99-141. https://doi.org/10.5201/ipol.2018.221
+//! *Image Processing On Line*, 8, 99-141. <https://doi.org/10.5201/ipol.2018.221>
 use::std::format;
 use crate::gx_array::{
     GxArrayView,

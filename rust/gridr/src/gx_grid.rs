@@ -20,7 +20,7 @@
 //!
 //! This crate provides core functionality for validating grid nodes with flexible strategies.
 //!
-//! ## Trait: GridNodeValidator<W>
+//! ## Trait: `GridNodeValidator<W>`
 //!
 //! ```ignore
 //! // Signature shown for reference; see `GridNodeValidator` below for the
