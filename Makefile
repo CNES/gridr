@@ -37,6 +37,9 @@ GRIDR_LIBGRIDR_SO_PYTEST_TARGET := $(GRIDR_PYTHON_PATH)/cdylib/_libgridr.so
 
 GRIDR_LIBGRIDR_DOC_BUILD_PATH := $(GRIDR_RUST_WORKSPACE_PATH)/target/doc
 
+GRIDR_BENCHMARKS_PATH := $(ROOT_DIR)/benchmarks/
+GRIDR_RUST_BENCHMARKS_RESULTS_PATH := $(GRIDR_BENCHMARKS_PATH)/results/criterion
+
 GRIDR_DOCS_ROOT_PATH := $(ROOT_DIR)docs
 ifdef GRIDR_SPHINX_BUILD_PATH
 	GRIDR_SPHINX_DOC_BUILD_PATH = "$(GRIDR_SPHINX_BUILD_PATH)"
@@ -293,3 +296,11 @@ print_config: ## print configuration
 	@echo "Found configuration "
 	@echo " - python3 : ${PYTHON}"
 	@echo " - cargo : ${CHECK_CARGO}"
+
+
+RUST_BENCH_BASELINE ?= v0.7
+
+.PHONY: rust-bench-save
+rust-bench-save: ## Run rust benchmarks and save them as baseline
+	@cd $(GRIDR_RUST_WORKSPACE_PATH)/gridr && CRITERION_HOME=$(GRIDR_RUST_BENCHMARKS_RESULTS_PATH) cargo bench -p gridr --bench interp -- --save-baseline $(RUST_BENCH_BASELINE)
+

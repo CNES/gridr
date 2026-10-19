@@ -26,3 +26,10 @@ transpose = "0.2.3"
 
 [dev-dependencies]
 rstest = "0.27.0"
+# Benchmarks only (rust/gridr/benches). Default features disabled to avoid
+# pulling rayon and plotters; reports are printed on the terminal.
+criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "interp"
+harness = false
