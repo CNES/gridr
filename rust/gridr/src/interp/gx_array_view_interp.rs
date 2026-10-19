@@ -1398,6 +1398,28 @@ pub fn write_nodata_all_vars<V, OM>(
 }
 
 // =============================================================================
+// Stencil anchoring helpers
+// =============================================================================
+
+/// Number of stencil taps located before the anchor for a support of `k`
+/// taps: `(k - 1) / 2`.
+///
+/// For an odd support the stencil is symmetric around the anchor; for an even
+/// support it has one more tap after the anchor than before it.
+#[inline(always)]
+pub const fn support_left(k: usize) -> usize {
+    (k - 1) / 2
+}
+
+/// Offset added to a target coordinate before `floor` to obtain the stencil
+/// anchor: `0.5` for an odd support (anchor = nearest integer), `0.0` for an
+/// even support (anchor = floor).
+#[inline(always)]
+pub const fn anchor_shift(k: usize) -> f64 {
+    if k % 2 == 1 { 0.5 } else { 0.0 }
+}
+
+// =============================================================================
 // Internal interpolator trait
 // =============================================================================
 
@@ -1493,12 +1515,14 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
     /// - `array_in`: input data array `[nvar, nrow, ncol]`, flattened.
     /// - `array_out`: output array (same layout), written in place.
     /// - `out_idx`: flat pixel index in the output (shared across all planes).
-    /// - `row_c`: integer row coordinate of the interpolation centre.
-    /// - `col_c`: integer column coordinate of the interpolation centre.
+    /// - `row_first`: row index of the first stencil tap (may be negative
+    ///   on the border paths).
+    /// - `col_first`: column index of the first stencil tap (may be negative
+    ///   on the border paths).
     ///
     /// # Safety
     /// The caller must guarantee that every index
-    /// `row_c + irow - KROWS/2` and `col_c + icol - KCOLS/2`
+    /// `row_first + irow` and `col_first + icol`
     /// is within the bounds of `array_in`.  Violating this precondition
     /// results in a panic (index out of bounds) or, with unsafe indexing,
     /// undefined behaviour.
@@ -1514,20 +1538,18 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         array_in: &GxArrayView<'_, T>,
         array_out: &mut GxArrayViewMut<'_, V>,
         out_idx: usize,
-        row_c: i64,
-        col_c: i64,
+        row_first: i64,
+        col_first: i64,
     ) where
         T: Copy + std::ops::Mul<f64, Output = f64> + Into<f64>,
         V: Copy + From<f64>,
     {
-        let half_rows  = (KROWS / 2) as i64;
-        let half_cols  = (KCOLS / 2) as i64;
         let ncol       = array_in.ncol;
         let in_var_sz  = array_in.var_size;
         let out_var_sz = array_out.var_size;
 
-        let row_start = (row_c - half_rows) as usize;
-        let col_start = (col_c - half_cols) as usize;
+        let row_start = row_first as usize;
+        let col_start = col_first as usize;
 
         // Pre-slice weights: one bounds check each, inner loops are free.
         let wr = &weights_row[..KROWS];
@@ -1580,8 +1602,10 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
     /// - `array_out`: output array (same layout), written in place.
     /// - `output_mask`: output mask strategy; written once upon completion.
     /// - `out_idx`: flat pixel index in the output (shared across all planes).
-    /// - `row_c`: integer row coordinate of the interpolation centre.
-    /// - `col_c`: integer column coordinate of the interpolation centre.
+    /// - `row_first`: row index of the first stencil tap (may be negative
+    ///   on the border paths).
+    /// - `col_first`: column index of the first stencil tap (may be negative
+    ///   on the border paths).
     /// - `nodata`: sentinel value written when interpolation is invalid.
     ///
     /// # Type parameters
@@ -1598,16 +1622,14 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         array_out: &mut GxArrayViewMut<'_, V>,
         output_mask: &mut OM,
         out_idx: usize,
-        row_c: i64,
-        col_c: i64,
+        row_first: i64,
+        col_first: i64,
         nodata: V,
     ) where
         T: Copy + std::ops::Mul<f64, Output = f64> + Into<f64>,
         V: Copy + From<f64>,
         OM: GxArrayViewInterpolatorOutputMaskStrategy,
     {
-        let half_rows  = (KROWS / 2) as i64;
-        let half_cols  = (KCOLS / 2) as i64;
         let ncol       = array_in.ncol;
         let in_var_sz  = array_in.var_size;
         let out_var_sz = array_out.var_size;
@@ -1621,12 +1643,12 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
             if wr[KROWS - 1 - irow] == 0.0 {
                 continue;
             }
-            let r = row_c + irow as i64 - half_rows;
+            let r = row_first + irow as i64;
             for icol in 0..KCOLS {
                 if wc[KCOLS - 1 - icol] == 0.0 {
                     continue;
                 }
-                let c = col_c + icol as i64 - half_cols;
+                let c = col_first + icol as i64;
                 if r < 0 || r >= array_in.nrow_i64
                     || c < 0 || c >= array_in.ncol_i64
                 {
@@ -1646,15 +1668,15 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         for _ivar in 0..array_in.nvar {
             let mut acc = 0.0f64;
             for irow in 0..KROWS {
-                let r = row_c + irow as i64 - half_rows;
+                let r = row_first + irow as i64;
                 if r < 0 || r >= array_in.nrow_i64 {
                     continue;
                 }
                 let ru = r as usize;
 
                 // Compute valid column range for this row.
-                let c_first = col_c - half_cols;
-                let c_last  = col_c + (KCOLS as i64 - 1) - half_cols;
+                let c_first = col_first;
+                let c_last  = col_first + (KCOLS as i64 - 1);
 
                 let col_lo = c_first.max(0) as usize;
                 let col_hi = (c_last.min(array_in.ncol_i64 - 1) + 1) as usize;
@@ -1705,8 +1727,10 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
     /// - `array_in`: input data array `[nvar, nrow, ncol]`, flattened.
     /// - `array_out`: output array (same layout), written in place.
     /// - `out_idx`: flat pixel index in the output (shared across all planes).
-    /// - `row_c`: integer row coordinate of the interpolation centre.
-    /// - `col_c`: integer column coordinate of the interpolation centre.
+    /// - `row_first`: row index of the first stencil tap (may be negative
+    ///   on the border paths).
+    /// - `col_first`: column index of the first stencil tap (may be negative
+    ///   on the border paths).
     /// - `nodata`: sentinel value written when the window contains masked pixels.
     /// - `context`: interpolation context providing the input and output mask
     ///   strategies.
@@ -1741,8 +1765,8 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         array_in: &GxArrayView<'_, T>,
         array_out: &mut GxArrayViewMut<'_, V>,
         out_idx: usize,
-        row_c: i64,
-        col_c: i64,
+        row_first: i64,
+        col_first: i64,
         nodata: V,
         context: &mut IC,
     ) where
@@ -1750,14 +1774,12 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         V: Copy + From<f64>,
         IC: GxArrayViewInterpolationContextTrait,
     {
-        let half_rows  = (KROWS / 2) as i64;
-        let half_cols  = (KCOLS / 2) as i64;
         let ncol       = array_in.ncol;
         let in_var_sz  = array_in.var_size;
         let out_var_sz = array_out.var_size;
 
-        let row_start = (row_c - half_rows) as usize;
-        let col_start = (col_c - half_cols) as usize;
+        let row_start = row_first as usize;
+        let col_start = col_first as usize;
         let flat_base = row_start * ncol + col_start;
 
         let wr = &weights_row[..KROWS];
@@ -1830,8 +1852,10 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
     /// - `array_in`: input data array `[nvar, nrow, ncol]`, flattened.
     /// - `array_out`: output array (same layout), written in place.
     /// - `out_idx`: flat pixel index in the output (shared across all planes).
-    /// - `row_c`: integer row coordinate of the interpolation centre.
-    /// - `col_c`: integer column coordinate of the interpolation centre.
+    /// - `row_first`: row index of the first stencil tap (may be negative
+    ///   on the border paths).
+    /// - `col_first`: column index of the first stencil tap (may be negative
+    ///   on the border paths).
     /// - `nodata`: sentinel value written when interpolation is invalid.
     /// - `context`: interpolation context providing mask and bounds strategies.
     ///
@@ -1854,8 +1878,8 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         array_in: &GxArrayView<'_, T>,
         array_out: &mut GxArrayViewMut<'_, V>,
         out_idx: usize,
-        row_c: i64,
-        col_c: i64,
+        row_first: i64,
+        col_first: i64,
         nodata: V,
         context: &mut IC,
     ) where
@@ -1863,8 +1887,6 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         V: Copy + From<f64> + PartialEq,
         IC: GxArrayViewInterpolationContextTrait,
     {
-        let half_rows  = (KROWS / 2) as i64;
-        let half_cols  = (KCOLS / 2) as i64;
         let ncol       = array_in.ncol;
         let in_var_sz  = array_in.var_size;
         let out_var_sz = array_out.var_size;
@@ -1877,7 +1899,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
             if wr[KROWS - 1 - irow] == 0.0 {
                 continue;
             }
-            let r = row_c + irow as i64 - half_rows;
+            let r = row_first + irow as i64;
             for icol in 0..KCOLS {
                 if wc[KCOLS - 1 - icol] == 0.0 {
                     continue;
@@ -1889,7 +1911,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
                     );
                     return;
                 }
-                let c = col_c + icol as i64 - half_cols;
+                let c = col_first + icol as i64;
                 if c < 0 || c >= array_in.ncol_i64 {
                     write_nodata_all_vars(
                         array_out, out_idx, nodata,
@@ -1915,15 +1937,15 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         for _ivar in 0..array_in.nvar {
             let mut acc = 0.0f64;
             for irow in 0..KROWS {
-                let r = row_c + irow as i64 - half_rows;
+                let r = row_first + irow as i64;
                 if r < 0 || r >= array_in.nrow_i64 {
                     continue;
                 }
                 let ru = r as usize;
 
                 // Valid column range.
-                let c_first = col_c - half_cols;
-                let c_last  = col_c + (KCOLS as i64 - 1) - half_cols;
+                let c_first = col_first;
+                let c_last  = col_first + (KCOLS as i64 - 1);
 
                 let col_lo = c_first.max(0) as usize;
                 let col_hi = (c_last.min(array_in.ncol_i64 - 1) + 1) as usize;
@@ -1968,20 +1990,18 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         array_in: &GxArrayView<'_, T>,
         array_out: &mut GxArrayViewMut<'_, V>,
         out_idx: usize,
-        row_c: i64,
-        col_c: i64,
+        row_first: i64,
+        col_first: i64,
     ) where
         T: Copy + std::ops::Mul<f64, Output = f64> + Into<f64>,
         V: Copy + From<f64>,
     { unsafe {
-        let half_rows  = (KROWS / 2) as i64;
-        let half_cols  = (KCOLS / 2) as i64;
         let ncol       = array_in.ncol;
         let in_var_sz  = array_in.var_size;
         let out_var_sz = array_out.var_size;
 
-        let row_start = (row_c - half_rows) as usize;
-        let col_start = (col_c - half_cols) as usize;
+        let row_start = row_first as usize;
+        let col_start = col_first as usize;
 
         let mut in_shift  = 0usize;
         let mut out_shift = 0usize;
@@ -2025,16 +2045,14 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         array_out: &mut GxArrayViewMut<'_, V>,
         output_mask: &mut OM,
         out_idx: usize,
-        row_c: i64,
-        col_c: i64,
+        row_first: i64,
+        col_first: i64,
         nodata: V,
     ) where
         T: Copy + std::ops::Mul<f64, Output = f64> + Into<f64>,
         V: Copy + From<f64>,
         OM: GxArrayViewInterpolatorOutputMaskStrategy,
     { unsafe {
-        let half_rows  = (KROWS / 2) as i64;
-        let half_cols  = (KCOLS / 2) as i64;
         let ncol       = array_in.ncol;
         let in_var_sz  = array_in.var_size;
         let out_var_sz = array_out.var_size;
@@ -2047,12 +2065,12 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
             if *weights_row.get_unchecked(KROWS - 1 - irow) == 0.0 {
                 continue;
             }
-            let r = row_c + irow as i64 - half_rows;
+            let r = row_first + irow as i64;
             for icol in 0..KCOLS {
                 if *weights_col.get_unchecked(KCOLS - 1 - icol) == 0.0 {
                     continue;
                 }
-                let c = col_c + icol as i64 - half_cols;
+                let c = col_first + icol as i64;
                 if r < 0 || r >= array_in.nrow_i64
                     || c < 0 || c >= array_in.ncol_i64
                 {
@@ -2076,14 +2094,14 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         for _ivar in 0..array_in.nvar {
             let mut acc = 0.0f64;
             for irow in 0..KROWS {
-                let r = row_c + irow as i64 - half_rows;
+                let r = row_first + irow as i64;
                 if r < 0 || r >= array_in.nrow_i64 {
                     continue;
                 }
                 let ru = r as usize;
                 let mut acc_col = 0.0f64;
                 for icol in 0..KCOLS {
-                    let c = col_c + icol as i64 - half_cols;
+                    let c = col_first + icol as i64;
                     if c < 0 || c >= array_in.ncol_i64 {
                         continue;
                     }
@@ -2117,8 +2135,8 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         array_in: &GxArrayView<'_, T>,
         array_out: &mut GxArrayViewMut<'_, V>,
         out_idx: usize,
-        row_c: i64,
-        col_c: i64,
+        row_first: i64,
+        col_first: i64,
         nodata: V,
         context: &mut IC,
     ) where
@@ -2126,14 +2144,12 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         V: Copy + From<f64>,
         IC: GxArrayViewInterpolationContextTrait,
     { unsafe {
-        let half_rows  = (KROWS / 2) as i64;
-        let half_cols  = (KCOLS / 2) as i64;
         let ncol       = array_in.ncol;
         let in_var_sz  = array_in.var_size;
         let out_var_sz = array_out.var_size;
 
-        let row_start = (row_c - half_rows) as usize;
-        let col_start = (col_c - half_cols) as usize;
+        let row_start = row_first as usize;
+        let col_start = col_first as usize;
         let flat_base = row_start * ncol + col_start;
 
         // Two-stage short-circuit mask validation.
@@ -2193,8 +2209,8 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         array_in: &GxArrayView<'_, T>,
         array_out: &mut GxArrayViewMut<'_, V>,
         out_idx: usize,
-        row_c: i64,
-        col_c: i64,
+        row_first: i64,
+        col_first: i64,
         nodata: V,
         context: &mut IC,
     ) where
@@ -2202,8 +2218,6 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         V: Copy + From<f64> + PartialEq,
         IC: GxArrayViewInterpolationContextTrait,
     { unsafe {
-        let half_rows  = (KROWS / 2) as i64;
-        let half_cols  = (KCOLS / 2) as i64;
         let ncol       = array_in.ncol;
         let in_var_sz  = array_in.var_size;
         let out_var_sz = array_out.var_size;
@@ -2214,7 +2228,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
             if *weights_row.get_unchecked(KROWS - 1 - irow) == 0.0 {
                 continue;
             }
-            let r = row_c + irow as i64 - half_rows;
+            let r = row_first + irow as i64;
             for icol in 0..KCOLS {
                 if *weights_col.get_unchecked(KCOLS - 1 - icol) == 0.0 {
                     continue;
@@ -2226,7 +2240,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
                     );
                     return;
                 }
-                let c = col_c + icol as i64 - half_cols;
+                let c = col_first + icol as i64;
                 if c < 0 || c >= array_in.ncol_i64 {
                     write_nodata_all_vars(
                         array_out, out_idx, nodata,
@@ -2254,14 +2268,14 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         for _ivar in 0..array_in.nvar {
             let mut acc = 0.0f64;
             for irow in 0..KROWS {
-                let r = row_c + irow as i64 - half_rows;
+                let r = row_first + irow as i64;
                 if r < 0 || r >= array_in.nrow_i64 {
                     continue;
                 }
                 let ru = r as usize;
                 let mut acc_col = 0.0f64;
                 for icol in 0..KCOLS {
-                    let c = col_c + icol as i64 - half_cols;
+                    let c = col_first + icol as i64;
                     if c < 0 || c >= array_in.ncol_i64 {
                         continue;
                     }
@@ -2362,12 +2376,15 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         V: Copy + PartialEq + From<f64>,
         IC: GxArrayViewInterpolationContextTrait,
     {
-        let half_rows = (KROWS / 2) as i64;
-        let half_cols = (KCOLS / 2) as i64;
-        
-        // Nearest integer centre for the interpolation stencil.
-        let kernel_center_row: i64 = (target_row_pos + 0.5).floor() as i64;
-        let kernel_center_col: i64 = (target_col_pos + 0.5).floor() as i64;
+        // Stencil anchoring. The anchor is the nearest integer for an odd
+        // support and the floor for an even support; the stencil spans
+        // `[first, first + K)` with `first = anchor - support_left(K)`. The
+        // phase passed to `compute_weights` is `pos - anchor`, in
+        // `[-0.5, 0.5]` for an odd support and in `[0, 1)` for an even one.
+        let anchor_row: i64 = (target_row_pos + anchor_shift(KROWS)).floor() as i64;
+        let anchor_col: i64 = (target_col_pos + anchor_shift(KCOLS)).floor() as i64;
+        let first_row: i64 = anchor_row - support_left(KROWS) as i64;
+        let first_col: i64 = anchor_col - support_left(KCOLS) as i64;
  
         let out_var_sz = array_out.var_size;
         
@@ -2378,12 +2395,12 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         if IC::BoundsCheck::do_check() {
             // Interior path: the full stencil fits strictly inside the array.
             // No per-element bounds checking is needed inside the inner loops.
-            if (kernel_center_row >= half_rows)
-                    && (kernel_center_row < array_in.nrow_i64-half_rows)
-                    && (kernel_center_col >= half_cols)
-                    && (kernel_center_col < array_in.ncol_i64-half_cols) {
-                let rel_row: f64 = target_row_pos - kernel_center_row as f64;
-                let rel_col: f64 = target_col_pos - kernel_center_col as f64;
+            if (first_row >= 0)
+                    && (first_row + KROWS as i64 <= array_in.nrow_i64)
+                    && (first_col >= 0)
+                    && (first_col + KCOLS as i64 <= array_in.ncol_i64) {
+                let rel_row: f64 = target_row_pos - anchor_row as f64;
+                let rel_col: f64 = target_col_pos - anchor_col as f64;
                 
                 // Create slices to give to weight computation methods
                 let (w_row, w_col) =
@@ -2397,7 +2414,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
                         self.interpolate_masked_unchecked_unsafe(
                             w_row, w_col,
                             array_in, array_out, out_idx,
-                            kernel_center_row, kernel_center_col,
+                            first_row, first_col,
                             nodata_out, context,
                         );
                     }
@@ -2407,19 +2424,21 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
                         self.interpolate_nomask_unchecked_unsafe(
                             w_row, w_col,
                             array_in, array_out, out_idx,
-                            kernel_center_row, kernel_center_col,
+                            first_row, first_col,
                         );
                     }
                 }
             }
-            // Border path: the centre is inside the array but the stencil may
-            // cross one or more borders.
-            else if (kernel_center_row >=0)
-                    && (kernel_center_row < array_in.nrow_i64)
-                    && (kernel_center_col >= 0)
-                    && (kernel_center_col < array_in.ncol_i64) {
-                let rel_row: f64 = target_row_pos - kernel_center_row as f64;
-                let rel_col: f64 = target_col_pos - kernel_center_col as f64;
+            // Border path: the anchor is inside the array but the stencil may
+            // cross one or more borders. Kernel contract: the anchor tap has a
+            // non-zero weight for every phase, so an anchor outside the array
+            // always yields an invalid output (outside path below).
+            else if (anchor_row >= 0)
+                    && (anchor_row < array_in.nrow_i64)
+                    && (anchor_col >= 0)
+                    && (anchor_col < array_in.ncol_i64) {
+                let rel_row: f64 = target_row_pos - anchor_row as f64;
+                let rel_col: f64 = target_col_pos - anchor_col as f64;
                 
                 let (w_row, w_col) =
                     weights_buffer.split_at_mut(KROWS);
@@ -2434,7 +2453,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
                         self.interpolate_masked_partial_unsafe(
                             w_row, w_col,
                             array_in, array_out, out_idx,
-                            kernel_center_row, kernel_center_col,
+                            first_row, first_col,
                             nodata_out, context,
                         );
                     }
@@ -2447,7 +2466,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
                             w_row, w_col,
                             array_in, array_out,
                             context.output_mask(), out_idx,
-                            kernel_center_row, kernel_center_col,
+                            first_row, first_col,
                             nodata_out,
                         );
                     }
@@ -2461,8 +2480,8 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
             }
         } else {
             // No bounds check: the caller guarantees all indices are valid.
-            let rel_row: f64 = target_row_pos - kernel_center_row as f64;
-            let rel_col: f64 = target_col_pos - kernel_center_col as f64;
+            let rel_row: f64 = target_row_pos - anchor_row as f64;
+            let rel_col: f64 = target_col_pos - anchor_col as f64;
             
             let (w_row, w_col) = weights_buffer.split_at_mut(KROWS);
             self.compute_weights(rel_row, w_row);
@@ -2474,7 +2493,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
                     self.interpolate_masked_unchecked_unsafe(
                         w_row, w_col,
                         array_in, array_out, out_idx,
-                        kernel_center_row, kernel_center_col,
+                        first_row, first_col,
                         nodata_out, context,
                     );
                 }
@@ -2484,7 +2503,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
                     self.interpolate_nomask_unchecked_unsafe(
                         w_row, w_col,
                         array_in, array_out, out_idx,
-                        kernel_center_row, kernel_center_col,
+                        first_row, first_col,
                     );
                 }
             }

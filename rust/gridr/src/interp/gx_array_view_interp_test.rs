@@ -69,40 +69,41 @@ mod mock {
     // Weight function
     // ------------------------------------------------------------------
 
-    /// Linear-interpolation weights for a 3-tap kernel.
-    ///
-    /// - `x = 0`  → `[0, 1, 0]` (identity).
-    /// - `x > 0`  → weight split between centre (`w[1]`) and right (`w[2]`).
-    /// - `x < 0`  → weight split between left (`w[0]`) and centre (`w[1]`).
-    ///
-    /// The weight indexing convention of `GxArrayViewInterpolatorCore` places
-    /// index `KCOLS - 1 - icol` at position `icol`, so for a 3-tap kernel:
-    /// - `weights[2]` = weight of the left  pixel (icol = 0).
-    /// - `weights[1]` = weight of the centre pixel (icol = 1).
-    /// - `weights[0]` = weight of the right pixel  (icol = 2).
-    pub fn linear_weights_3(x: f64, weights: &mut [f64]) {
-        assert!(weights.len() >= 3);
-        if x >= 0.0 {
-            weights[2] = 0.0;           // left
-            weights[1] = 1.0 - x;      // centre
-            weights[0] = x;            // right
-        } else {
-            weights[2] = -x;           // left
-            weights[1] = 1.0 + x;     // centre
-            weights[0] = 0.0;          // right
+    /// Native linear weights (2 taps, anchor = floor, phase `t` in `[0, 1)`).
+    /// Inverted order: `weights[0]` = tap `anchor + 1`, `weights[1]` = anchor.
+    pub fn linear_weights_2(t: f64, weights: &mut [f64]) {
+        weights[0] = t;
+        weights[1] = 1.0 - t;
+    }
+
+    /// Quadratic B-spline weights (3 taps, odd support, anchor = nearest
+    /// integer, phase `t` in `[-0.5, 0.5]`). Inverted order.
+    /// Note : only here for test purpose - only odd order BSpline are 
+    /// implemented as interpolators
+    pub fn quadratic_bspline_weights_3(t: f64, weights: &mut [f64]) {
+        weights[0] = 0.5 * (0.5 + t) * (0.5 + t);
+        weights[1] = 0.75 - t * t;
+        weights[2] = 0.5 * (0.5 - t) * (0.5 - t);
+    }
+
+    /// Even-support fixture (native linear) used through
+    /// `array1_interp2_separable_core`.
+    pub struct MockInterp;
+
+    impl GxArrayViewInterpolatorCore<2, 2> for MockInterp {
+        fn compute_weights(&self, t: f64, weights: &mut [f64]) {
+            linear_weights_2(t, weights);
         }
     }
 
-    // ------------------------------------------------------------------
-    // Mock struct
-    // ------------------------------------------------------------------
+    /// Odd-support fixture (3 taps). The variant tests pass their weights
+    /// explicitly; `compute_weights` is a genuine odd kernel so that the odd
+    /// anchoring branch of the core stays covered.
+    pub struct MockOdd3;
 
-    /// Minimal 3×3 separable interpolator used as a test fixture.
-    pub struct MockInterp;
-
-    impl GxArrayViewInterpolatorCore<3, 3> for MockInterp {
-        fn compute_weights(&self, x: f64, weights: &mut [f64]) {
-            linear_weights_3(x, weights);
+    impl GxArrayViewInterpolatorCore<3, 3> for MockOdd3 {
+        fn compute_weights(&self, t: f64, weights: &mut [f64]) {
+            quadratic_bspline_weights_3(t, weights);
         }
     }
 
@@ -115,6 +116,58 @@ mod mock {
         }
         fn shortname(&self) -> String {
             "mock".to_string()
+        }
+        fn initialize(&mut self) -> Result<(), String> {
+            Ok(())
+        }
+        fn allocate_kernel_buffer<'a>(&'a self) -> Box<[f64]> {
+            vec![0.0f64; 2 + 2].into_boxed_slice()
+        }
+        fn kernel_row_size(&self) -> usize { 2 }
+        fn kernel_col_size(&self) -> usize { 2 }
+        fn total_margins(&self) -> Result<[usize; 4], GxError> {
+            Ok([1, 1, 1, 1])
+        }
+        fn array1_interp2<T, V, IC>(
+            &self,
+            weights_buffer: &mut [f64],
+            target_row_pos: f64,
+            target_col_pos: f64,
+            out_idx: usize,
+            array_in: &GxArrayView<'_, T>,
+            array_out: &mut GxArrayViewMut<'_, V>,
+            nodata_out: V,
+            context: &mut IC,
+        ) -> Result<(), String>
+        where
+            T: Copy + PartialEq
+                + std::ops::Mul<f64, Output = f64>
+                + Into<f64>,
+            V: Copy + PartialEq + From<f64>,
+            IC: GxArrayViewInterpolationContextTrait,
+        {
+            self.array1_interp2_separable_core(
+                weights_buffer,
+                target_row_pos,
+                target_col_pos,
+                out_idx,
+                array_in,
+                array_out,
+                nodata_out,
+                context,
+            )
+        }
+    }
+
+    /// Trivial `GxArrayViewInterpolator` impl so `MockInterp` compiles as
+    /// a complete type.  Most methods panic — only those exercised in tests
+    /// matter.
+    impl GxArrayViewInterpolator for MockOdd3 {
+        fn new(_args: &dyn GxArrayViewInterpolatorArgs) -> Self {
+            MockOdd3
+        }
+        fn shortname(&self) -> String {
+            "mock_odd3".to_string()
         }
         fn initialize(&mut self) -> Result<(), String> {
             Ok(())
@@ -236,11 +289,11 @@ mod nomask_unchecked {
         let arr_in  = arr(&data, 5, 5);
         let mut out = [0.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         // Weights: identity at offset 0
         let w = [0.0, 1.0, 0.0f64];
         interp.interpolate_nomask_unchecked::<f64, f64>(
-            &w, &w, &arr_in, &mut arr_out, 0, 2, 2,
+            &w, &w, &arr_in, &mut arr_out, 0, (2) - 1, (2) - 1,
         );
         assert!(approx(out[0], 7.0), "got {}", out[0]);
     }
@@ -261,13 +314,13 @@ mod nomask_unchecked {
         let arr_in  = arr(&data, 5, 5);
         let mut out = [0.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
-        // x = 0.5 → weights: [0.5, 0.5, 0.0] (right=0.5, centre=0.5, left=0)
+        let interp = MockOdd3;
+        // x = 0.5 - weights: [0.5, 0.5, 0.0] (right=0.5, centre=0.5, left=0)
         let w_row = [0.0, 1.0, 0.0f64]; // no row interpolation
         let w_col = [0.5, 0.5, 0.0f64]; // col: 0.5 right + 0.5 centre
         // Centre at (2, 2), col offset +0.5 → mixes col 2 (4) and col 3 (8)
         interp.interpolate_nomask_unchecked::<f64, f64>(
-            &w_row, &w_col, &arr_in, &mut arr_out, 0, 2, 2,
+            &w_row, &w_col, &arr_in, &mut arr_out, 0, (2) - 1, (2) - 1,
         );
         // Expected: 0.5 * 4 + 0.5 * 8 = 6
         assert!(approx(out[0], 6.0), "got {}", out[0]);
@@ -281,10 +334,10 @@ mod nomask_unchecked {
         let arr_in  = arr(&data, 5, 5);
         let mut out = [0.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.25, 0.5, 0.25f64]; // sums to 1
         interp.interpolate_nomask_unchecked::<f64, f64>(
-            &w, &w, &arr_in, &mut arr_out, 0, 2, 2,
+            &w, &w, &arr_in, &mut arr_out, 0, (2) - 1, (2) - 1,
         );
         assert!(approx(out[0], 3.5), "got {}", out[0]);
     }
@@ -299,10 +352,10 @@ mod nomask_unchecked {
         let arr_in = arr_nvar(&data, 2, 5, 5);
         let mut out = [0.0f64; 2];
         let mut arr_out = arr_mut_nvar(&mut out, 2, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 1.0, 0.0f64];
         interp.interpolate_nomask_unchecked::<f64, f64>(
-            &w, &w, &arr_in, &mut arr_out, 0, 2, 2,
+            &w, &w, &arr_in, &mut arr_out, 0, (2) - 1, (2) - 1,
         );
         assert!(approx(out[0], 10.0), "plane0: {}", out[0]);
         assert!(approx(out[1], 20.0), "plane1: {}", out[1]);
@@ -319,10 +372,10 @@ mod nomask_unchecked {
         let arr_in  = arr(&data, 5, 5);
         let mut out = [0.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 1.0, 0.0f64]; // identity
         interp.interpolate_nomask_unchecked::<f64, f64>(
-            &w, &w, &arr_in, &mut arr_out, 0, 3, 3,
+            &w, &w, &arr_in, &mut arr_out, 0, (3) - 1, (3) - 1,
         );
         assert!(approx(out[0], 5.0), "got {}", out[0]);
     }
@@ -338,12 +391,12 @@ mod nomask_unchecked {
         let arr_in  = arr(&data, 5, 5);
         let mut out = [0.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w_row = [0.0, 1.0, 0.0f64];
         // x = −0.5 → weights: left 0.5 (w[2]), centre 0.5 (w[1]), right 0
         let w_col = [0.0, 0.5, 0.5f64];
         interp.interpolate_nomask_unchecked::<f64, f64>(
-            &w_row, &w_col, &arr_in, &mut arr_out, 0, 2, 2,
+            &w_row, &w_col, &arr_in, &mut arr_out, 0, (2) - 1, (2) - 1,
         );
         // 0.5 * 8 + 0.5 * 4 = 6
         assert!(approx(out[0], 6.0), "got {}", out[0]);
@@ -381,10 +434,10 @@ mod nomask_partial {
         let arr_in  = arr(&data, 5, 5);
         let mut out = [0.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 1.0, 0.0f64];
         interp.interpolate_nomask_partial::<f64, f64, _>(
-            &w, &w, &arr_in, &mut arr_out, &mut no_mask(), 0, 2, 2, -1.0,
+            &w, &w, &arr_in, &mut arr_out, &mut no_mask(), 0, (2) - 1, (2) - 1, -1.0,
         );
         assert!(approx(out[0], 9.0), "got {}", out[0]);
     }
@@ -404,12 +457,12 @@ mod nomask_partial {
         let arr_in  = arr(&data, 3, 5);
         let mut out = [-9.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         // Row weights: identity → only centre row (row 0) contributes.
         // Column weights: identity → only col 2 contributes.
         let w = [0.0, 1.0, 0.0f64];
         interp.interpolate_nomask_partial::<f64, f64, _>(
-            &w, &w, &arr_in, &mut arr_out, &mut no_mask(), 0, 0, 2, -9.0,
+            &w, &w, &arr_in, &mut arr_out, &mut no_mask(), 0, (0) - 1, (2) - 1, -9.0,
         );
         assert!(approx(out[0], 5.0), "got {}", out[0]);
     }
@@ -427,12 +480,12 @@ mod nomask_partial {
         let arr_in  = arr(&data, 3, 3);
         let mut out = [-9.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w_row = [0.0, 1.0, 0.0f64];
         let w_col = [0.5, 0.5, 0.0f64]; // right=0.5, centre=0.5
         interp.interpolate_nomask_partial::<f64, f64, _>(
             &w_row, &w_col, &arr_in, &mut arr_out,
-            &mut no_mask(), 0, 1, 1, -9.0,
+            &mut no_mask(), 0, (1) - 1, (1) - 1, -9.0,
         );
         // 0.5 * 4 + 0.5 * 8 = 6
         assert!(approx(out[0], 6.0), "got {}", out[0]);
@@ -445,13 +498,13 @@ mod nomask_partial {
         let arr_in  = arr(&data, 3, 3);
         let mut out = [42.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         // Centre at col 0, with non-zero weight for col -1 (out of bounds)
         let w_row = [0.0, 1.0, 0.0f64];
         let w_col = [0.0, 0.5, 0.5f64]; // left has weight 0.5
         interp.interpolate_nomask_partial::<f64, f64, _>(
             &w_row, &w_col, &arr_in, &mut arr_out,
-            &mut no_mask(), 0, 1, 0, -9.0,
+            &mut no_mask(), 0, (1) - 1, (0) - 1, -9.0,
         );
         assert_eq!(out[0], -9.0, "expected nodata, got {}", out[0]);
     }
@@ -472,10 +525,10 @@ mod nomask_partial {
         let mut arr_mask1 =
             GxArrayViewMut::new(&mut mask1_data, 1, 1, 1);
         let mut om1 = BinaryOutputMask { mask: &mut arr_mask1 };
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 1.0, 0.0f64];
         interp.interpolate_nomask_partial::<f64, f64, _>(
-            &w, &w, &arr_in, &mut arr_out1, &mut om1, 0, 1, 1, -9.0,
+            &w, &w, &arr_in, &mut arr_out1, &mut om1, 0, (1) - 1, (1) - 1, -9.0,
         );
         assert_eq!(mask1_data[0], 1, "success: mask should be 1");
 
@@ -488,7 +541,7 @@ mod nomask_partial {
         let mut om2 = BinaryOutputMask { mask: &mut arr_mask2 };
         let w_col = [0.0, 0.5, 0.5f64];
         interp.interpolate_nomask_partial::<f64, f64, _>(
-            &w, &w_col, &arr_in, &mut arr_out2, &mut om2, 0, 1, 0, -9.0,
+            &w, &w_col, &arr_in, &mut arr_out2, &mut om2, 0, (1) - 1, (0) - 1, -9.0,
         );
         assert_eq!(mask2_data[0], 0, "failure: mask should be 0");
     }
@@ -542,11 +595,11 @@ mod masked_unchecked {
         let mask_view = GxArrayView::new(&mask_data, 1, 5, 5);
         let mut out  = [0.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 1.0, 0.0f64];
         let mut ctx = ctx_with_mask(&mask_view);
         interp.interpolate_masked_unchecked::<f64, f64, _>(
-            &w, &w, &arr_in, &mut arr_out, 0, 2, 2, -1.0, &mut ctx,
+            &w, &w, &arr_in, &mut arr_out, 0, (2) - 1, (2) - 1, -1.0, &mut ctx,
         );
         assert!(approx(out[0], 6.0), "got {}", out[0]);
     }
@@ -568,11 +621,11 @@ mod masked_unchecked {
         let mask_view = GxArrayView::new(&mask_data, 1, 5, 5);
         let mut out   = [42.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 1.0, 0.0f64];
         let mut ctx = ctx_with_mask(&mask_view);
         interp.interpolate_masked_unchecked::<f64, f64, _>(
-            &w, &w, &arr_in, &mut arr_out, 0, 2, 2, -9.0, &mut ctx,
+            &w, &w, &arr_in, &mut arr_out, 0, (2) - 1, (2) - 1, -9.0, &mut ctx,
         );
         assert_eq!(out[0], -9.0, "expected nodata, got {}", out[0]);
     }
@@ -596,11 +649,11 @@ mod masked_unchecked {
         let mask_view = GxArrayView::new(&mask_data, 1, 5, 5);
         let mut out   = [0.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 1.0, 0.0f64]; // only centre has non-zero weight
         let mut ctx = ctx_with_mask(&mask_view);
         interp.interpolate_masked_unchecked::<f64, f64, _>(
-            &w, &w, &arr_in, &mut arr_out, 0, 2, 2, -9.0, &mut ctx,
+            &w, &w, &arr_in, &mut arr_out, 0, (2) - 1, (2) - 1, -9.0, &mut ctx,
         );
         assert!(approx(out[0], 6.0), "got {}", out[0]);
     }
@@ -617,11 +670,11 @@ mod masked_unchecked {
         let mask_view = GxArrayView::new(&mask_data, 1, 5, 5);
         let mut out  = [0.0f64; 2];
         let mut arr_out = arr_mut_nvar(&mut out, 2, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 1.0, 0.0f64];
         let mut ctx = ctx_with_mask(&mask_view);
         interp.interpolate_masked_unchecked::<f64, f64, _>(
-            &w, &w, &arr_in, &mut arr_out, 0, 2, 2, -1.0, &mut ctx,
+            &w, &w, &arr_in, &mut arr_out, 0, (2) - 1, (2) - 1, -1.0, &mut ctx,
         );
         assert!(approx(out[0], 3.0), "plane0: {}", out[0]);
         assert!(approx(out[1], 7.0), "plane1: {}", out[1]);
@@ -639,7 +692,7 @@ mod masked_unchecked {
         };
         let data = [1.0f64; 25];
         let arr_in = arr(&data, 5, 5);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 1.0, 0.0f64];
 
         // --- Valid path ---
@@ -655,7 +708,7 @@ mod masked_unchecked {
             BoundsCheck,
         );
         interp.interpolate_masked_unchecked::<f64, f64, _>(
-            &w, &w, &arr_in, &mut arr_out1, 0, 2, 2, -9.0, &mut ctx1,
+            &w, &w, &arr_in, &mut arr_out1, 0, (2) - 1, (2) - 1, -9.0, &mut ctx1,
         );
         assert_eq!(mask1_data[0], 1, "valid: mask should be 1");
 
@@ -673,7 +726,7 @@ mod masked_unchecked {
             BoundsCheck,
         );
         interp.interpolate_masked_unchecked::<f64, f64, _>(
-            &w, &w, &arr_in, &mut arr_out2, 0, 2, 2, -9.0, &mut ctx2,
+            &w, &w, &arr_in, &mut arr_out2, 0, (2) - 1, (2) - 1, -9.0, &mut ctx2,
         );
         assert_eq!(mask2_data[0], 0, "invalid: mask should be 0");
         assert_eq!(out2[0], -9.0, "invalid: output should be nodata");
@@ -726,11 +779,11 @@ mod masked_partial {
         let mask_view = GxArrayView::new(&mask_data, 1, 3, 3);
         let mut out   = [0.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 1.0, 0.0f64];
         let mut ctx = ctx_with_mask(&mask_view);
         interp.interpolate_masked_partial::<f64, f64, _>(
-            &w, &w, &arr_in, &mut arr_out, 0, 1, 1, -9.0, &mut ctx,
+            &w, &w, &arr_in, &mut arr_out, 0, (1) - 1, (1) - 1, -9.0, &mut ctx,
         );
         assert!(approx(out[0], 5.0), "got {}", out[0]);
     }
@@ -750,11 +803,11 @@ mod masked_partial {
         let mask_view = GxArrayView::new(&mask_data, 1, 3, 3);
         let mut out   = [-9.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 1.0, 0.0f64];
         let mut ctx = ctx_with_mask(&mask_view);
         interp.interpolate_masked_partial::<f64, f64, _>(
-            &w, &w, &arr_in, &mut arr_out, 0, 0, 1, -9.0, &mut ctx,
+            &w, &w, &arr_in, &mut arr_out, 0, (0) - 1, (1) - 1, -9.0, &mut ctx,
         );
         assert!(approx(out[0], 5.0), "got {}", out[0]);
     }
@@ -774,11 +827,11 @@ mod masked_partial {
         let mask_view = GxArrayView::new(&mask_data, 1, 3, 3);
         let mut out   = [42.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 1.0, 0.0f64];
         let mut ctx = ctx_with_mask(&mask_view);
         interp.interpolate_masked_partial::<f64, f64, _>(
-            &w, &w, &arr_in, &mut arr_out, 0, 1, 1, -9.0, &mut ctx,
+            &w, &w, &arr_in, &mut arr_out, 0, (1) - 1, (1) - 1, -9.0, &mut ctx,
         );
         assert_eq!(out[0], -9.0, "expected nodata, got {}", out[0]);
     }
@@ -793,12 +846,12 @@ mod masked_partial {
         let mask_view = GxArrayView::new(&mask_data, 1, 3, 3);
         let mut out   = [42.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w_row = [0.0, 1.0, 0.0f64];
         let w_col = [0.0, 0.5, 0.5f64]; // left pixel → col -1
         let mut ctx = ctx_with_mask(&mask_view);
         interp.interpolate_masked_partial::<f64, f64, _>(
-            &w_row, &w_col, &arr_in, &mut arr_out, 0, 1, 0, -9.0, &mut ctx,
+            &w_row, &w_col, &arr_in, &mut arr_out, 0, (1) - 1, (0) - 1, -9.0, &mut ctx,
         );
         assert_eq!(out[0], -9.0, "expected nodata, got {}", out[0]);
     }
@@ -816,7 +869,7 @@ mod masked_partial {
         let mask_data = [1u8; 9];
         let arr_in    = arr(&data, 3, 3);
         let mask_view = GxArrayView::new(&mask_data, 1, 3, 3);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w_row = [0.0, 1.0, 0.0f64];
         let w_col = [0.5, 0.5, 0.0f64];
 
@@ -825,7 +878,7 @@ mod masked_partial {
         let mut arr_out1   = arr_mut(&mut out_masked, 1, 1);
         let mut ctx = ctx_with_mask(&mask_view);
         interp.interpolate_masked_partial::<f64, f64, _>(
-            &w_row, &w_col, &arr_in, &mut arr_out1, 0, 1, 1, -9.0, &mut ctx,
+            &w_row, &w_col, &arr_in, &mut arr_out1, 0, (1) - 1, (1) - 1, -9.0, &mut ctx,
         );
 
         // nomask_partial
@@ -833,7 +886,7 @@ mod masked_partial {
         let mut arr_out2 = arr_mut(&mut out_nm, 1, 1);
         let mut nm = NoOutputMask::default();
         interp.interpolate_nomask_partial::<f64, f64, _>(
-            &w_row, &w_col, &arr_in, &mut arr_out2, &mut nm, 0, 1, 1, -9.0,
+            &w_row, &w_col, &arr_in, &mut arr_out2, &mut nm, 0, (1) - 1, (1) - 1, -9.0,
         );
 
         assert!(
@@ -859,12 +912,12 @@ mod masked_partial {
         let mask_view = GxArrayView::new(&mask_data, 1, 3, 3);
         let mut out   = [0.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         // Identity weights: only centre (col 1) has non-zero weight
         let w = [0.0, 1.0, 0.0f64];
         let mut ctx = ctx_with_mask(&mask_view);
         interp.interpolate_masked_partial::<f64, f64, _>(
-            &w, &w, &arr_in, &mut arr_out, 0, 1, 1, -9.0, &mut ctx,
+            &w, &w, &arr_in, &mut arr_out, 0, (1) - 1, (1) - 1, -9.0, &mut ctx,
         );
         assert!(approx(out[0], 5.0), "got {}", out[0]);
     }
@@ -881,7 +934,7 @@ mod masked_partial {
         };
         let data = [1.0f64; 9];
         let arr_in = arr(&data, 3, 3);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 1.0, 0.0f64];
 
         // Success
@@ -897,7 +950,7 @@ mod masked_partial {
             BoundsCheck,
         );
         interp.interpolate_masked_partial::<f64, f64, _>(
-            &w, &w, &arr_in, &mut arr_out1, 0, 1, 1, -9.0, &mut ctx1,
+            &w, &w, &arr_in, &mut arr_out1, 0, (1) - 1, (1) - 1, -9.0, &mut ctx1,
         );
         assert_eq!(mdata1[0], 1, "success: mask should be 1");
 
@@ -915,7 +968,7 @@ mod masked_partial {
             BoundsCheck,
         );
         interp.interpolate_masked_partial::<f64, f64, _>(
-            &w, &w, &arr_in, &mut arr_out2, 0, 1, 1, -9.0, &mut ctx2,
+            &w, &w, &arr_in, &mut arr_out2, 0, (1) - 1, (1) - 1, -9.0, &mut ctx2,
         );
         assert_eq!(mdata2[0], 0, "failure: mask should be 0");
         assert_eq!(out2[0], -9.0, "failure: output should be nodata");
@@ -1680,10 +1733,10 @@ mod nomask_unchecked_rstest {
         let arr_in = arr(&data, 5, 5);
         let mut out = [-9.0f64; 3];
         let mut arr_out = arr_mut(&mut out, 1, 3);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 1.0, 0.0f64];
         interp.interpolate_nomask_unchecked::<f64, f64>(
-            &w, &w, &arr_in, &mut arr_out, idx, 2, 2,
+            &w, &w, &arr_in, &mut arr_out, idx, (2) - 1, (2) - 1,
         );
         assert!(approx(out[idx], 1.0), "out[{idx}]={}", out[idx]);
         for i in 0..3 {
@@ -1707,10 +1760,10 @@ mod nomask_unchecked_rstest {
         let arr_in  = arr(&data, 5, 5);
         let mut out = [0.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 0.5, 0.5f64];
         interp.interpolate_nomask_unchecked::<f64, f64>(
-            &w, &w, &arr_in, &mut arr_out, 0, 2, 2,
+            &w, &w, &arr_in, &mut arr_out, 0, (2) - 1, (2) - 1,
         );
         assert!(approx(out[0], 5.0), "got {}", out[0]);
     }
@@ -1724,10 +1777,10 @@ mod nomask_unchecked_rstest {
         let arr_in = arr_nvar(&data, 2, 5, 5);
         let mut out = [-9.0f64; 6];
         let mut arr_out = arr_mut_nvar(&mut out, 2, 1, 3);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 1.0, 0.0f64];
         interp.interpolate_nomask_unchecked::<f64, f64>(
-            &w, &w, &arr_in, &mut arr_out, 1, 2, 2,
+            &w, &w, &arr_in, &mut arr_out, 1, (2) - 1, (2) - 1,
         );
         assert!(approx(out[1], 10.0), "plane0: {}", out[1]);
         assert!(approx(out[4], 20.0), "plane1: {}", out[4]);
@@ -1782,10 +1835,10 @@ mod nomask_partial_rstest {
         let arr_in  = arr(&data, 3, 3);
         let mut out = [42.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         interp.interpolate_nomask_partial::<f64, f64, _>(
             &w_row, &w_col, &arr_in, &mut arr_out,
-            &mut no_mask(), 0, row_c, col_c, -9.0,
+            &mut no_mask(), 0, (row_c) - 1, (col_c) - 1, -9.0,
         );
         assert_eq!(out[0], -9.0, "expected nodata for OOB {label}");
     }
@@ -1799,10 +1852,10 @@ mod nomask_partial_rstest {
         let arr_in = arr_nvar(&data, 2, 3, 3);
         let mut out = [0.0f64; 2];
         let mut arr_out = arr_mut_nvar(&mut out, 2, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 1.0, 0.0f64];
         interp.interpolate_nomask_partial::<f64, f64, _>(
-            &w, &w, &arr_in, &mut arr_out, &mut no_mask(), 0, 1, 1, -9.0,
+            &w, &w, &arr_in, &mut arr_out, &mut no_mask(), 0, (1) - 1, (1) - 1, -9.0,
         );
         assert!(approx(out[0], 5.0), "plane0: {}", out[0]);
         assert!(approx(out[1], 15.0), "plane1: {}", out[1]);
@@ -1815,12 +1868,12 @@ mod nomask_partial_rstest {
         let arr_in = arr_nvar(&data, 2, 3, 3);
         let mut out = [42.0f64; 2];
         let mut arr_out = arr_mut_nvar(&mut out, 2, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w_row = [0.0, 1.0, 0.0f64];
         let w_col = [0.0, 0.5, 0.5f64];
         interp.interpolate_nomask_partial::<f64, f64, _>(
             &w_row, &w_col, &arr_in, &mut arr_out,
-            &mut no_mask(), 0, 1, 0, -9.0,
+            &mut no_mask(), 0, (1) - 1, (0) - 1, -9.0,
         );
         assert_eq!(out[0], -9.0, "plane0");
         assert_eq!(out[1], -9.0, "plane1");
@@ -1840,11 +1893,11 @@ mod nomask_partial_rstest {
         let arr_in  = arr(&data, 5, 5);
         let mut out = [0.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 0.5, 0.5f64];
         interp.interpolate_nomask_partial::<f64, f64, _>(
             &w, &w, &arr_in, &mut arr_out,
-            &mut no_mask(), 0, 2, 2, -9.0,
+            &mut no_mask(), 0, (2) - 1, (2) - 1, -9.0,
         );
         assert!(approx(out[0], 5.0), "got {}", out[0]);
     }
@@ -1858,11 +1911,11 @@ mod nomask_partial_rstest {
         let arr_in = arr(&data, 5, 5);
         let mut out = [-9.0f64; 4];
         let mut arr_out = arr_mut(&mut out, 1, 4);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 1.0, 0.0f64];
         interp.interpolate_nomask_partial::<f64, f64, _>(
             &w, &w, &arr_in, &mut arr_out,
-            &mut no_mask(), idx, 2, 2, -9.0,
+            &mut no_mask(), idx, (2) - 1, (2) - 1, -9.0,
         );
         assert!(approx(out[idx], 1.0), "out[{idx}]={}", out[idx]);
     }
@@ -1916,10 +1969,10 @@ mod masked_unchecked_rstest {
         let mask_view = GxArrayView::new(&mask_data, 1, 5, 5);
         let mut out   = [42.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let mut ctx = ctx_with_mask(&mask_view);
         interp.interpolate_masked_unchecked::<f64, f64, _>(
-            &w_row, &w_col, &arr_in, &mut arr_out, 0, 2, 2, -9.0, &mut ctx,
+            &w_row, &w_col, &arr_in, &mut arr_out, 0, (2) - 1, (2) - 1, -9.0, &mut ctx,
         );
         assert_eq!(out[0], -9.0,
             "masked at flat idx {masked_idx} with non-zero weight should give nodata");
@@ -1941,11 +1994,11 @@ mod masked_unchecked_rstest {
         let mask_view = GxArrayView::new(&mask_data, 1, 5, 5);
         let mut out   = [0.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 0.5, 0.5f64];
         let mut ctx = ctx_with_mask(&mask_view);
         interp.interpolate_masked_unchecked::<f64, f64, _>(
-            &w, &w, &arr_in, &mut arr_out, 0, 2, 2, -9.0, &mut ctx,
+            &w, &w, &arr_in, &mut arr_out, 0, (2) - 1, (2) - 1, -9.0, &mut ctx,
         );
         assert!(approx(out[0], 5.0), "got {}", out[0]);
     }
@@ -1961,11 +2014,11 @@ mod masked_unchecked_rstest {
         let mask_view = GxArrayView::new(&mask_data, 1, 5, 5);
         let mut out   = [-9.0f64; 4];
         let mut arr_out = arr_mut(&mut out, 1, 4);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let mut ctx = ctx_with_mask(&mask_view);
         interp.interpolate_masked_unchecked::<f64, f64, _>(
             &[0.0, 1.0, 0.0f64], &[0.0, 1.0, 0.0f64],
-            &arr_in, &mut arr_out, idx, 2, 2, -9.0, &mut ctx,
+            &arr_in, &mut arr_out, idx, (2) - 1, (2) - 1, -9.0, &mut ctx,
         );
         assert!(approx(out[idx], 1.0), "out[{idx}]={}", out[idx]);
     }
@@ -2028,10 +2081,10 @@ mod masked_partial_rstest {
         let mask_view = GxArrayView::new(&mask_data, 1, 3, 3);
         let mut out   = [42.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let mut ctx = ctx_with_mask(&mask_view);
         interp.interpolate_masked_partial::<f64, f64, _>(
-            &w_row, &w_col, &arr_in, &mut arr_out, 0, row_c, col_c,
+            &w_row, &w_col, &arr_in, &mut arr_out, 0, (row_c) - 1, (col_c) - 1,
             -9.0, &mut ctx,
         );
         assert_eq!(out[0], -9.0, "expected nodata for OOB {label}");
@@ -2061,10 +2114,10 @@ mod masked_partial_rstest {
         let mask_view = GxArrayView::new(&mask_data, 1, 3, 3);
         let mut out   = [42.0f64; 2];
         let mut arr_out = arr_mut_nvar(&mut out, 2, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let mut ctx = ctx_with_mask(&mask_view);
         interp.interpolate_masked_partial::<f64, f64, _>(
-            &w_row, &w_col, &arr_in, &mut arr_out, 0, row_c, col_c,
+            &w_row, &w_col, &arr_in, &mut arr_out, 0, (row_c) - 1, (col_c) - 1,
             -9.0, &mut ctx,
         );
         assert_eq!(out[0], -9.0, "plane0");
@@ -2087,11 +2140,11 @@ mod masked_partial_rstest {
         let mask_view = GxArrayView::new(&mask_data, 1, 5, 5);
         let mut out   = [0.0f64; 1];
         let mut arr_out = arr_mut(&mut out, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 0.5, 0.5f64];
         let mut ctx = ctx_with_mask(&mask_view);
         interp.interpolate_masked_partial::<f64, f64, _>(
-            &w, &w, &arr_in, &mut arr_out, 0, 2, 2, -9.0, &mut ctx,
+            &w, &w, &arr_in, &mut arr_out, 0, (2) - 1, (2) - 1, -9.0, &mut ctx,
         );
         assert!(approx(out[0], 5.0), "got {}", out[0]);
     }
@@ -2107,11 +2160,11 @@ mod masked_partial_rstest {
         let mask_view = GxArrayView::new(&mask_data, 1, 3, 3);
         let mut out   = [0.0f64; 2];
         let mut arr_out = arr_mut_nvar(&mut out, 2, 1, 1);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let w = [0.0, 1.0, 0.0f64];
         let mut ctx = ctx_with_mask(&mask_view);
         interp.interpolate_masked_partial::<f64, f64, _>(
-            &w, &w, &arr_in, &mut arr_out, 0, 1, 1, -9.0, &mut ctx,
+            &w, &w, &arr_in, &mut arr_out, 0, (1) - 1, (1) - 1, -9.0, &mut ctx,
         );
         assert!(approx(out[0], 5.0), "plane0: {}", out[0]);
         assert!(approx(out[1], 15.0), "plane1: {}", out[1]);
@@ -2128,11 +2181,11 @@ mod masked_partial_rstest {
         let mask_view = GxArrayView::new(&mask_data, 1, 5, 5);
         let mut out   = [-9.0f64; 4];
         let mut arr_out = arr_mut(&mut out, 1, 4);
-        let interp = MockInterp;
+        let interp = MockOdd3;
         let mut ctx = ctx_with_mask(&mask_view);
         interp.interpolate_masked_partial::<f64, f64, _>(
             &[0.0, 1.0, 0.0f64], &[0.0, 1.0, 0.0f64],
-            &arr_in, &mut arr_out, idx, 2, 2, -9.0, &mut ctx,
+            &arr_in, &mut arr_out, idx, (2) - 1, (2) - 1, -9.0, &mut ctx,
         );
         assert!(approx(out[idx], 1.0), "out[{idx}]={}", out[idx]);
     }
@@ -2693,5 +2746,339 @@ mod count_valid_window_rstest {
             assert_eq!(valid, 0,
                 "count=={count} < {total} but is_valid_window returned 1");
         }
+    }
+}
+
+// =============================================================================
+// array1_interp2_separable_core: stencil anchoring (even and odd supports)
+// =============================================================================
+
+#[cfg(test)]
+mod separable_core_anchoring {
+    //! Tests of the convolution loop, without input mask.
+    //!
+    //! They check the anchoring rule of `array1_interp2_separable_core` for
+    //! odd and even supports, the phase handed to `compute_weights`, the exact
+    //! reproduction of polynomials in the interior, and the interior, border
+    //! and outside paths. Fixtures are test-only kernels, independent from the
+    //! production interpolators.
+    use std::cell::RefCell;
+
+    use crate::gx_array::{GxArrayView, GxArrayViewMut};
+    use crate::interp::gx_array_view_interp::{
+        support_left, BinaryOutputMask, BoundsCheck, DefaultCtx,
+        GxArrayViewInterpolationContext, GxArrayViewInterpolatorBoundsCheckStrategy,
+        GxArrayViewInterpolatorCore, NoBoundsCheck, NoInputMask,
+    };
+
+    // ------------------------------------------------------------------
+    // Fixtures
+    // ------------------------------------------------------------------
+
+    /// Puts the whole weight on the anchor tap and records every phase it
+    /// receives (row phase, then column phase).
+    struct AnchorProbe<const K: usize> {
+        phases: RefCell<Vec<f64>>,
+    }
+
+    impl<const K: usize> AnchorProbe<K> {
+        fn new() -> Self {
+            Self { phases: RefCell::new(Vec::new()) }
+        }
+    }
+
+    impl<const K: usize> GxArrayViewInterpolatorCore<K, K> for AnchorProbe<K> {
+        fn compute_weights(&self, t: f64, weights: &mut [f64]) {
+            self.phases.borrow_mut().push(t);
+            weights[..K].fill(0.0);
+            // Inverted order: tap `first + i` has weight `weights[K - 1 - i]`,
+            // the anchor is `first + support_left(K)`.
+            weights[K - 1 - support_left(K)] = 1.0;
+        }
+    }
+
+    /// 4-tap cubic Lagrange interpolation on taps `anchor - 1 ..= anchor + 2`,
+    /// phase `t` in `[0, 1)`. Reproduces cubic polynomials exactly.
+    struct Lagrange4;
+
+    impl GxArrayViewInterpolatorCore<4, 4> for Lagrange4 {
+        fn compute_weights(&self, t: f64, w: &mut [f64]) {
+            w[0] = (t + 1.0) * t * (t - 1.0) / 6.0;          // anchor + 2
+            w[1] = -(t + 1.0) * t * (t - 2.0) / 2.0;         // anchor + 1
+            w[2] = (t + 1.0) * (t - 1.0) * (t - 2.0) / 2.0;  // anchor
+            w[3] = -t * (t - 1.0) * (t - 2.0) / 6.0;         // anchor - 1
+        }
+    }
+
+    /// 2-tap linear interpolation (native support), reproduces affine data.
+    struct Linear2;
+
+    impl GxArrayViewInterpolatorCore<2, 2> for Linear2 {
+        fn compute_weights(&self, t: f64, w: &mut [f64]) {
+            w[0] = t;
+            w[1] = 1.0 - t;
+        }
+    }
+
+    fn grid(nrow: usize, ncol: usize, f: impl Fn(f64, f64) -> f64) -> Vec<f64> {
+        (0..nrow * ncol)
+            .map(|k| f((k / ncol) as f64, (k % ncol) as f64))
+            .collect()
+    }
+
+    /// Deterministic positions in `[lo, hi)`, plus integers and half-integers.
+    fn positions(lo: f64, hi: f64) -> Vec<f64> {
+        let mut v: Vec<f64> = (0..97).map(|i| lo + (hi - lo) * (i as f64 * 0.618_034).fract()).collect();
+        let mut x = lo.ceil();
+        while x < hi {
+            v.push(x);
+            if x + 0.5 < hi {
+                v.push(x + 0.5);
+            }
+            x += 1.0;
+        }
+        v
+    }
+
+    /// Interpolates one point, returns `(value, output mask)`.
+    fn interp_one<I, BC, const K: usize>(
+        interp: &I, data: &[f64], nrow: usize, ncol: usize, y: f64, x: f64, bc: BC,
+    ) -> (f64, u8)
+    where
+        I: GxArrayViewInterpolatorCore<K, K>,
+        BC: GxArrayViewInterpolatorBoundsCheckStrategy,
+    {
+        let arr_in = GxArrayView::new(data, 1, nrow, ncol);
+        let mut out = [f64::NAN; 1];
+        let mut mask = [77u8; 1];
+        {
+            let mut arr_out = GxArrayViewMut::new(&mut out, 1, 1, 1);
+            let mut mask_view = GxArrayViewMut::new(&mut mask, 1, 1, 1);
+            let mut ctx = GxArrayViewInterpolationContext::new(
+                NoInputMask, BinaryOutputMask { mask: &mut mask_view }, bc,
+            );
+            let mut buf = vec![0.0; 2 * K];
+            interp
+                .array1_interp2_separable_core(
+                    &mut buf, y, x, 0, &arr_in, &mut arr_out, -1.0, &mut ctx,
+                )
+                .unwrap();
+        }
+        (out[0], mask[0])
+    }
+
+    // ------------------------------------------------------------------
+    // Anchoring and phase
+    // ------------------------------------------------------------------
+
+    /// The output is the anchor sample and the phases are `pos - anchor`,
+    /// with `anchor = floor(pos)` for an even support and `round(pos)` for an
+    /// odd one.
+    fn check_anchoring<const K: usize>() {
+        let (nrow, ncol) = (14, 15);
+        let data = grid(nrow, ncol, |i, j| 1000.0 * i + j);
+        let margin = K as f64;
+        for &y in &positions(margin, nrow as f64 - 1.0 - margin) {
+            for &x in &positions(margin, ncol as f64 - 1.0 - margin) {
+                let probe = AnchorProbe::<K>::new();
+                let mut ctx = DefaultCtx::default();
+                let arr_in = GxArrayView::new(&data, 1, nrow, ncol);
+                let mut out = [f64::NAN; 1];
+                let mut arr_out = GxArrayViewMut::new(&mut out, 1, 1, 1);
+                let mut buf = vec![0.0; 2 * K];
+                probe
+                    .array1_interp2_separable_core(
+                        &mut buf, y, x, 0, &arr_in, &mut arr_out, -1.0, &mut ctx,
+                    )
+                    .unwrap();
+
+                // check anchor for each (y, x) positions
+                let anchor = |p: f64| if K % 2 == 0 { p.floor() } else { (p + 0.5).floor() };
+                let (ar, ac) = (anchor(y), anchor(x));
+                assert_eq!(out[0], 1000.0 * ar + ac, "K={K} ({y}, {x}): wrong anchor");
+
+                // compute_weights must be call 2 times only
+                let phases = probe.phases.borrow();
+                assert_eq!(phases.len(), 2, "K={K}: compute_weights called {} times", phases.len());
+
+                // check that the phase is contained in the theoric interval depending
+                // on K parity.
+                for (&t, (p, a)) in phases.iter().zip([(y, ar), (x, ac)]) {
+                    assert_eq!(t, p - a, "K={K} pos {p}: phase {t}");
+                    if K % 2 == 0 {
+                        assert!((0.0..1.0).contains(&t), "K={K} pos {p}: phase {t} not in [0, 1)");
+                    } else {
+                        assert!((-0.5..=0.5).contains(&t), "K={K} pos {p}: phase {t} not in [-0.5, 0.5]");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn anchoring_odd_k1() { check_anchoring::<1>(); }
+
+    #[test]
+    fn anchoring_even_k2() { check_anchoring::<2>(); }
+
+    #[test]
+    fn anchoring_odd_k3() { check_anchoring::<3>(); }
+
+    #[test]
+    fn anchoring_even_k4() { check_anchoring::<4>(); }
+
+    #[test]
+    fn anchoring_odd_k5() { check_anchoring::<5>(); }
+
+    #[test]
+    fn anchoring_even_k6() { check_anchoring::<6>(); }
+
+    // ------------------------------------------------------------------
+    // Polynomial reproduction in the interior
+    // ------------------------------------------------------------------
+    //
+    // Principle
+    //
+    // A kernel reproduces the polynomials of degree at most m if, for every
+    // such polynomial p and every target position x,
+    //
+    // sum_{k=0}^{K-1} w_k(t) * p(first + k) = p(x)
+    //
+    // where K is the support, first the first tap of the stencil, t the
+    // phase and w_k the weight of tap first + k. Linear interpolation
+    // reproduces degree 1 (affine functions). Four-point Lagrange
+    // interpolation reproduces degree 3. In two dimensions, the product of
+    // two 1D kernels reproduces every polynomial of degree at most m in i
+    // and at most m in j, cross terms such as i * j included.
+    //
+    // If the input samples a polynomial, a[i, j] = p(i, j), the value
+    // interpolated at (y, x) is therefore exactly p(y, x). The expected
+    // value is a closed formula and needs no reference implementation.
+    //
+    // We use this property here to validate the convolution loop.
+    //
+    // Example: with p(i, j) = 3i - 2j + 5, linear interpolation at
+    // (2.25, 4.5) must return 3 * 2.25 - 2 * 4.5 + 5 = 2.75.
+    //
+    // Only interior targets are used, where the whole stencil lies inside
+    // the array
+    fn cubic(i: f64, j: f64) -> f64 {
+        0.5 * i * i * i - 2.0 * i * i + i + 3.0 + 0.25 * j * j * j - j * j + 0.5 * j * i
+    }
+
+    fn affine(i: f64, j: f64) -> f64 {
+        3.0 * i - 2.0 * j + 5.0
+    }
+
+    #[test]
+    fn lagrange4_reproduces_cubic_in_interior() {
+        let (nrow, ncol) = (12, 13);
+        let data = grid(nrow, ncol, cubic);
+        // Interior for K = 4: floor(pos) - 1 >= 0 and floor(pos) + 2 <= n - 1.
+        for &y in &positions(1.0, nrow as f64 - 3.0) {
+            for &x in &positions(1.0, ncol as f64 - 3.0) {
+                let expected = cubic(y, x);
+                for (v, m) in [
+                    interp_one::<_, _, 4>(&Lagrange4, &data, nrow, ncol, y, x, BoundsCheck),
+                    interp_one::<_, _, 4>(&Lagrange4, &data, nrow, ncol, y, x, NoBoundsCheck),
+                ] {
+                    assert_eq!(m, 1, "({y}, {x}) flagged invalid");
+                    assert!((v - expected).abs() <= 1e-10 * expected.abs().max(1.0),
+                        "({y}, {x}): got {v}, expected {expected}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn linear2_reproduces_affine_in_interior() {
+        let (nrow, ncol) = (9, 10);
+        let data = grid(nrow, ncol, affine);
+        for &y in &positions(0.0, nrow as f64 - 1.0) {
+            for &x in &positions(0.0, ncol as f64 - 1.0) {
+                let expected = affine(y, x);
+                for (v, m) in [
+                    interp_one::<_, _, 2>(&Linear2, &data, nrow, ncol, y, x, BoundsCheck),
+                    interp_one::<_, _, 2>(&Linear2, &data, nrow, ncol, y, x, NoBoundsCheck),
+                ] {
+                    assert_eq!(m, 1, "({y}, {x}) flagged invalid");
+                    assert!((v - expected).abs() <= 1e-12 * expected.abs().max(1.0),
+                        "({y}, {x}): got {v}, expected {expected}");
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Interior, border and outside paths
+    // ------------------------------------------------------------------
+    //
+    // Principle
+    //
+    // For a target x, the core places a stencil of K taps starting at
+    //
+    // first = anchor - left, anchor = floor(x) (even K),
+    // left = (K - 1) / 2
+    //
+    // and the output is valid if and only if every tap with a non-zero
+    // weight lies inside the array => conservative approach to ensure
+    // the interpolation property for t = 0 (the interpolation of an 
+    // input point gives the input point)
+    //
+    // Taps with a zero weight may lie outside the array: they contribute
+    // nothing and are never read. This happens at phase t = 0 for an
+    // interpolating kernel, where only the anchor tap carries a weight.
+    
+    /// `(col, valid)` cases on one row; the row position is an interior
+    /// integer so that only the column axis decides.
+    fn check_paths<I, const K: usize>(interp: &I, cases: &[(f64, bool)], value: fn(f64, f64) -> f64)
+    where
+        I: GxArrayViewInterpolatorCore<K, K>,
+    {
+        let (nrow, ncol) = (9, 9);
+        let data = grid(nrow, ncol, value);
+        let y = 4.0;
+        for &(x, valid) in cases {
+            let (v, m) = interp_one::<_, _, K>(interp, &data, nrow, ncol, y, x, BoundsCheck);
+            if valid {
+                assert_eq!(m, 1, "K={K} x={x}: expected valid");
+                let expected = value(y, x);
+                assert!((v - expected).abs() <= 1e-10 * expected.abs().max(1.0),
+                    "K={K} x={x}: got {v}, expected {expected}");
+            } else {
+                assert_eq!((v, m), (-1.0, 0), "K={K} x={x}: expected nodata");
+            }
+        }
+    }
+
+    #[test]
+    fn paths_even_k4() {
+        // ncol = 9. Taps are floor(x) - 1 ..= floor(x) + 2.
+        check_paths::<_, 4>(&Lagrange4, &[
+            (1.0, true),    // first = 0: interior
+            (1.25, true),   // interior
+            (6.75, true),   // last interior anchor: taps 5..=8
+            (0.0, true),    // border: tap -1 has a zero weight at t = 0
+            (0.25, false),  // border: tap -1 has a non-zero weight
+            (7.0, true),    // border: tap 9 has a zero weight at t = 0
+            (7.5, false),   // border: tap 9 has a non-zero weight
+            (8.0, true),    // border: last column, taps 9 and 10 have zero weights
+            (8.5, false),   // border: taps 9 and 10 have non-zero weights
+            (-0.25, false), // outside: anchor -1
+            (9.0, false),   // outside: anchor 9
+        ], cubic);
+    }
+
+    #[test]
+    fn paths_even_k2() {
+        // ncol = 9. Taps are floor(x) ..= floor(x) + 1.
+        check_paths::<_, 2>(&Linear2, &[
+            (0.0, true),    // interior, first = 0
+            (7.5, true),    // interior, taps 7 and 8
+            (8.0, true),    // border: tap 9 has a zero weight at t = 0
+            (8.25, false),  // border: tap 9 has a non-zero weight
+            (-0.0, true),   // negative zero is the anchor 0
+            (-0.5, false),  // outside: anchor -1
+        ], affine);
     }
 }
