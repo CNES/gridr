@@ -1237,6 +1237,45 @@ mod separable_core {
         assert!(approx(out[0], 4.0), "got {}", out[0]);
     }
 
+    /// Runs `MockInterp` with `NoBoundsCheck` at `(y, x)` on a 5 x 5 array.
+    #[cfg(debug_assertions)]
+    fn run_no_bounds_check(y: f64, x: f64) {
+        let data = [1.0f64; 25];
+        let arr_in = arr(&data, 5, 5);
+        let mut out = [0.0f64; 1];
+        let mut arr_out = arr_mut(&mut out, 1, 1);
+        let interp = MockInterp;
+        let mut buf = make_buf();
+        let mut ctx = GxArrayViewInterpolationContext::new(
+            NoInputMask::default(),
+            NoOutputMask::default(),
+            NoBoundsCheck,
+        );
+        let _ = interp.array1_interp2::<f64, f64, _>(
+            &mut buf, y, x, 0, &arr_in, &mut arr_out, -1.0, &mut ctx,
+        );
+    }
+
+    /// With `NoBoundsCheck`, a stencil starting before the array breaks the
+    /// caller contract: debug builds stop on the assertion instead of
+    /// reading out of bounds.
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "NoBoundsCheck contract violated")]
+    fn no_bounds_check_contract_negative() {
+        run_no_bounds_check(2.0, -0.5);
+    }
+
+    /// The contract covers the full stencil: at `x = 4.0` the linear
+    /// stencil reads columns 4 and 5 of a 5-column array, even though 
+    /// the weight of column 5 is zero.
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "NoBoundsCheck contract violated")]
+    fn no_bounds_check_contract_last_column() {
+        run_no_bounds_check(2.0, 4.0);
+    }
+
     // ------------------------------------------------------------------
     // Multi-variable
     // ------------------------------------------------------------------

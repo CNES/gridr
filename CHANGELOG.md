@@ -73,6 +73,19 @@ Breaking Changes).
 - The stencil is anchored on `floor(x)` for an even support, on the
 nearest integer for an odd one.
 
+#### Interpolation: bounds check contract
+
+*Module: `core::interp::gx_array_view_interp`*
+
+- Without bounds check, the separable core asserts in debug builds that the full stencil
+  lies inside the input array. Release builds are unchanged.
+- The SAFETY comments state who guarantees the indices in each path.
+
+*Modules: `core.grid.grid_resampling.py`, `pyapi::py_grid_resampling`
+
+- The `check_boundaries` docstrings state the guarantee required when it is `False`, and
+  that the result is undefined otherwise.
+
 #### Testing
 
 *Module: `core::interp::gx_array_view_interp_test`*

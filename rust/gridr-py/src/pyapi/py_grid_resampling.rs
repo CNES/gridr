@@ -61,7 +61,11 @@ use super::interp::py_interp::AnyInterpolator;
 /// - `array_out_mask`: Optional bound mutable reference to output validity mask
 /// - `grid_win`: Optional window specifying region of interest in grid coordinates
 /// - `out_win`: Optional window specifying output region that will hold the resampled data
-/// - `check_boundaries`: Boolean flag to enable/disable boundary checking - to be set to false with caution !
+/// - `check_boundaries`: Enables the bounds check at each target position.
+///   With `false`, the caller guarantees that every target has its full
+///   interpolation stencil inside `array_in`. This is not checked in release
+///   builds: if it does not hold, the reads are out of bounds (undefined
+///   behaviour). Debug builds stop on the first violation.
 ///
 /// # Type Parameters
 /// - `T`: Input array element type implementing Element + Copy + PartialEq + Default + Mul<f64, Output=f64> + Into<f64>
@@ -315,7 +319,11 @@ where
 /// - `array_out_mask`: Optional bound mutable reference to output validity mask
 /// - `grid_win`: Optional window specifying region of interest in grid coordinates
 /// - `out_win`: Optional window specifying output region that will hold the resampled data
-/// - `check_boundaries`: Boolean flag to enable/disable boundary checking - to be set to false with caution !
+/// - `check_boundaries`: Enables the bounds check at each target position.
+///   With `false`, the caller guarantees that every target has its full
+///   interpolation stencil inside `array_in`. This is not checked in release
+///   builds: if it does not hold, the reads are out of bounds (undefined
+///   behaviour). Debug builds stop on the first violation.
 ///
 /// # Type Parameters
 /// - `T`: Input array element type implementing Element + Copy + PartialEq + Default + Mul<f64, Output=f64> + Into<f64>

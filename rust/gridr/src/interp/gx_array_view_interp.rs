@@ -1422,6 +1422,24 @@ pub const fn anchor_shift(k: usize) -> f64 {
     if k % 2 == 1 { 0.5 } else { 0.0 }
 }
 
+/// Tells whether the `KROWS x KCOLS` stencil starting at `(first_row,
+/// first_col)` lies entirely inside `array`.
+///
+/// This is the condition of the interior path, and the contract the caller
+/// must guarantee when bounds checking is disabled.
+/// (see array1_interp2_separable_core)
+#[inline(always)]
+fn stencil_inside<const KROWS: usize, const KCOLS: usize, T>(
+    first_row: i64,
+    first_col: i64,
+    array: &GxArrayView<'_, T>,
+) -> bool {
+    first_row >= 0
+        && first_row + KROWS as i64 <= array.nrow_i64
+        && first_col >= 0
+        && first_col + KCOLS as i64 <= array.ncol_i64
+}
+
 // =============================================================================
 // Internal interpolator trait
 // =============================================================================
@@ -2010,9 +2028,10 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         let mut in_shift  = 0usize;
         let mut out_shift = 0usize;
 
-        // SAFETY: the interior path guarantees that
-        // row_start..row_start+KROWS and col_start..col_start+KCOLS
-        // are within array bounds for all variable planes.
+        // SAFETY: the caller (interior path, or NoBoundsCheck contract)
+        // guarantees that row_start..row_start+KROWS and
+        // col_start..col_start+KCOLS are within array bounds for all
+        // variable planes.
         for _ivar in 0..array_in.nvar {
             let mut acc = 0.0f64;
             for irow in 0..KROWS {
@@ -2166,9 +2185,9 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
                     flat_base, row_start, col_start, weights_row, weights_col,
                 ) == 1)
         {
-            // SAFETY: the interior path guarantees all stencil indices
-            // are within bounds. Weights buffer has at least KROWS and
-            // KCOLS elements respectively.
+            // SAFETY: the caller (interior path, or NoBoundsCheck contract)
+            // guarantees all stencil indices are within bounds. Weights buffer has at 
+            // least KROWS and KCOLS elements respectively.
             let mut out_shift = 0usize;
             for ivar in 0..array_in.nvar {
                 let ain_base = flat_base + ivar * in_var_sz;
@@ -2352,6 +2371,9 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
     ///    - **Outside path** - the anchor is outside the array: writes `nodata
     ///      and sets the output mask to `0`.
     /// 3. If bounds checking is disabled: always calls `interpolate_*_unchecked`.
+    ///    The caller guarantees that the full stencil lies inside the array;
+    ///    otherwise the reads are out of bounds (undefined behaviour). The
+    ///    contract is asserted in debug builds only.
     ///
     /// The mask branch (`interpolate_masked_*` vs `interpolate_nomask_*`) is
     /// selected at compile time via `context.input_mask().is_enabled()`.
@@ -2416,10 +2438,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         if IC::BoundsCheck::do_check() {
             // Interior path: the full stencil fits strictly inside the array.
             // No per-element bounds checking is needed inside the inner loops.
-            if (first_row >= 0)
-                    && (first_row + KROWS as i64 <= array_in.nrow_i64)
-                    && (first_col >= 0)
-                    && (first_col + KCOLS as i64 <= array_in.ncol_i64) {
+            if stencil_inside::<KROWS, KCOLS, T>(first_row, first_col, array_in) {
                 let rel_row: f64 = target_row_pos - anchor_row as f64;
                 let rel_col: f64 = target_col_pos - anchor_col as f64;
                 
@@ -2430,7 +2449,8 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
                 self.compute_weights(rel_col, w_col);
 
                 if context.input_mask().is_enabled() {
-                    // SAFETY : check has been performed in the previous if test
+                    // SAFETY: the interior test above guarantees that the full
+                    // stencil lies inside the array.
                     unsafe {
                         self.interpolate_masked_unchecked_unsafe(
                             w_row, w_col,
@@ -2440,7 +2460,8 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
                         );
                     }
                 } else {
-                    // SAFETY : check has been performed in the previous if test
+                    // SAFETY: the interior test above guarantees that the full
+                    // stencil lies inside the array.
                     unsafe {
                         self.interpolate_nomask_unchecked_unsafe(
                             w_row, w_col,
@@ -2467,7 +2488,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
                 self.compute_weights(rel_col, w_col);
 
                 if context.input_mask().is_enabled() {
-                    // SAFETY : check has been performed in the previous if test
+                    // SAFETY: the anchor is inside the array (test above).
                     // The partial variant ensures that out of bounds position
                     // are not used by checking the kernel weights
                     unsafe {
@@ -2479,7 +2500,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
                         );
                     }
                 } else {
-                    // SAFETY : check has been performed in the previous if test
+                    // SAFETY: the anchor is inside the array (test above).
                     // The partial variant ensures that out of bounds position
                     // are not used by checking the kernel weights
                     unsafe {
@@ -2500,7 +2521,17 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
                 );
             }
         } else {
-            // No bounds check: the caller guarantees all indices are valid.
+            // No bounds check: the caller guarantees that the full stencil
+            // lies inside the array. The contract is only verified in debug
+            // builds, to locate a caller that breaks it.
+            debug_assert!(
+                stencil_inside::<KROWS, KCOLS, T>(first_row, first_col, array_in),
+                "NoBoundsCheck contract violated: target ({target_row_pos}, \
+                 {target_col_pos}) needs rows [{first_row}, {}) and columns \
+                 [{first_col}, {}) of a {} x {} array",
+                first_row + KROWS as i64, first_col + KCOLS as i64,
+                array_in.nrow, array_in.ncol,
+            );
             let rel_row: f64 = target_row_pos - anchor_row as f64;
             let rel_col: f64 = target_col_pos - anchor_col as f64;
             
@@ -2510,7 +2541,9 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
 
             if context.input_mask().is_enabled() {
                 unsafe {
-                    // SAFETY : check has been performed in the previous if test
+                    // SAFETY: the caller guarantees that the full stencil lies
+                    // inside the array (NoBoundsCheck contract, asserted above
+                    // in debug builds).
                     self.interpolate_masked_unchecked_unsafe(
                         w_row, w_col,
                         array_in, array_out, out_idx,
@@ -2520,7 +2553,9 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
                 }
             } else {
                 unsafe {
-                    // SAFETY : check has been performed in the previous if test
+                    // SAFETY: the caller guarantees that the full stencil lies
+                    // inside the array (NoBoundsCheck contract, asserted above
+                    // in debug builds).
                     self.interpolate_nomask_unchecked_unsafe(
                         w_row, w_col,
                         array_in, array_out, out_idx,

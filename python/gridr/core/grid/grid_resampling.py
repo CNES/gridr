@@ -1586,11 +1586,16 @@ def array_grid_resampling(
         is assumed to be valid.
 
     check_boundaries : bool, default True
-        Force a check at each iteration to ensure that the required data to
-        perform interpolation is available in the source data.
-        This parameter adresses the core Rust function and can be set to False
-        for performance gain if you are sure that all the required data is
-        available.
+        Check at each target position that the data required by the
+        interpolation is available in the source array. Targets whose
+        interpolation stencil crosses the array border are handled, and
+        targets outside the array give nodata.
+        Set to ``False`` only for performance, when every target is known to
+        have its full interpolation stencil inside the source array (see
+        the interpolator ``total_margins``). This is not checked: if it does
+        not hold, the result is undefined (wrong values or a crash). Debug
+        builds of the Rust library stop on the first violation.
+        This parameter adresses the core Rust function
 
     interp_kwargs : Optional[dict], default=None
         Optional keyword parameters that will be passed to the `get_interpolator`
