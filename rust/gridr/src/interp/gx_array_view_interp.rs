@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
+// Copyright (c) 2024-2026 Centre National d'Etudes Spatiales (CNES).
 //
 // This file is part of GRIDR
 // (see https://github.com/CNES/gridr).
@@ -22,13 +22,13 @@
 //!
 //! This module draws a deliberate line between two concerns:
 //!
-//! * **Public API** — [`GxArrayViewInterpolator`] is the single stable
+//! * **Public API** - [`GxArrayViewInterpolator`] is the single stable
 //!   interface that all concrete interpolators expose to callers.  It contains
 //!   only the methods that external code needs: construction, metadata
 //!   (`shortname`, `kernel_row_size`, `total_margins`, …), buffer allocation,
 //!   and the top-level dispatch method `array1_interp2`.
 //!
-//! * **Internal computation** — [`GxArrayViewInterpolatorCore`] is an
+//! * **Internal computation** - [`GxArrayViewInterpolatorCore`] is an
 //!   *implementation-only* trait, not part of the public API contract.  It
 //!   provides the four separable kernel-convolution variants
 //!   (`interpolate_nomask_unchecked`, `interpolate_nomask_partial`,
@@ -92,24 +92,25 @@
 //!  │ <KROWS, KCOLS>              │   │  implement GxArrayViewInterp-   │
 //!  │                             │   │  olator directly)               │
 //!  │ INTERNAL TRAIT              │   └─────────────────────────────────┘
-//!  │ compute_weights()           │ ← only method to implement
-//!  │ interpolate_nomask_*        │ ← default implementations
+//!  │ compute_weights()           │ <- only method to implement
+//!  │ interpolate_nomask_*        │ <- default implementations
 //!  │ interpolate_masked_*        │
 //!  │ array1_interp2_             │
 //!  │   separable_core()          │
 //!  └─────────────────────────────┘
 //!              ▲
-//!              │ impl GxArrayViewInterpolatorCore<5,5>
-//!              │
-//!  ┌────────────────────────────────┐
-//!  │ GxOptimizedBicubicInterpolator │
-//!  │ GxBSplineInterpolator<N>       │
-//!  └────────────────────────────────┘
+//!              │ impl GxArrayViewInterpolatorCore<K,K>
+//!              │ (K = native support of the kernel)
+//!  ┌───────────────────────────────────────────┐
+//!  │ GxLinearInterpolator            K = 2     │
+//!  │ GxOptimizedBicubicInterpolator  K = 4     │
+//!  │ GxBSplineInterpolator<N>        K = N + 1 │
+//!  └───────────────────────────────────────────┘
 //! ```
 //!
 //! # Design notes
 //!
-//! * **Zero-cost abstractions** — `do_check()` and `is_enabled()` return
+//! * **Zero-cost abstractions** - `do_check()` and `is_enabled()` return
 //!   compile-time constants that LLVM folds away; the resulting machine code
 //!   contains only the branch taken for the instantiated strategy type.
 use std::marker::PhantomData;
@@ -1239,9 +1240,11 @@ impl GxArrayViewInterpolatorArgs for GxArrayViewInterpolatorNoArgs {
 /// `[nvar, nrow, ncol]` and writes the result to a matching output array.
 ///
 /// # Coordinate Convention
-/// The interpolation is performed at a discrete center coordinate `(row_c, 
-/// col_c)`, which defines the origin of a local neighborhood used for 
-/// interpolation.
+/// Target positions are expressed in the index space of the input array:
+/// the centre of pixel `(i, j)` is at `(i, j)`.
+/// Separable interpolators built on [`GxArrayViewInterpolatorCore`] anchor
+/// their stencil on the nearest integer (odd support) or on the floor 
+/// (even support) of the target position, see [`support_left`] and [`anchor_shift`].
 ///
 /// # Data layout
 ///
@@ -1258,9 +1261,9 @@ impl GxArrayViewInterpolatorArgs for GxArrayViewInterpolatorNoArgs {
 /// The generic `context` argument of [`array1_interp2`](Self::array1_interp2)
 /// encapsulates three orthogonal behaviours:
 ///
-/// - **Input mask** — whether a given input sample is valid.
-/// - **Output mask** — whether to record which output pixels were written.
-/// - **Bounds check** — whether to verify that the interpolation stencil lies
+/// - **Input mask** - whether a given input sample is valid.
+/// - **Output mask** - whether to record which output pixels were written.
+/// - **Bounds check** - whether to verify that the interpolation stencil lies
 ///   fully within the input array.
 ///
 /// # Thread safety
@@ -1316,9 +1319,9 @@ pub trait GxArrayViewInterpolator: Send + Sync {
     /// - `Err(String)` with an error message on failure.
     ///
     /// # Type parameters
-    /// - `T`: input element type — must be `Copy + PartialEq + Into<f64>`
+    /// - `T`: input element type - must be `Copy + PartialEq + Into<f64>`
     ///   and support `Mul<f64, Output = f64>`.
-    /// - `V`: output element type — must be `Copy + PartialEq + From<f64>`.
+    /// - `V`: output element type - must be `Copy + PartialEq + From<f64>`.
     /// - `IC`: context type implementing
     ///   [`GxArrayViewInterpolationContextTrait`].
     fn array1_interp2<T, V, IC> (
@@ -1362,7 +1365,7 @@ pub trait GxArrayViewInterpolator: Send + Sync {
 /// mask to `0`.
 ///
 /// This function is called in every branch where interpolation cannot be
-/// performed (out-of-bounds centre, masked input pixel, etc.) to guarantee
+/// performed (anchor outside the array, masked input pixel, etc.) to guarantee
 /// that the output is always initialised.
 ///
 /// # Parameters
@@ -1456,8 +1459,8 @@ pub const fn anchor_shift(k: usize) -> f64 {
 ///
 /// | Parameter | Meaning                       | Bicubic example |
 /// |-----------|-------------------------------|-----------------|
-/// | `KROWS`   | Kernel height in rows         | `5`             |
-/// | `KCOLS`   | Kernel width in columns       | `5`             |
+/// | `KROWS`   | Kernel height in rows         | `4`             |
+/// | `KCOLS`   | Kernel width in columns       | `4`             |
 ///
 /// # Provided methods
 ///
@@ -1473,10 +1476,11 @@ pub const fn anchor_shift(k: usize) -> f64 {
 ///
 /// ```ignore
 /// // Only `compute_weights` is required; all other methods are inherited.
-/// impl GxArrayViewInterpolatorCore<5, 5> for MyInterpolator {
-///     fn compute_weights(&self, x: f64, weights: &mut [f64]) {
-///         my_kernel_weights(x, weights);
-///     }
+/// impl GxArrayViewInterpolatorCore<4, 4> for MyInterpolator {
+///     // Even support: phase `t` in [0, 1), taps anchor - 1 ..= anchor + 2.
+///     fn compute_weights(&self, t: f64, weights: &mut [f64]) {
+///         my_kernel_weights(t, weights);
+//     }
 /// }
 /// ```
 ///
@@ -1505,9 +1509,9 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
 
     /// Separable 2D convolution with no input mask and no bounds checking.
     ///
-    /// Computes the interpolated value at `(row_c, col_c)` using a
-    /// `KROWS × KCOLS` separable stencil and writes it to `array_out` at
-    /// `out_idx` for every variable plane.
+    /// Computes the interpolated value for the stencil whose first tap is
+    /// `(row_first, col_first)`, using a `KROWS × KCOLS` separable stencil 
+    /// and writes it to `array_out` at `out_idx` for every variable plane.
     ///
     /// # Parameters
     /// - `weights_row`: row-direction kernel weights, length `KROWS`.
@@ -1973,7 +1977,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
     }
     
 // =============================================================================
-// Interpolation variants — unsafe implementations
+// Interpolation variants - unsafe implementations
 // =============================================================================
 
     // =========================================================================
@@ -2083,7 +2087,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
             }
         }
 
-        // Convolution — positions validated above.
+        // Convolution - positions validated above.
         let mut in_shift  = 0usize;
         let mut out_shift = 0usize;
 
@@ -2259,7 +2263,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
             }
         }
 
-        // Convolution — bounds and mask guaranteed by pre-pass.
+        // Convolution - bounds and mask guaranteed by pre-pass.
         let mut in_shift  = 0usize;
         let mut out_shift = 0usize;
 
@@ -2299,18 +2303,35 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
     // compute_weights  (required)
     // =========================================================================
 
-    /// Computes the `KROWS` (or `KCOLS`) kernel weights for the given
-    /// sub-pixel offset `x` and writes them into `weights`.
+    /// Computes the `KROWS` (or `KCOLS`) kernel weights for the phase `t`
+    /// and writes them into `weights`.
     ///
-    /// This method is called twice per pixel — once for the row direction and
-    /// once for the column direction — by
+    /// This method is called twice per pixel, once for the row direction and
+    /// once for the column direction, by
     /// [`array1_interp2_separable_core`](Self::array1_interp2_separable_core).
     ///
+    /// # Stencil and phase
+    /// For a support of `K` taps, the stencil spans `[first, first + K)` with
+    /// `first = anchor - support_left(K)`. The anchor is the nearest integer
+    /// of the target position for an odd `K` and its floor for an even `K`.
+    /// The phase is `t = pos - anchor`, in `[-0.5, 0.5]` for an odd `K` and
+    /// in `[0, 1)` for an even `K`.
+    ///
+    /// Weights are stored in inverted order: `weights[i]` is the weight of
+    /// the tap `first + K - 1 - i`.
+    ///
+    /// # Contract
+    /// - The anchor tap has a non-zero weight for every phase: the core
+    ///   rejects an anchor outside the array without computing the weights.
+    /// - A weight is an exact zero only where the continuous kernel is zero:
+    ///   samples with a zero weight are ignored by the mask validation and
+    ///   by the bounds check of the border path.
+    ///
     /// # Parameters
-    /// - `x`: sub-pixel offset
+    /// - `t`: phase of the target position relative to the anchor.
     /// - `weights`: output slice of length `KROWS` (or `KCOLS`); the
     ///   implementor writes one weight per stencil position.
-    fn compute_weights(&self, x: f64, weights: &mut [f64]);
+    fn compute_weights(&self, t: f64, weights: &mut [f64]);
     
     // =========================================================================
     // array1_interp2_separable_core
@@ -2321,14 +2342,14 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
     ///
     /// This method implements the full interpolation pipeline:
     ///
-    /// 1. Computes the nearest integer centre `(kernel_center_row,
-    ///    kernel_center_col)` from the target position.
+    /// 1. Computes the stencil anchor and its first tap from the target
+    ///    position (see [`compute_weights`](Self::compute_weights)).
     /// 2. If bounds checking is enabled (`IC::BoundsCheck::do_check()`):
-    ///    - **Interior path** — the entire `KROWS × KCOLS` stencil fits inside
+    ///    - **Interior path** - the entire `KROWS × KCOLS` stencil fits inside
     ///      the array: calls `interpolate_*_unchecked`.
-    ///    - **Border path** — the centre is inside the array but the stencil
+    ///    - **Border path** - the anchor is inside the array but the stencil
     ///      may cross a border: calls `interpolate_*_partial`.
-    ///    - **Outside path** — the centre is outside the array: writes `nodata`
+    ///    - **Outside path** - the anchor is outside the array: writes `nodata
     ///      and sets the output mask to `0`.
     /// 3. If bounds checking is disabled: always calls `interpolate_*_unchecked`.
     ///
@@ -2472,7 +2493,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
                     }
                 }
             } else {
-                // Outside path: the centre is entirely outside the array.
+                // Outside path: the anchor is outside the array.
                 write_nodata_all_vars(
                     array_out, out_idx, nodata_out,
                     context.output_mask(), array_in.nvar, out_var_sz,

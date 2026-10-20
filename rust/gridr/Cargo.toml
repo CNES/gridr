@@ -3,7 +3,7 @@
 name = "gridr"
 # Own version line, independent from gridr-py and from the `gridr` Python
 # package on PyPI (see rust/Cargo.toml).
-version = "0.7.0"
+version = "0.8.0-dev"
 edition.workspace = true
 license.workspace = true
 repository = "https://github.com/CNES/gridr"

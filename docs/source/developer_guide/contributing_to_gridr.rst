@@ -337,3 +337,22 @@ To launch tests:
 .. code-block:: console
 
     make test
+
+Rust tests
+----------
+
+**Unit tests**
+~~~~~~~~~~~~~~
+Unit tests live in their module (`#[cfg(test)] mod tests`) or in a sibling `*_test.rs` 
+file of the same module. The may use crate internals.
+Shared helpers for unit tests are `#[cfg(test)]` modules under `rust/gridr/src/`.
+
+**Integration tests**
+~~~~~~~~~~~~~~~~~~~~~
+Integration tests live in `rust/gridr/tests/`. Each file is compiled as a separate crate
+and only sees the public API.
+Helpers shared by several integration tests go in `rust/gridr/tests/common/mod.rs`
+
+**Benchmarks**
+~~~~~~~~~~~~~~
+Benchmarks live in `rust/gridr/benches`.

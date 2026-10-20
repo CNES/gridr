@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
+// Copyright (c) 2024-2026 Centre National d'Etudes Spatiales (CNES).
 //
 // This file is part of GRIDR
 // (see https://github.com/CNES/gridr).
@@ -26,283 +26,137 @@ use super::gx_array_view_interp::{
     GxArrayViewInterpolationContextTrait,
 };
 
-#[inline(always)]
-fn optimized_bicubic_kernel_weights_compute_func1(x: f64) -> f64 {
-    x * x * (1.5 * x - 2.5) + 1.0
-}
-
-#[inline(always)]
-fn optimized_bicubic_kernel_weights_compute_func2(x: f64) -> f64 {
-    x * (x * (-0.5 * x + 2.5) - 4.0) + 2.0
-}
-
-/// Computes the optimized bicubic interpolation kernel weights for a given position.
-/// 
-/// This function fills a mutable slice with the computed weights based on the input 
-/// coordinate `x`. The weights are used in bicubic interpolation and follow a specific 
-/// formula depending on the value of `x`.
-///
-/// # Mathematical Formula
-///
-/// The general interpolation kernel is defined as:
-///
-/// ```latex
-/// W(x) =
-/// \begin{cases} 
-///     (a+2)|x|^3 - (a+3)|x|^2 + 1, & \text{if } |x| \leq 1 \\
-///     a|x|^3 - 5a|x|^2 + 8a|x| - 4a, & \text{if } 1 < |x| < 2 \\
-///     0, & \text{otherwise}
-/// \end{cases}
-/// ```
-///
-/// where `a` is typically set to -0.5 or -0.75.  
-/// Notably, `W(0) = 1` and `W(n) = 0` for all nonzero integer values of `n`.
-///
-/// Here we set `a` to -0.5.
-/// 
-/// # Parameters
-/// 
-/// - `x`: The relative coordinate for which the kernel weights should be computed.
-/// - `weights`: A mutable slice of length 5 where the computed weights will be stored.
-/// 
-/// # Panics
-/// 
-/// This function will panic if `weights` does not have a length of at least 5.
-/// 
-/// # Example
-/// 
-/// ```rust
-/// use gridr::interp::gx_optimized_bicubic_kernel::optimized_bicubic_kernel_weights;
-///
-/// let mut weights = [0.0; 5];
-/// optimized_bicubic_kernel_weights(0.3, &mut weights);
-/// // Weights sum to 1 (partition of unity), as expected for an interpolation kernel.
-/// assert!((weights.iter().sum::<f64>() - 1.0).abs() < 1e-9);
-/// ```
-#[inline]
-pub fn optimized_bicubic_kernel_weights(x: f64, weights: &mut [f64])
-{
-    if x < 0.0 && x > -1.0 {
-        weights[0] = 0.0;
-        // - instead of abs because we know x is negative
-        weights[1] = optimized_bicubic_kernel_weights_compute_func2(-x + 1.0);
-        weights[2] = optimized_bicubic_kernel_weights_compute_func1(-x);
-        weights[3] = optimized_bicubic_kernel_weights_compute_func1(x + 1.0);
-        weights[4] = optimized_bicubic_kernel_weights_compute_func2(x + 2.0);
-        //weights[4] = 1. - weights[1] + weights[2] + weights[3];
-    } else if x > 0.0 && x < 1.0 {
-        // - instead of abs because we know x is positive
-        weights[0] = optimized_bicubic_kernel_weights_compute_func2(-x + 2.0);
-        weights[1] = optimized_bicubic_kernel_weights_compute_func1(-x + 1.0);
-        weights[2] = optimized_bicubic_kernel_weights_compute_func1(x);
-        weights[3] = optimized_bicubic_kernel_weights_compute_func2(x + 1.0);
-        weights[4] = 0.0;
-        //weights[3] = 1. - weights[1] + weights[2] + weights[0];
-    } else if x == 0.0 {
-        // Center pixel: interpolation is identity
-        weights[0] = 0.0;
-        weights[1] = 0.0;
-        weights[2] = 1.0;
-        weights[3] = 0.0;
-        weights[4] = 0.0;
-    } else {
-        // Default formula
-        for k in 0..=4 {
-            weights[k] = 0.0;
-            let xx = (x + k as f64 - 2.).abs();
-            if xx < 1.0 {
-                weights[k] = optimized_bicubic_kernel_weights_compute_func1(xx);
-            } else if xx < 2.0 {
-                weights[k] = optimized_bicubic_kernel_weights_compute_func2(xx);
-            } else {
-                weights[k] = 0.0;
-            }
-        }
-    }
-}
-
-/// Calculates four cubic interpolation weights with factorisation of computation
-/// between the weights.
-///
-/// These weights are derived from the evaluation of two distinct cubic 
-/// polynomials, implemented in `optimized_bicubic_kernel_weights_compute_func1` and
-/// `optimized_bicubic_kernel_weights_compute_func2`
-/// at specific points that depend on `y`.
-///
-/// The base polynomials are defined as follows:
-/// - $P_1(x) = x \cdot x \cdot (1.5 \cdot x - 2.5) + 1.0$
-///   Expanded form: $P_1(x) = 1.5x^3 - 2.5x^2 + 1.0$
-///
-/// - $P_2(x) = x \cdot (x \cdot (-0.5 \cdot x + 2.5) - 4.0) + 2.0$
-///   Expanded form: $P_2(x) = -0.5x^3 + 2.5x^2 - 4.0x + 2.0$
-///
-/// # Case x is positive
-///
-/// The weights to be calculated are assigned to the specified indices as follows:
-/// - `w0 = P_2(2 - y)`
-/// - `w1 = P_1(1 - y)`
-/// - `w2 = P_1(y)`
-/// - `w3 = P_2(y + 1)`
-///
-/// After substitution of `x` and algebraic simplification, the expressions for 
-/// the weights in terms of `y` are:
-///
-/// $$
-/// w_0 = 0.5y^3 - 0.5y^2 \\
-/// w_1 = -1.5y^3 + 2.0y^2 + 0.5y \\
-/// w_2 = 1.5y^3 - 2.5y^2 + 1.0 \\
-/// w_3 = -0.5y^3 + 1.0y^2 - 0.5y \\
-/// w_4 = 0
-/// $$
-///
-/// 
-/// # Case x is negative
-///
-/// The weights to be calculated are assigned to the specified indices as follows:
-/// - `w1 = P_2(1 - y)`
-/// - `w2 = P_1(-y)`
-/// - `w3 = P_1(y + 1)`
-/// - `w4 = P_2(y + 2)`
-///
-/// After substitution of `x` and algebraic simplification, the expressions for 
-/// the weights in terms of `y` are:
-///
-/// $$
-/// w_0 = 0 \\
-/// w_1 = 0.5y^3 + 1.0y^2 + 0.5y \\
-/// w_2 = -1.5y^3 - 2.5y^2 + 1.0 \\
-/// w_3 = 1.5y^3 + 2.0y^2 - 0.5y \\
-/// w_4 = -0.5y^3 - 0.5y^2
-/// $$
-///
-/// # Optimization Strategy (Factorization)
-///
-/// To minimize computational cost, the calculation is optimized by:
-/// 1.  Calculating powers of `y` ($y^2$ and $y^3$) only once.
-/// 2.  Pre-calculating common scaled terms (e.g., $0.5y$, $1.5y^3$, etc.)
-///     that are reused across multiple weight expressions.
-/// 3.  Assembling the final weight results from these pre-calculated terms.
-///
-/// # Cost Analysis
-///
-/// Compared to a naive evaluation of each polynomial independently, this optimized 
-/// method achieves:
-/// - **8 Multiplications** (vs. 12 naive)
-/// - **7 Additions/Subtractions** (vs. 10 naive)
-/// - (2 Negations)
-///
-/// # Arguments
-///
-/// - `y`: The relative coordinate for which the kernel weights should be computed.
-/// - `weights`: A mutable slice of length 5 where the computed weights will be stored.
-#[inline]
-pub fn optimized_bicubic_kernel_weights_opt(y: f64, weights: &mut [f64])
-{
-    if y < 0.0 && y > -1.0 {
-        // Calculate powers of y
-        let y2 = y * y;
-        let y3 = y2 * y;
-
-        // Calculate common scaled terms
-        let y_times_0_5 = 0.5 * y;
-        let y2_times_0_5 = 0.5 * y2;
-        let y3_times_0_5 = 0.5 * y3;
-
-        let y3_times_1_5 = 1.5 * y3;
-        let y2_times_2_0 = 2.0 * y2;
-        let y2_times_2_5 = 2.5 * y2;
-
-        // Assemble the final weight values
-        weights[0] = 0.0;
-        // w1 = 0.5y^3 + 1.0y^2 + 0.5y
-        weights[1] = y3_times_0_5 + y2 + y_times_0_5;
-        // w2 = -1.5y^3 - 2.5y^2 + 1.0
-        weights[2] = -y3_times_1_5 - y2_times_2_5 + 1.0;
-        // w3 = 1.5y^3 + 2.0y^2 - 0.5y
-        weights[3] = y3_times_1_5 + y2_times_2_0 - y_times_0_5;
-        // w4 = -0.5y^3 - 0.5y^2
-        weights[4] = -y3_times_0_5 - y2_times_0_5;
-        
-    } else if y > 0.0 && y < 1.0 {
-        // Calculate powers of y
-        let y2 = y * y;
-        let y3 = y2 * y;
-
-        // Calculate common scaled terms
-        let y_times_0_5 = 0.5 * y;
-        let y2_times_0_5 = 0.5 * y2;
-        let y3_times_0_5 = 0.5 * y3;
-
-        let y3_times_1_5 = 1.5 * y3;
-        let y2_times_2_0 = 2.0 * y2;
-        let y2_times_2_5 = 2.5 * y2;
-
-        // Assemble the final weight values
-        // w0 = 0.5y^3 - 0.5y^2
-        weights[0] = y3_times_0_5 - y2_times_0_5;
-        // w1 = -1.5y^3 + 2.0y^2 + 0.5y
-        weights[1] = -y3_times_1_5 + y2_times_2_0 + y_times_0_5;
-        // w2 = 1.5y^3 - 2.5y^2 + 1.0
-        weights[2] = y3_times_1_5 - y2_times_2_5 + 1.0;
-        // w3 = -0.5y^3 + 1.0y^2 - 0.5y
-        weights[3] = -y3_times_0_5 + y2 - y_times_0_5;
-        weights[4] = 0.0;
-        
-    } else if y == 0.0 {
-        // Center pixel: interpolation is identity
-        weights[0] = 0.0;
-        weights[1] = 0.0;
-        weights[2] = 1.0;
-        weights[3] = 0.0;
-        weights[4] = 0.0;
-    } else {
-        // Default formula - fallback => should not pass here so no effort to 
-        // optimize it.
-        for k in 0..=4 {
-            weights[k] = 0.0;
-            let yy = (y + k as f64 - 2.).abs();
-            if yy < 1.0 {
-                weights[k] = optimized_bicubic_kernel_weights_compute_func1(yy);
-            } else if yy < 2.0 {
-                weights[k] = optimized_bicubic_kernel_weights_compute_func2(yy);
-            } else {
-                weights[k] = 0.0;
-            }
-        }
-    }
-}
-
 /// Optimized bicubic interpolator implementation.
 /// 
 /// This structure implements the `GxArrayViewInterpolator` trait for the
 /// optimized bicubic interpolation operations.
 #[derive(Clone, Debug)]
 pub struct GxOptimizedBicubicInterpolator {
-    /// The size of the kernel alongs the rows - it is set to 5 in the
+    /// The size of the kernel alongs the rows - it is set to 4 in the
     /// implemented new() method.
     kernel_row_size: usize,
-    /// The size of the kernel alongs the columns - it is set to 5 in the
+    /// The size of the kernel alongs the columns - it is set to 4 in the
     /// implemented new() method.
     kernel_col_size: usize,
 }
 
 // Use generic implementation from GxArrayViewInterpolatorCore for
-// KROWS = 5, NCOLS = 5
-impl GxArrayViewInterpolatorCore<5, 5> for GxOptimizedBicubicInterpolator {
-        
+// KROWS = 4, NCOLS = 4
+impl GxArrayViewInterpolatorCore<4, 4> for GxOptimizedBicubicInterpolator {
     #[inline(always)]
-    fn compute_weights(&self, x: f64, weights: &mut [f64])
+    fn compute_weights(&self, t: f64, weights: &mut [f64])
     {
-        optimized_bicubic_kernel_weights_opt(x, weights)
+        bicubic_kernel_weights_native(t, weights)
     }
+}
+
+/// Computes the Keys cubic convolution weights on the native 4-tap support.
+///
+/// # Continuous kernel
+///
+/// The cubic convolution kernel is defined on the distance `x` between the
+/// target position and a sample:
+///
+/// ```latex
+/// W(x) =
+/// \begin{cases}
+/// (a+2)|x|^3 - (a+3)|x|^2 + 1, & \text{if } |x| \leq 1 \\
+/// a|x|^3 - 5a|x|^2 + 8a|x| - 4a, & \text{if } 1 < |x| < 2 \\
+/// 0, & \text{otherwise}
+/// \end{cases}
+/// ```
+///
+/// with `a = -0.5`. Both pieces factor as
+///
+/// ```latex
+/// W(x) = (|x| - 1)(1.5|x|^2 - |x| - 1) \quad |x| \leq 1 \\
+/// W(x) = -0.5 (|x| - 1)(|x| - 2)^2 \quad 1 < |x| < 2
+/// ```
+///
+/// # Stencil and phase
+///
+/// The support has 4 taps. The stencil is anchored on `floor(x)`; the phase
+/// `t = x - floor(x)` lies in `[0, 1)` and `s = 1 - t`. The four taps sit
+/// at the following distances from the target:
+///
+/// ```text
+/// tap distance piece
+/// anchor - 1 1 + t 1 < |x| < 2
+/// anchor t |x| <= 1
+/// anchor + 1 s |x| <= 1
+/// anchor + 2 1 + s 1 < |x| < 2
+/// ```
+///
+/// Substituting these distances in the factored pieces gives the weights
+/// (in inverted order):
+///
+/// ```text
+/// weights[0]  tap anchor + 2  distance 1 + s   -0.5 t^2 s
+/// weights[1]  tap anchor + 1  distance s       -t (1.5 s^2 - s - 1)
+/// weights[2]  tap anchor      distance t       -s (1.5 t^2 - t - 1)
+/// weights[3]  tap anchor - 1  distance 1 + t   -0.5 t s^2
+/// ```
+///
+/// Substituting again with u = t * s and h = -0.5 * u, we get:
+///
+/// ```text
+/// weights[0]  tap anchor + 2  distance 1 + s   h t
+/// weights[1]  tap anchor + 1  distance s       t + u (1 - 1.5 s)
+/// weights[2]  tap anchor      distance t       s + u (1 - 1.5 t)
+/// weights[3]  tap anchor - 1  distance 1 + t   h s
+
+/// The weights sum to one for every `t`.
+///
+///
+/// # Numerical properties
+///
+/// Every weight that vanishes at an end of `[0, 1)` carries the factor that
+/// vanishes there (`t`, `s` or `u`). The weights are therefore exact zeros
+/// at `t = 0` (`[0, 0, 1, 0]`), and stay accurate and non-zero for `t` in
+/// `(0, 1)`, including next to `t = 1`. This matters for the mask and
+/// bounds validation, which ignores exactly-zero weights only.
+///
+/// # Cost
+///
+/// 8 multiplications and 5 additions, no branch.
+///
+///
+/// # Parameters
+///
+/// - `t`: phase in `[0, 1)`.
+/// - `weights`: output slice of length at least 4.
+///
+/// # Example
+///
+/// ```
+/// use gridr::interp::gx_optimized_bicubic_kernel::bicubic_kernel_weights_native;
+///
+/// let mut weights = [0.0; 4];
+/// bicubic_kernel_weights_native(0.3, &mut weights);
+/// assert!((weights.iter().sum::<f64>() - 1.0).abs() < 1e-15);
+///
+/// bicubic_kernel_weights_native(0.0, &mut weights);
+/// assert_eq!(weights, [0.0, 0.0, 1.0, 0.0]);
+/// ```
+#[inline(always)]
+pub fn bicubic_kernel_weights_native(t: f64, weights: &mut [f64])
+{
+    debug_assert!((0.0..1.0).contains(&t), "phase out of [0, 1): {t}");   
+    let s = 1.0 - t;
+    let u = t * s;
+    let h = -0.5 * u;
+    weights[0] = h * t;
+    weights[1] = t + u * (1.0 - 1.5 * s);
+    weights[2] = s + u * (1.0 - 1.5 * t);
+    weights[3] = h * s;
 }
 
 impl GxArrayViewInterpolator for GxOptimizedBicubicInterpolator
 {
     fn new(_args: &dyn GxArrayViewInterpolatorArgs) -> Self {
         Self {
-            kernel_row_size: 5,
-            kernel_col_size: 5,
+            kernel_row_size: 4,
+            kernel_col_size: 4,
         }
     }
     
@@ -368,94 +222,46 @@ mod gx_optimized_bicubic_kernel_tests {
         GxArrayViewInterpolatorNoArgs,
         DefaultCtx
     };
-    
-    /// Checks if two slices of f64 values are approximately equal within a given tolerance.
-    ///
-    /// # Arguments
-    /// * `a` - First slice of f64 values.
-    /// * `b` - Second slice of f64 values.
-    /// * `tol` - The allowed tolerance for differences.
-    ///
-    /// # Returns
-    /// * `true` if all corresponding elements of `a` and `b` differ by at most `tol`, otherwise `false`.
-    fn approx_eq(a: &[f64], b: &[f64], tol: f64) -> bool {
-        a.iter()
-            .zip(b.iter())
-            .all(|(x, y)| (*x - *y).abs() <= tol)
+       
+    /// Native weights against the continuous kernel.
+    #[test]
+    fn test_bicubic_kernel_weights_native() {
+        use crate::interp::gx_kernel_test_utils::{check_native_weights, phi_keys};
+        check_native_weights(bicubic_kernel_weights_native, 4, phi_keys, 1.0, 1e-15);
     }
 
-    /// Tests the optimized bicubic kernel weights function at the center (x = 0.0).
+    /// The weights are symmetric, `w(1 - t)` is `w(t)` reversed.
     #[test]
-    fn test_optimized_bicubic_kernel_weights_at_center() {
-        let mut weights = [0.0; 5];
-        optimized_bicubic_kernel_weights(0.0, &mut weights);
-        assert_eq!(weights, [0.0, 0.0, 1.0, 0.0, 0.0]);
-    }
-
-    /// Tests the optimized bicubic kernel weights function at x = 0.5.
-    /// Expected values are computed using the bicubic interpolation formula.
-    #[test]
-    fn test_optimized_bicubic_kernel_weights_at_halfway_positive() {
-        let mut weights = [0.0; 5];
-        optimized_bicubic_kernel_weights(0.5, &mut weights);
-        // Expected values for x = 0.5 using bicubic interpolation formula
-        let expected = [-0.0625, 0.5625, 0.5625, -0.0625, 0.];        
-        assert!(approx_eq(&weights, &expected, 1e-6));
-    }
-
-    /// Tests the optimized bicubic kernel weights function at x = -0.5.
-    /// Expected values are computed using the bicubic interpolation formula.
-    #[test]
-    fn test_optimized_bicubic_kernel_weights_at_halfway_negative() {
-        let mut weights = [0.0; 5];
-        optimized_bicubic_kernel_weights(-0.5, &mut weights);
-        // Expected values for x = -0.5 using bicubic interpolation formula
-        let expected = [0., -0.0625, 0.5625, 0.5625, -0.0625];        
-        assert!(approx_eq(&weights, &expected, 1e-6));
-    }
-
-    /// Tests the optimized bicubic kernel weights function for values outside the valid range (|x| >= 2.0).
-    /// Expected output: all weights should be zero.
-    #[test]
-    fn test_optimized_bicubic_kernel_weights_outside_range() {
-        let mut weights = [0.0; 5];
-        optimized_bicubic_kernel_weights(3.0, &mut weights);
-        assert_eq!(weights, [0.0, 0.0, 0.0, 0.0, 0.0]);
-
-        optimized_bicubic_kernel_weights(-3.0, &mut weights);
-        assert_eq!(weights, [0.0, 0.0, 0.0, 0.0, 0.0]);
-    }
-
-    /// Tests the optimized bicubic kernel weights function for values exactly at the bounds (x = ±1.0).
-    #[test]
-    fn test_optimized_bicubic_kernel_weights_exactly_on_bounds() {
-        let mut weights = [0.0; 5];
-        optimized_bicubic_kernel_weights(1.0, &mut weights);
-        assert_eq!(weights, [0., 1., 0., 0., 0.]);
-        
-        
-        optimized_bicubic_kernel_weights(-1.0, &mut weights);
-        assert_eq!(weights, [0., 0., 0., 1., 0.]);
-    }
-    
-    /// Tests the both implementations (naive and optimized) give the same results
-    #[test]
-    fn test_optimized_bicubic_kernel_weights_both_implementation() {
-        let mut weights_naive = [0.0; 5];
-        let mut weights_opt = [0.0; 5];
-        
-        let x_values: [f64; 13] = [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 0.999999, 1., 1.1, 1.3, 1.8, 2., 2.1];
-        for &x in x_values.iter()  {
-            optimized_bicubic_kernel_weights(x, &mut weights_naive);
-            optimized_bicubic_kernel_weights_opt(x, &mut weights_opt);
-            assert!(approx_eq(&weights_naive, &weights_opt, 1e-10));
-            
-            optimized_bicubic_kernel_weights(-x, &mut weights_naive);
-            optimized_bicubic_kernel_weights_opt(-x, &mut weights_opt);
-            assert!(approx_eq(&weights_naive, &weights_opt, 1e-10));
+    fn test_bicubic_kernel_weights_native_symmetry() {
+        let (mut a, mut b) = ([0.0; 4], [0.0; 4]);
+        for i in 1..100 {
+            let t = i as f64 / 100.0;
+            bicubic_kernel_weights_native(t, &mut a);
+            bicubic_kernel_weights_native(1.0 - t, &mut b);
+            for k in 0..4 {
+                assert!((a[k] - b[3 - k]).abs() <= 1e-15, "t={t}: {a:?} vs {b:?}");
+            }
         }
     }
-    
+
+    /// The expanded polynomials of the v0.7 positive branch, extended to
+    /// `[0, 1)`, are rejected by the check: near `t -> 1` the weight
+    /// of `anchor - 1` rounds to an exact zero.
+    #[test]
+    #[should_panic(expected = "exact zero inside the support")]
+    fn test_expanded_polynomials_are_rejected() {
+        fn expanded(y: f64, w: &mut [f64]) {
+            let y2 = y * y;
+            let y3 = y2 * y;
+            w[0] = 0.5 * y3 - 0.5 * y2;
+            w[1] = -1.5 * y3 + 2.0 * y2 + 0.5 * y;
+            w[2] = 1.5 * y3 - 2.5 * y2 + 1.0;
+            w[3] = -0.5 * y3 + y2 - 0.5 * y;
+        }
+        use crate::interp::gx_kernel_test_utils::{check_native_weights, phi_keys};
+        check_native_weights(expanded, 4, phi_keys, 1.0, 1e-15);
+    }
+
     #[test]
     fn test_array1_interp2_001() {
         let data_in = [ 0.0, 0.0, 0.0, 0.0, 0.0,

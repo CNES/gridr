@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
+// Copyright (c) 2024-2026 Centre National d'Etudes Spatiales (CNES).
 //
 // This file is part of GRIDR
 // (see https://github.com/CNES/gridr).
@@ -45,14 +45,63 @@
 //!
 //! # Supported Orders
 //!
-//! | Order | Kernel Radius | Type Alias                |
-//! |-------|---------------|---------------------------|
-//! | 3     | 2             | `GxBSpline3Interpolator`  |
-//! | 5     | 3             | `GxBSpline5Interpolator`  |
-//! | 7     | 4             | `GxBSpline7Interpolator`  |
-//! | 9     | 5             | `GxBSpline9Interpolator`  |
-//! | 11    | 6             | `GxBSpline11Interpolator` |
+//! | Order | Kernel Radius | Stencil (taps) | Type Alias                |
+//! |-------|---------------|----------------|---------------------------|
+//! | 3     | 2             | 4              | `GxBSpline3Interpolator`  |
+//! | 5     | 3             | 6              | `GxBSpline5Interpolator`  |
+//! | 7     | 4             | 8              | `GxBSpline7Interpolator`  |
+//! | 9     | 5             | 10             | `GxBSpline9Interpolator`  |
+//! | 11    | 6             | 12             | `GxBSpline11Interpolator` |
 //!
+//! The stencil is the native support of the kernel (`order + 1` taps),
+//! anchored on `floor(x)`.
+//!
+//! # Weights on the native support
+//!
+//! The B-spline functions of this module are scaled by `n!`:
+//! `bsplineN(x) = n! β^n(x)`, where `β^n` is the centered B-spline of odd
+//! degree `n`, supported on `|x| < R` with `R = (n + 1) / 2`:
+//!
+//! ```latex
+//! n!\,\beta^n(x) = \sum_{i=0}^{n+1} (-1)^i \binom{n+1}{i} \left(x + R - i\right)_+^{\,n}
+//! ```
+//!
+//! For an odd degree the knots are the integers, so on each interval
+//! `[k - 1, k)` of `|x|`, `k = 1..=R`, the function is a polynomial `Pk` of
+//! degree `n`. Each piece is written in a variable that lies in `[0, 1]`:
+//!
+//! - `P1` in `u = |x|`;
+//! - `Pk`, `k >= 2`, in `u = k - |x|`, the distance to the outer end of the
+//!   piece. The outer piece is `PR(u) = u^n`.
+//!
+//! The stencil has `n + 1` taps, from `anchor - (R - 1)` to `anchor + R`,
+//! anchored on `floor(x)`. With the phase `t = x - floor(x)` in `[0, 1)` and
+//! `s = 1 - t`, the tap `anchor + d` lies at distance `|t - d|` from the
+//! target, which always falls in a single piece:
+//!
+//! ```text
+//! tap                  distance      weight
+//! anchor - j, j >= 1   j + t         P(j+1)(s)
+//! anchor               t             P1(t)
+//! anchor + 1           s             P1(s)
+//! anchor + j, j >= 2   (j - 1) + s   Pj(t)
+//! ```
+//!
+//! Each weight is one polynomial evaluation in `t` or `s`: no piece is
+//! selected at run time and there is no branch. Weights are stored in
+//! inverted order, `weights[k]` being the weight of tap `anchor + R - k`.
+//!
+//! Properties, for every phase:
+//!
+//! - the weights sum to `n!` ;
+//! - the weights at `1 - t` are the weights at `t` in reverse order;
+//! - at `t = 0` the tap `anchor + R` lies at distance `R`, where `β^n`
+//!   vanishes, so `weights[0] = t^n` is an exact zero and the other `n`
+//!   weights are positive; for `t` in `(0, 1)` all `n + 1` weights are
+//!   positive;
+//! - the outer weights are the powers `t^n` and `s^n`, and the inner pieces
+//!   do not vanish on `[0, 1]`, so rounding never turns a weight inside the
+//!   support into an exact zero.
 //!
 //! # Usage Example
 //!
@@ -256,411 +305,249 @@ pub fn bspline11(x: f64) -> f64
     0.0
 }
 
-/// Computes all non-zero cubic B-spline weights for a centered fractional
-/// offset, writing them into `weights`.
+/// Cubic B-spline (degree 3) weights on its native 4-tap support.
 ///
-/// # Optimization strategy
-///
-/// The five kernel weights are computed by exploiting the symmetry of the
-/// B-spline support around the nearest integer pixel.  For `t ∈ [0, 0.5]`
-/// the substitution `s = 1 - t` yields:
+/// Radius 2, taps from `anchor - 1` to `anchor + 2`. The phase is
+/// `t = x - floor(x)` in `[0, 1)` and `s = 1 - t`. With the pieces of
+/// `bspline3` written as in the module documentation, the weights are:
 ///
 /// ```text
-///   weights[0] = t³              (branch 2, argument 2-t)
-///   weights[1] = 4 + (-6+3s)s²  (branch 1, argument s = 1-t)
-///   weights[2] = 4 + (-6+3t)t²  (branch 1, argument t)
-///   weights[3] = s³              (branch 2, argument 1+t → 2-(1+t) = s)
-///   weights[4] = 0               (outside support)
+/// slot        tap         distance  weight
+/// weights[0]  anchor + 2  1 + s     t^3
+/// weights[1]  anchor + 1  s         P1(s)
+/// weights[2]  anchor      t         P1(t)
+/// weights[3]  anchor - 1  1 + t     s^3
 /// ```
 ///
-/// For `t ∈ (-0.5, 0)`, `u = -t` is used and the same four polynomials are
-/// evaluated on `u` and `s = 1-u`; only the placement in `weights` is
-/// mirrored.  This avoids all `abs()` calls and conditional branches inside
-/// the polynomial evaluation, and reduces the power computation to a shared
-/// `(t², t³)` or `(u², u³, s², s³)` base.
-///
-/// # Cost
-///
-/// - **5 multiplications**, **5 additions** (versus ~10 mul and 8 add for
-///   five independent scalar calls including `abs()` and branch overhead).
-/// - **1 structural zero**: `weights[4]` (`t ≥ 0`) or `weights[0]`
-///   (`t < 0`) is always 0, saving one multiply in the convolution.
-///
-/// # Parameters
-///
-/// - `t`: Fractional offset in `(-0.5, 0.5]`, computed as
-///   `x - round(x)` (i.e. `x - floor(x + 0.5)`).
-/// - `weights`: Output slice of length ≥ 5.  Index 0 corresponds to
-///   offset −2, index 4 to offset +2 relative to the nearest integer.
+/// The weights sum to `3! = 6`. At `t = 0` only `weights[0]` is zero.
 ///
 /// # Safety
 ///
-/// The caller must guarantee that `weights.len() >= 5`.  This function uses
-/// `get_unchecked_mut` to suppress per-element bounds checks; violating the
-/// length contract results in undefined behaviour.
+/// The caller must guarantee that `weights.len() >= 4`.
 #[inline]
-pub fn bspline3_all_centered(t: f64, weights: &mut [f64]) {
-    // SAFETY: caller guarantees weights.len() >= 5.
-    let w = unsafe { weights.get_unchecked_mut(0..5) };
- 
-    if t >= 0.0 {
-        // t in [0, 0.5], s = 1-t in [0.5, 1]
-        let s = 1.0 - t;
-        let t2 = t * t; let t3 = t2 * t;
-        let s2 = s * s; let s3 = s2 * s;
- 
-        w[0] = t3;
-        w[1] = 4.0 + (-6.0 + 3.0*s)*s2;
-        w[2] = 4.0 + (-6.0 + 3.0*t)*t2;
-        w[3] = s3;
-        w[4] = 0.0;
- 
-    } else {
-        // u = -t in (0, 0.5), s = 1-u in [0.5, 1)
-        let u = -t;
-        let s = 1.0 - u;
-        let u2 = u * u; let u3 = u2 * u;
-        let s2 = s * s; let s3 = s2 * s;
- 
-        w[0] = 0.0;
-        w[1] = s3;
-        w[2] = 4.0 + (-6.0 + 3.0*u)*u2;
-        w[3] = 4.0 + (-6.0 + 3.0*s)*s2;
-        w[4] = u3;
-    }
+pub fn bspline3_weights_native(t: f64, weights: &mut [f64]) {
+    debug_assert!((0.0..1.0).contains(&t), "phase out of [0, 1): {t}");
+    // SAFETY: caller guarantees weights.len() >= 4.
+    let w = unsafe { weights.get_unchecked_mut(0..4) };
+
+    // t in [0, 1), s = 1 - t in (0, 1].
+    let s = 1.0 - t;
+    let t2 = t * t; let t3 = t2 * t;
+    let s2 = s * s; let s3 = s2 * s;
+
+    w[0] = t3;
+    w[1] = 4.0 + (-6.0 + 3.0*s)*s2;
+    w[2] = 4.0 + (-6.0 + 3.0*t)*t2;
+    w[3] = s3;
 }
 
-/// Computes all non-zero quintic B-spline weights for a centered fractional
-/// offset, writing them into `weights`.
+/// Quintic B-spline (degree 5) weights on its native 6-tap support.
 ///
-/// # Optimization strategy
-///
-/// With `t ∈ [0, 0.5]` and `s = 1 - t`, the six non-zero weights map to
-/// branches of `bspline5` as follows:
+/// Radius 3, taps from `anchor - 2` to `anchor + 3`. The phase is
+/// `t = x - floor(x)` in `[0, 1)` and `s = 1 - t`. With the pieces of
+/// `bspline5` written as in the module documentation, the weights are:
 ///
 /// ```text
-///   weights[0] = t⁵              (branch 3, |t−3| = 3−t ∈ [2.5,3))
-///   weights[1] = bspline5 br2(t) (branch 2, v = t)
-///   weights[2] = bspline5 br1(s) (branch 1, u = s = 1−t)
-///   weights[3] = bspline5 br1(t) (branch 1, u = t)
-///   weights[4] = bspline5 br2(s) (branch 2, v = s)
-///   weights[5] = s⁵              (branch 3, |t+2| = 2+t → 3−(2+t) = s)
-///   weights[6] = 0               (outside support: |t+3| ≥ 3)
+/// slot        tap         distance  weight
+/// weights[0]  anchor + 3  2 + s     t^5
+/// weights[1]  anchor + 2  1 + s     P2(t)
+/// weights[2]  anchor + 1  s         P1(s)
+/// weights[3]  anchor      t         P1(t)
+/// weights[4]  anchor - 1  1 + t     P2(s)
+/// weights[5]  anchor - 2  2 + t     s^5
 /// ```
 ///
-/// All power sequences `(t², t⁴, t⁵)` and `(s², s⁴, s⁵)` are computed
-/// once and shared across the polynomial evaluations.  For `t < 0`, the
-/// substitution `u = -t` produces the mirror layout with `weights[0] = 0`.
-///
-/// # Cost
-///
-/// - **8 multiplications**, **8 additions** (versus ~24 mul and 19 add for
-///   seven independent scalar calls).
-/// - **1 structural zero**: always at index 6 (`t ≥ 0`) or index 0
-///   (`t < 0`).
-///
-/// # Parameters
-///
-/// - `t`: Fractional offset in `(-0.5, 0.5]`, computed as `x - round(x)`.
-/// - `weights`: Output slice of length ≥ 7.  Index 0 = offset −3,
-///   index 6 = offset +3.
+/// The weights sum to `5! = 120`. At `t = 0` only `weights[0]` is zero.
 ///
 /// # Safety
 ///
-/// The caller must guarantee that `weights.len() >= 7`.  This function uses
-/// `get_unchecked_mut` to suppress per-element bounds checks; violating the
-/// length contract results in undefined behaviour.
+/// The caller must guarantee that `weights.len() >= 6`.
 #[inline]
-pub fn bspline5_all_centered(t: f64, weights: &mut [f64]) {
-    // SAFETY: caller guarantees weights.len() >= 7.
-    let w = unsafe { weights.get_unchecked_mut(0..7) };
- 
-    if t >= 0.0 {
-        // t in [0, 0.5], s = 1-t in [0.5, 1].
-        // b_{-3} and b_3 are both in branch 3:
-        //   |t-3| = 3-t in [2.5, 3)  ->  (3-(3-t))^5 = t^5
-        //   |t+3| = 3+t in [3, 3.5]  ->  outside support -> 0
-        // Only b_{-2}..b_2 are non-zero (6 values).
-        let s = 1.0 - t;
-        let t2 = t * t; let t4 = t2 * t2; let t5 = t4 * t;
-        let s2 = s * s; let s4 = s2 * s2; let s5 = s4 * s;
- 
-        w[0] = t5;
-        w[1] = 1.0 + (5.0 + (10.0 + (10.0 + (5.0 - 5.0*t)*t)*t)*t)*t;
-        w[2] = ((-10.0*s + 30.0)*s2 - 60.0)*s2 + 66.0;
-        w[3] = ((-10.0*t + 30.0)*t2 - 60.0)*t2 + 66.0;
-        w[4] = 1.0 + (5.0 + (10.0 + (10.0 + (5.0 - 5.0*s)*s)*s)*s)*s;
-        w[5] = s5;
-        w[6] = 0.0;
- 
-    } else {
-        // u = -t in (0, 0.5).  By parity bspline5(-x) = bspline5(x),
-        // so b_k(t) = b_{-k}(-t): the layout is the mirror of t >= 0.
-        let u = -t;
-        let s = 1.0 - u;
-        let u2 = u * u; let u4 = u2 * u2; let u5 = u4 * u;
-        let s2 = s * s; let s4 = s2 * s2; let s5 = s4 * s;
- 
-        w[0] = 0.0;
-        w[1] = s5;
-        w[2] = 1.0 + (5.0 + (10.0 + (10.0 + (5.0 - 5.0*s)*s)*s)*s)*s;
-        w[3] = ((-10.0*u + 30.0)*u2 - 60.0)*u2 + 66.0;
-        w[4] = ((-10.0*s + 30.0)*s2 - 60.0)*s2 + 66.0;
-        w[5] = 1.0 + (5.0 + (10.0 + (10.0 + (5.0 - 5.0*u)*u)*u)*u)*u;
-        w[6] = u5;
-    }
+pub fn bspline5_weights_native(t: f64, weights: &mut [f64]) {
+    debug_assert!((0.0..1.0).contains(&t), "phase out of [0, 1): {t}");
+    // SAFETY: caller guarantees weights.len() >= 6.
+    let w = unsafe { weights.get_unchecked_mut(0..6) };
+
+    // t in [0, 1), s = 1 - t in (0, 1].
+    let s = 1.0 - t;
+    let t2 = t * t; let t4 = t2 * t2; let t5 = t4 * t;
+    let s2 = s * s; let s4 = s2 * s2; let s5 = s4 * s;
+
+    w[0] = t5;
+    w[1] = 1.0 + (5.0 + (10.0 + (10.0 + (5.0 - 5.0*t)*t)*t)*t)*t;
+    w[2] = ((-10.0*s + 30.0)*s2 - 60.0)*s2 + 66.0;
+    w[3] = ((-10.0*t + 30.0)*t2 - 60.0)*t2 + 66.0;
+    w[4] = 1.0 + (5.0 + (10.0 + (10.0 + (5.0 - 5.0*s)*s)*s)*s)*s;
+    w[5] = s5;
 }
 
-/// Computes all non-zero septic B-spline weights for a centered fractional
-/// offset, writing them into `weights`.
+/// Septic B-spline (degree 7) weights on its native 8-tap support.
 ///
-/// # Optimization strategy
-///
-/// With support radius 4 and `t ∈ [0, 0.5]`, `s = 1 - t`, the eight
-/// non-zero weights are:
+/// Radius 4, taps from `anchor - 3` to `anchor + 4`. The phase is
+/// `t = x - floor(x)` in `[0, 1)` and `s = 1 - t`. With the pieces of
+/// `bspline7` written as in the module documentation (`Pk` is `brK` in the
+/// body), the weights are:
 ///
 /// ```text
-///   weights[0] = t⁷              (branch 4, argument 4−t → t⁷)
-///   weights[1] = br3(t)          (branch 3, argument 3−t)
-///   weights[2] = br2(t)          (branch 2, argument 2−t)
-///   weights[3] = br1(s)          (branch 1, argument 1−t = s)
-///   weights[4] = br1(t)          (branch 1, argument t)
-///   weights[5] = br2(s)          (branch 2, argument 1+t → 2−(1+t) = s)
-///   weights[6] = br3(s)          (branch 3, argument 2+t → 3−(2+t) = s)
-///   weights[7] = s⁷              (branch 4, argument 3+t → 4−(3+t) = s)
-///   weights[8] = 0               (outside support)
+/// slot        tap         distance  weight
+/// weights[0]  anchor + 4  3 + s     t^7
+/// weights[1]  anchor + 3  2 + s     P3(t)
+/// weights[2]  anchor + 2  1 + s     P2(t)
+/// weights[3]  anchor + 1  s         P1(s)
+/// weights[4]  anchor      t         P1(t)
+/// weights[5]  anchor - 1  1 + t     P2(s)
+/// weights[6]  anchor - 2  2 + t     P3(s)
+/// weights[7]  anchor - 3  3 + t     s^7
 /// ```
 ///
-/// Branch functions `br1`, `br2`, `br3` are Horner-form inner functions
-/// that take `u ∈ [0, 0.5]` and return the corresponding piece of
-/// `bspline7`.  Powers `t⁷` and `s⁷` are computed via
-/// `t²→t⁴→t⁷ = t⁴·t²·t` (4 multiplications total).
-///
-/// For `t < 0`, `u = -t` and the layout is mirrored with `weights[0] = 0`.
-///
-/// # Parameters
-///
-/// - `t`: Fractional offset in `(-0.5, 0.5]`, computed as `x - round(x)`.
-/// - `weights`: Output slice of length ≥ 9.  Index 0 = offset −4,
-///   index 8 = offset +4.
+/// The weights sum to `7! = 5040`. At `t = 0` only `weights[0]` is zero.
 ///
 /// # Safety
 ///
-/// The caller must guarantee that `weights.len() >= 9`.  This function uses
-/// `get_unchecked_mut` to suppress per-element bounds checks; violating the
-/// length contract results in undefined behaviour.
+/// The caller must guarantee that `weights.len() >= 8`.
 #[inline]
-pub fn bspline7_all_centered(t: f64, weights: &mut [f64]) {
-    // SAFETY: caller guarantees weights.len() >= 9.
-    let w = unsafe { weights.get_unchecked_mut(0..9) };
- 
+pub fn bspline7_weights_native(t: f64, weights: &mut [f64]) {
+    debug_assert!((0.0..1.0).contains(&t), "phase out of [0, 1): {t}");
+    // SAFETY: caller guarantees weights.len() >= 8.
+    let w = unsafe { weights.get_unchecked_mut(0..8) };
+
     // Branch 2 of bspline7: piece valid for x in [1,2), evaluated at u = 2-x
     #[inline(always)]
     fn br2(u: f64) -> f64 {
         120. + (392. + (504. + (280. + (-84. + (-42. + 21.*u)*u)*u*u)*u)*u)*u
     }
- 
+
     // Branch 3 of bspline7: piece valid for x in [2,3), evaluated at u = 3-x
     #[inline(always)]
     fn br3(u: f64) -> f64 {
         ((((((-7.*u + 7.)*u + 21.)*u + 35.)*u + 35.)*u + 21.)*u + 7.)*u + 1.
     }
- 
+
     // Branch 1 of bspline7: piece valid for x in [0,1), evaluated at u = x
     #[inline(always)]
     fn br1(u: f64) -> f64 {
         let u2 = u*u;
         (((35.*u - 140.)*u2 + 560.)*u2 - 1680.)*u2 + 2416.
     }
- 
-    if t >= 0.0 {
-        let s = 1.0 - t;
-        let t2 = t*t; let t4 = t2*t2; let t7 = t4*t2*t;
-        let s2 = s*s; let s4 = s2*s2; let s7 = s4*s2*s;
- 
-        w[0] = t7;
-        w[1] = br3(t);
-        w[2] = br2(t);
-        w[3] = br1(s);
-        w[4] = br1(t);
-        w[5] = br2(s);
-        w[6] = br3(s);
-        w[7] = s7;
-        w[8] = 0.0;
- 
-    } else {
-        let u = -t;
-        let s = 1.0 - u;
-        let u2 = u*u; let u4 = u2*u2; let u7 = u4*u2*u;
-        let s2 = s*s; let s4 = s2*s2; let s7 = s4*s2*s;
- 
-        w[0] = 0.0;
-        w[1] = s7;
-        w[2] = br3(s);
-        w[3] = br2(s);
-        w[4] = br1(u);
-        w[5] = br1(s);
-        w[6] = br2(u);
-        w[7] = br3(u);
-        w[8] = u7;
-    }
+
+    let s = 1.0 - t;
+    let t2 = t*t; let t4 = t2*t2; let t7 = t4*t2*t;
+    let s2 = s*s; let s4 = s2*s2; let s7 = s4*s2*s;
+
+    w[0] = t7;
+    w[1] = br3(t);
+    w[2] = br2(t);
+    w[3] = br1(s);
+    w[4] = br1(t);
+    w[5] = br2(s);
+    w[6] = br3(s);
+    w[7] = s7;
 }
- 
-/// Computes all non-zero nonic B-spline weights for a centered fractional
-/// offset, writing them into `weights`.
+
+/// Nonic B-spline (degree 9) weights on its native 10-tap support.
 ///
-/// # Optimization strategy
-///
-/// With support radius 5 and `t ∈ [0, 0.5]`, `s = 1 - t`, the ten
-/// non-zero weights are:
+/// Radius 5, taps from `anchor - 4` to `anchor + 5`. The phase is
+/// `t = x - floor(x)` in `[0, 1)` and `s = 1 - t`. With the pieces of
+/// `bspline9` written as in the module documentation (`Pk` is `brK` in the
+/// body), the weights are:
 ///
 /// ```text
-///   weights[0]  = t⁹             (branch 5, argument 5−t → t⁹)
-///   weights[1]  = br4(t)         (branch 4, argument 4−t)
-///   weights[2]  = br3(t)         (branch 3, argument 3−t)
-///   weights[3]  = br2(t)         (branch 2, argument 2−t)
-///   weights[4]  = br1(s)         (branch 1, argument 1−t = s)
-///   weights[5]  = br1(t)         (branch 1, argument t)
-///   weights[6]  = br2(s)         (branch 2, argument 1+t → s)
-///   weights[7]  = br3(s)         (branch 3, argument 2+t → s)
-///   weights[8]  = br4(s)         (branch 4, argument 3+t → s)
-///   weights[9]  = s⁹             (branch 5, argument 4+t → s⁹)
-///   weights[10] = 0              (outside support)
+/// slot        tap         distance  weight
+/// weights[0]  anchor + 5  4 + s     t^9
+/// weights[1]  anchor + 4  3 + s     P4(t)
+/// weights[2]  anchor + 3  2 + s     P3(t)
+/// weights[3]  anchor + 2  1 + s     P2(t)
+/// weights[4]  anchor + 1  s         P1(s)
+/// weights[5]  anchor      t         P1(t)
+/// weights[6]  anchor - 1  1 + t     P2(s)
+/// weights[7]  anchor - 2  2 + t     P3(s)
+/// weights[8]  anchor - 3  3 + t     P4(s)
+/// weights[9]  anchor - 4  4 + t     s^9
 /// ```
 ///
-/// Powers `t⁹` and `s⁹` are computed via `t³→t⁹ = t³·t³·t³`
-/// (4 multiplications).  Branch functions `br1`–`br4` are standard
-/// Horner evaluations transcribed directly from `bspline9`.
-///
-/// For `t < 0`, `u = -t` and the layout is mirrored with `weights[0] = 0`.
-///
-/// # Parameters
-///
-/// - `t`: Fractional offset in `(-0.5, 0.5]`, computed as `x - round(x)`.
-/// - `weights`: Output slice of length ≥ 11.  Index 0 = offset −5,
-///   index 10 = offset +5.
+/// The weights sum to `9! = 362880`. At `t = 0` only `weights[0]` is zero.
 ///
 /// # Safety
 ///
-/// The caller must guarantee that `weights.len() >= 11`.  This function uses
-/// `get_unchecked_mut` to suppress per-element bounds checks; violating the
-/// length contract results in undefined behaviour.
+/// The caller must guarantee that `weights.len() >= 10`.
 #[inline]
-pub fn bspline9_all_centered(t: f64, weights: &mut [f64]) {
-    // SAFETY: caller guarantees weights.len() >= 11.
-    let w = unsafe { weights.get_unchecked_mut(0..11) };
- 
+pub fn bspline9_weights_native(t: f64, weights: &mut [f64]) {
+    debug_assert!((0.0..1.0).contains(&t), "phase out of [0, 1): {t}");
+    // SAFETY: caller guarantees weights.len() >= 10.
+    let w = unsafe { weights.get_unchecked_mut(0..10) };
+
     #[inline(always)]
     fn br1(u: f64) -> f64 {
         let u2 = u*u;
         (((((-63.*u + 315.)*u2 - 2100.)*u2 + 11970.)*u2 - 44100.)*u2 + 78095.)*2.
     }
- 
+
     #[inline(always)]
     fn br2(u: f64) -> f64 {
         14608. + (36414. + (34272. + (11256. + (-4032.
             + (-4284. + (-672. + (504. + (252. - 84.*u)*u)*u)*u)*u)*u)*u)*u)*u
     }
- 
+
     #[inline(always)]
     fn br3(u: f64) -> f64 {
         502. + (2214. + (4248. + (4536. + (2772. + (756.
             + (-168. + (-216. + (-72. + 36.*u)*u)*u)*u)*u)*u)*u)*u)*u
     }
- 
+
     #[inline(always)]
     fn br4(u: f64) -> f64 {
         1. + (9. + (36. + (84. + (126. + (126. + (84. + (36. + (9. - 9.*u)*u)*u)*u)*u)*u)*u)*u)*u
     }
- 
-    if t >= 0.0 {
-        let s = 1.0 - t;
-        let t3 = t*t*t; let t9 = t3*t3*t3;
-        let s3 = s*s*s; let s9 = s3*s3*s3;
- 
-        w[0]  = t9;
-        w[1]  = br4(t);
-        w[2]  = br3(t);
-        w[3]  = br2(t);
-        w[4]  = br1(s);
-        w[5]  = br1(t);
-        w[6]  = br2(s);
-        w[7]  = br3(s);
-        w[8]  = br4(s);
-        w[9]  = s9;
-        w[10] = 0.0;
- 
-    } else {
-        let u = -t;
-        let s = 1.0 - u;
-        let u3 = u*u*u; let u9 = u3*u3*u3;
-        let s3 = s*s*s; let s9 = s3*s3*s3;
- 
-        w[0]  = 0.0;
-        w[1]  = s9;
-        w[2]  = br4(s);
-        w[3]  = br3(s);
-        w[4]  = br2(s);
-        w[5]  = br1(u);
-        w[6]  = br1(s);
-        w[7]  = br2(u);
-        w[8]  = br3(u);
-        w[9]  = br4(u);
-        w[10] = u9;
-    }
+
+    let s = 1.0 - t;
+    let t3 = t*t*t; let t9 = t3*t3*t3;
+    let s3 = s*s*s; let s9 = s3*s3*s3;
+
+    w[0]  = t9;
+    w[1]  = br4(t);
+    w[2]  = br3(t);
+    w[3]  = br2(t);
+    w[4]  = br1(s);
+    w[5]  = br1(t);
+    w[6]  = br2(s);
+    w[7]  = br3(s);
+    w[8]  = br4(s);
+    w[9]  = s9;
 }
 
-
-// Computes all non-zero eleventh-order B-spline weights for a centered
-/// fractional offset, writing them into `weights`.
+/// B-spline of degree 11 weights on its native 12-tap support.
 ///
-/// # Optimization strategy
-///
-/// With support radius 6 and `t ∈ [0, 0.5]`, `s = 1 - t`, the twelve
-/// non-zero weights are:
+/// Radius 6, taps from `anchor - 5` to `anchor + 6`. The phase is
+/// `t = x - floor(x)` in `[0, 1)` and `s = 1 - t`. With the pieces of
+/// `bspline11` written as in the module documentation (`Pk` is `brK` in the
+/// body), the weights are:
 ///
 /// ```text
-/// weights[0] = t¹¹ (branch 6, argument 6−t → t¹¹)
-/// weights[1] = br5(t) (branch 5, argument 5−t)
-/// weights[2] = br4(t) (branch 4, argument 4−t)
-/// weights[3] = br3(t) (branch 3, argument 3−t)
-/// weights[4] = br2(t) (branch 2, argument 2−t)
-/// weights[5] = br1(s) (branch 1, argument 1−t = s)
-/// weights[6] = br1(t) (branch 1, argument t)
-/// weights[7] = br2(s) (branch 2, argument 1+t → s)
-/// weights[8] = br3(s) (branch 3, argument 2+t → s)
-/// weights[9] = br4(s) (branch 4, argument 3+t → s)
-/// weights[10] = br5(s) (branch 5, argument 4+t → s)
-/// weights[11] = s¹¹ (branch 6, argument 5+t → s¹¹)
-/// weights[12] = 0 (outside support)
+/// slot         tap         distance  weight
+/// weights[0]   anchor + 6  5 + s     t^11
+/// weights[1]   anchor + 5  4 + s     P5(t)
+/// weights[2]   anchor + 4  3 + s     P4(t)
+/// weights[3]   anchor + 3  2 + s     P3(t)
+/// weights[4]   anchor + 2  1 + s     P2(t)
+/// weights[5]   anchor + 1  s         P1(s)
+/// weights[6]   anchor      t         P1(t)
+/// weights[7]   anchor - 1  1 + t     P2(s)
+/// weights[8]   anchor - 2  2 + t     P3(s)
+/// weights[9]   anchor - 3  3 + t     P4(s)
+/// weights[10]  anchor - 4  4 + t     P5(s)
+/// weights[11]  anchor - 5  5 + t     s^11
 /// ```
 ///
-/// Powers `t¹¹` and `s¹¹` are computed via
-/// `t²→t⁴→t⁸→t¹¹ = t⁸·t²·t` (4 multiplications).
-///
-/// **Note on branch 2**: the original `bspline11` Horner contains a `*x*x`
-/// step (zero coefficient for `x⁵`), which is preserved verbatim in `br2`
-/// as `)*u*u)` to match the reference exactly. This causes a rounding
-/// difference of up to ~1e-7 relative to the scalar function for certain
-/// inputs; the corresponding test uses a tolerance of `1e-6`.
-///
-/// For `t < 0`, `u = -t` and the layout is mirrored with `weights[0] = 0`.
-///
-/// # Parameters
-///
-/// - `t`: Fractional offset in `(-0.5, 0.5]`, computed as `x - round(x)`.
-/// - `weights`: Output slice of length ≥ 13. Index 0 = offset −6,
-/// index 12 = offset +6.
+/// The weights sum to `11! = 39916800`. At `t = 0` only `weights[0]` is zero.
 ///
 /// # Safety
 ///
-/// The caller must guarantee that `weights.len() >= 13`. This function uses
-/// `get_unchecked_mut` to suppress per-element bounds checks; violating the
-/// length contract results in undefined behaviour.
+/// The caller must guarantee that `weights.len() >= 12`.
 #[inline]
-pub fn bspline11_all_centered(t: f64, weights: &mut [f64]) {
-    // SAFETY: caller guarantees weights.len() >= 13.
-    let w = unsafe { weights.get_unchecked_mut(0..13) };
+pub fn bspline11_weights_native(t: f64, weights: &mut [f64]) {
+    debug_assert!((0.0..1.0).contains(&t), "phase out of [0, 1): {t}");
+    // SAFETY: caller guarantees weights.len() >= 12.
+    let w = unsafe { weights.get_unchecked_mut(0..12) };
 
     #[inline(always)]
     fn br1(u: f64) -> f64 {
@@ -696,50 +583,25 @@ pub fn bspline11_all_centered(t: f64, weights: &mut [f64]) {
         + (55. + (11. - 11.*u)*u)*u)*u)*u)*u)*u)*u)*u)*u)*u
     }
 
-    if t >= 0.0 {
-        let s = 1.0 - t;
-        // t^11 computed via t->t2->t4->t8->t8*t2*t (4 multiplications)
-        let t2 = t*t; let t4 = t2*t2; let t8 = t4*t4;
-        let t11 = t8*t2*t;
-        let s2 = s*s; let s4 = s2*s2; let s8 = s4*s4;
-        let s11 = s8*s2*s;
+    let s = 1.0 - t;
+    // t^11 computed via t->t2->t4->t8->t8*t2*t (4 multiplications)
+    let t2 = t*t; let t4 = t2*t2; let t8 = t4*t4;
+    let t11 = t8*t2*t;
+    let s2 = s*s; let s4 = s2*s2; let s8 = s4*s4;
+    let s11 = s8*s2*s;
 
-        w[0] = t11;
-        w[1] = br5(t);
-        w[2] = br4(t);
-        w[3] = br3(t);
-        w[4] = br2(t);
-        w[5] = br1(s);
-        w[6] = br1(t);
-        w[7] = br2(s);
-        w[8] = br3(s);
-        w[9] = br4(s);
-        w[10] = br5(s);
-        w[11] = s11;
-        w[12] = 0.0;
-
-    } else {
-        let u = -t;
-        let s = 1.0 - u;
-        let u2 = u*u; let u4 = u2*u2; let u8 = u4*u4;
-        let u11 = u8*u2*u;
-        let s2 = s*s; let s4 = s2*s2; let s8 = s4*s4;
-        let s11 = s8*s2*s;
-
-        w[0] = 0.0;
-        w[1] = s11;
-        w[2] = br5(s);
-        w[3] = br4(s);
-        w[4] = br3(s);
-        w[5] = br2(s);
-        w[6] = br1(u);
-        w[7] = br1(s);
-        w[8] = br2(u);
-        w[9] = br3(u);
-        w[10] = br4(u);
-        w[11] = br5(u);
-        w[12] = u11;
-    }
+    w[0] = t11;
+    w[1] = br5(t);
+    w[2] = br4(t);
+    w[3] = br3(t);
+    w[4] = br2(t);
+    w[5] = br1(s);
+    w[6] = br1(t);
+    w[7] = br2(s);
+    w[8] = br3(s);
+    w[9] = br4(s);
+    w[10] = br5(s);
+    w[11] = s11;
 }
 
 
@@ -786,8 +648,14 @@ pub trait GxBSplineInterpolatorTrait<const N: usize>: GxArrayViewInterpolator
     fn bspline(&self, x: f64) -> f64;
     
     
-    /// Evaluates the B-spline weights
-    fn bspline_kernel_weights(&self, x: f64, weights: &mut [f64]);
+    /// Computes the weights of the B-spline on its native support.
+    ///
+    /// # Parameters
+    /// - `t`: phase of the target position relative to the anchor
+    ///   `floor(x)`, in `[0, 1)`.
+    /// - `weights`: output slice of length at least `N + 1`, in inverted
+    ///   order (see the module documentation).
+    fn bspline_kernel_weights(&self, t: f64, weights: &mut [f64]);
     
     /// Applies pre-filtering to input data using the B-spline filter poles.
     /// 
@@ -886,14 +754,14 @@ impl<const N: usize> GxBSplineInterpolatorTrait<N> for GxBSplineInterpolator<N> 
     }
     
     #[inline(always)]
-    fn bspline_kernel_weights(&self, x: f64, weights: &mut [f64]) 
+    fn bspline_kernel_weights(&self, t: f64, weights: &mut [f64]) 
     {
         match N {
-            3 => bspline3_all_centered(x, weights),
-            5 => bspline5_all_centered(x, weights),
-            7 => bspline7_all_centered(x, weights),
-            9 => bspline9_all_centered(x, weights),
-            11 => bspline11_all_centered(x, weights),
+            3 => bspline3_weights_native(t, weights),
+            5 => bspline5_weights_native(t, weights),
+            7 => bspline7_weights_native(t, weights),
+            9 => bspline9_weights_native(t, weights),
+            11 => bspline11_weights_native(t, weights),
             _ => panic!("Unsupported spline order"),
         }
     }
@@ -952,39 +820,39 @@ impl<const N: usize> GxBSplineInterpolatorTrait<N> for GxBSplineInterpolator<N> 
 }
 
 
-impl<const N: usize> GxArrayViewInterpolatorCore<5, 5> for GxBSplineInterpolator<N> {
+impl<const N: usize> GxArrayViewInterpolatorCore<4, 4> for GxBSplineInterpolator<N> {
     #[inline(always)]
-    fn compute_weights(&self, x: f64, weights: &mut [f64])
+    fn compute_weights(&self, t: f64, weights: &mut [f64])
     {
-        self.bspline_kernel_weights(x, weights)
+        self.bspline_kernel_weights(t, weights)
     }
 }
-impl<const N: usize> GxArrayViewInterpolatorCore<7, 7> for GxBSplineInterpolator<N> {
+impl<const N: usize> GxArrayViewInterpolatorCore<6, 6> for GxBSplineInterpolator<N> {
     #[inline(always)]
-    fn compute_weights(&self, x: f64, weights: &mut [f64])
+    fn compute_weights(&self, t: f64, weights: &mut [f64])
     {
-        self.bspline_kernel_weights(x, weights)
+        self.bspline_kernel_weights(t, weights)
     }
 }
-impl<const N: usize> GxArrayViewInterpolatorCore<9, 9> for GxBSplineInterpolator<N> {
+impl<const N: usize> GxArrayViewInterpolatorCore<8, 8> for GxBSplineInterpolator<N> {
     #[inline(always)]
-    fn compute_weights(&self, x: f64, weights: &mut [f64])
+    fn compute_weights(&self, t: f64, weights: &mut [f64])
     {
-        self.bspline_kernel_weights(x, weights)
+        self.bspline_kernel_weights(t, weights)
     }
 }
-impl<const N: usize> GxArrayViewInterpolatorCore<11, 11> for GxBSplineInterpolator<N> {
+impl<const N: usize> GxArrayViewInterpolatorCore<10, 10> for GxBSplineInterpolator<N> {
     #[inline(always)]
-    fn compute_weights(&self, x: f64, weights: &mut [f64])
+    fn compute_weights(&self, t: f64, weights: &mut [f64])
     {
-        self.bspline_kernel_weights(x, weights)
+        self.bspline_kernel_weights(t, weights)
     }
 }
-impl<const N: usize> GxArrayViewInterpolatorCore<13, 13> for GxBSplineInterpolator<N> {
+impl<const N: usize> GxArrayViewInterpolatorCore<12, 12> for GxBSplineInterpolator<N> {
     #[inline(always)]
-    fn compute_weights(&self, x: f64, weights: &mut [f64])
+    fn compute_weights(&self, t: f64, weights: &mut [f64])
     {
-        self.bspline_kernel_weights(x, weights)
+        self.bspline_kernel_weights(t, weights)
     }
 }
 
@@ -1009,23 +877,23 @@ impl<const N: usize> GxBSplineInterpolator<N>
     {
        
         match N {
-            3 => GxArrayViewInterpolatorCore::<5, 5>::array1_interp2_separable_core(
+            3 => GxArrayViewInterpolatorCore::<4, 4>::array1_interp2_separable_core(
                     self, weights_buffer, target_row_pos, target_col_pos,
                     out_idx, array_in, array_out, nodata_out, context
                  ),
-            5 => GxArrayViewInterpolatorCore::<7, 7>::array1_interp2_separable_core(
+            5 => GxArrayViewInterpolatorCore::<6, 6>::array1_interp2_separable_core(
                     self, weights_buffer, target_row_pos, target_col_pos,
                     out_idx, array_in, array_out, nodata_out, context
                  ),
-            7 => GxArrayViewInterpolatorCore::<9, 9>::array1_interp2_separable_core(
+            7 => GxArrayViewInterpolatorCore::<8, 8>::array1_interp2_separable_core(
                     self, weights_buffer, target_row_pos, target_col_pos,
                     out_idx, array_in, array_out, nodata_out, context
                  ),
-            9 => GxArrayViewInterpolatorCore::<11, 11>::array1_interp2_separable_core(
+            9 => GxArrayViewInterpolatorCore::<10, 10>::array1_interp2_separable_core(
                     self, weights_buffer, target_row_pos, target_col_pos,
                     out_idx, array_in, array_out, nodata_out, context
                  ),
-            11 => GxArrayViewInterpolatorCore::<13, 13>::array1_interp2_separable_core(
+            11 => GxArrayViewInterpolatorCore::<12, 12>::array1_interp2_separable_core(
                     self, weights_buffer, target_row_pos, target_col_pos,
                     out_idx, array_in, array_out, nodata_out, context
                  ),
@@ -1095,11 +963,11 @@ impl<const N: usize> GxArrayViewInterpolator for GxBSplineInterpolator<N> {
     }
     
     fn kernel_row_size(&self) -> usize {
-        2 * (self.npoles + 1) + 1
+        2 * (self.npoles + 1)
     }
 
     fn kernel_col_size(&self) -> usize {
-        2 * (self.npoles + 1) + 1
+        2 * (self.npoles + 1)
     }
     
     #[inline(always)]
@@ -1159,98 +1027,18 @@ pub type GxBSpline11Interpolator = GxBSplineInterpolator<11>;
 
 #[cfg(test)]
 mod tests {
-    //! Unit tests for the `_all_centered` B-spline weight functions.
-    //!
-    //! Each test calls [`check_all_centered`] which verifies two properties:
-    //!
-    //! 1. **Pointwise correctness**: for a representative set of fractional
-    //!    offsets `t`, every weight `weights[k]` matches the scalar B-spline
-    //!    function evaluated at `t + k - center`.
-    //!
-    //! The test set covers both signs of `t` and values close to the
-    //! half-pixel boundary (`±0.4999`) to exercise all code paths.
+    //! Unit tests for the native B-spline weight functions.
     use super::*;
  
-    /// Validates a `bspline_all_centered` function against the corresponding
-    /// scalar B-spline function.
-    ///
-    /// For each test value `t`, checks that each weight `weights[k]` equals
-    /// `scalar_fn(t + k - center)` within the tolerance `tol`.
-    ///
-    /// # Parameters
-    /// - `all_fn`: The vectorized function to test, writing `N` weights into
-    ///   a mutable slice.
-    /// - `scalar_fn`: The reference scalar B-spline function.
-    /// - `center`: Index of the `b_0` slot (weight at offset 0) in the output
-    ///   slice.
-    /// - `tol`: Absolute tolerance for floating-point comparison. A value of
-    ///   `1e-6` is appropriate to accommodate rounding differences between the
-    ///   factorized and scalar evaluation paths.
-    fn check_all_centered<const N: usize>(
-        all_fn: fn(f64, &mut [f64]),
-        scalar_fn: fn(f64) -> f64,
-        center: usize,
-        tol: f64,
-    ) {
-        let test_vals = [-0.4999, -0.3, -0.1, 0.0, 0.1, 0.3, 0.4999];
-        let mut weights: [f64; N] = [0.0; N];
- 
-        for &t in &test_vals {
-            all_fn(t, &mut weights);
- 
-            // Property 1: each weight must match the scalar reference function.
-            for k in 0..N {
-                let offset = k as f64 - center as f64;
-                let expected = scalar_fn(t + offset);
-                let got = weights[k];
-                let diff = (got - expected).abs();
-                if diff > tol {
-                    println!(
-                        "FAIL t={:.4} k={} offset={} \
-                         got={:.9} expected={:.9} diff={:.2e}",
-                        t, k, offset, got, expected, diff
-                    );
-                }
-                assert!(
-                    diff <= tol,
-                    "t={} slot k={} (offset={}): got {} expected {} diff={:.2e}",
-                    t, k, offset, got, expected, diff
-                );
-            }
-        }
-    }
- 
-    /// Verifies that `bspline3_all_centered` matches `bspline3` pointwise.
+    /// Check native weights against the scalar B-spline functions.
+    /// GridR B-splines are scaled by `n!`, so the weights sum to `n!`.
     #[test]
-    fn test_bspline3_all_centered() {
-        check_all_centered::<5>(bspline3_all_centered, bspline3, 2, 1e-8);
-    }
- 
-    /// Verifies that `bspline5_all_centered` matches `bspline5` pointwise.
-    #[test]
-    fn test_bspline5_all_centered() {
-        check_all_centered::<7>(bspline5_all_centered, bspline5, 3, 1e-8);
-    }
- 
-    /// Verifies that `bspline7_all_centered` matches `bspline7` pointwise.
-    #[test]
-    fn test_bspline7_all_centered() {
-        check_all_centered::<9>(bspline7_all_centered, bspline7, 4, 1e-8);
-    }
- 
-    /// Verifies that `bspline9_all_centered` matches `bspline9` pointwise.
-    #[test]
-    fn test_bspline9_all_centered() {
-        check_all_centered::<11>(bspline9_all_centered, bspline9, 5, 1e-8);
-    }
- 
-    /// Verifies that `bspline11_all_centered` matches `bspline11` pointwise.
-    ///
-    /// A slightly relaxed tolerance of `1e-6` is used to account for
-    /// floating-point rounding differences introduced by the `*u*u` term in
-    /// branch 2 of `bspline11`.
-    #[test]
-    fn test_bspline11_all_centered() {
-        check_all_centered::<13>(bspline11_all_centered, bspline11, 6, 1e-6);
+    fn test_bspline_weights_native() {
+        use crate::interp::gx_kernel_test_utils::check_native_weights;
+        check_native_weights(bspline3_weights_native, 4, bspline3, 6.0, 1e-14);
+        check_native_weights(bspline5_weights_native, 6, bspline5, 120.0, 1e-14);
+        check_native_weights(bspline7_weights_native, 8, bspline7, 5040.0, 1e-14);
+        check_native_weights(bspline9_weights_native, 10, bspline9, 362880.0, 1e-14);
+        check_native_weights(bspline11_weights_native, 12, bspline11, 39916800.0, 1e-14);
     }
 }

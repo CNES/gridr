@@ -247,7 +247,7 @@ check-licenses-rust-only: build-rust ## check licenses and generate NOTICE
 	$(SHELL) $(GRIDR_SCRIPTS_PATH)/generate_rust_notice_gridr_only.sh
 
 .PHONY: clean
-clean: clean-venv clean-build clean-pyc clean-test clean-sphinx-doc ## remove all build, test, coverage and Python artifacts
+clean: clean-build clean-pyc clean-test clean-sphinx-doc clean-venv ## remove all build, test, coverage and Python artifacts
 
 .PHONY: clean-venv
 clean-venv:
@@ -261,8 +261,8 @@ clean-build:
 	@rm -fr dist*/
 	@rm -fr build*/
 	@rm -fr .eggs/
-	@find $(GRIDR_VENV) -name '*.egg-info' -exec rm -fr {} +
-	@find $(GRIDR_VENV) -name '*.egg' -exec rm -fr {} +
+	@[ -d $(GRIDR_VENV) ] && find $(GRIDR_VENV) -name '*.egg-info' -exec rm -fr {} + || true
+	@[ -d $(GRIDR_VENV) ] && find $(GRIDR_VENV) -name '*.egg' -exec rm -fr {} + || true
 	@rm -fr rust/target
 	@rm -f $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET)
 
@@ -304,3 +304,7 @@ RUST_BENCH_BASELINE ?= v0.7
 rust-bench-save: ## Run rust benchmarks and save them as baseline
 	@cd $(GRIDR_RUST_WORKSPACE_PATH)/gridr && CRITERION_HOME=$(GRIDR_RUST_BENCHMARKS_RESULTS_PATH) cargo bench -p gridr --bench interp -- --save-baseline $(RUST_BENCH_BASELINE)
 
+
+.PHONY: rust-bench-compare
+rust-bench: ## Run rust benchmarks 
+	@cd $(GRIDR_RUST_WORKSPACE_PATH)/gridr && CRITERION_HOME=$(GRIDR_RUST_BENCHMARKS_RESULTS_PATH) cargo bench -p gridr --bench interp -- --baseline $(RUST_BENCH_BASELINE)

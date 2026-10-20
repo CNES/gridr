@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
+// Copyright (c) 2024-2026 Centre National d'Etudes Spatiales (CNES).
 //
 // This file is part of GRIDR
 // (see https://github.com/CNES/gridr).
@@ -26,42 +26,22 @@ use super::gx_array_view_interp::{
     GxArrayViewInterpolationContextTrait,
 };
 
-/// Computes the linear interpolation kernel weights for a given position.
+/// Computes the linear kernel weights on a 2-tap support.
 ///
-/// The weights are used through a convolution : the order is inverted vs
-/// the order of the data.
-#[inline]
-pub fn linear_kernel_weights(x: f64, weights: &mut [f64])
+/// The stencil is anchored on `floor(x)`; `t = x - floor(x)` is the phase,
+/// in `[0, 1)`. The weights are used through a convolution, their order is
+/// inverted with respect to the data:
+///
+/// - `weights[0]`: tap `anchor + 1`, weight `t`
+/// - `weights[1]`: tap `anchor`, weight `1 - t`
+///
+/// At `t = 0` the weights are exactly `[0, 1]`.
+#[inline(always)]
+pub fn linear_kernel_weights(t: f64, weights: &mut [f64])
 {
-    if x < 0.0 && x > -1.0 {
-        weights[0] = 0.0;
-        weights[1] = 1.0 + x;
-        weights[2] = -x;
-    } else if x > 0.0 && x < 1.0 {
-        // - instead of abs because we know x is positive
-        weights[0] = x;
-        weights[1] = 1.0 - x;
-        weights[2] = 0.0;
-    } else if x == 0.0 {
-        // Center pixel: interpolation is identity
-        weights[0] = 0.0;
-        weights[1] = 1.0;
-        weights[2] = 0.0;
-    } else if x == 1.0 {
-        // We authorize it as we dont need any non available neighbor
-        weights[0] = 1.0;
-        weights[1] = 0.0;
-        weights[2] = 0.0;
-    } else if x == -1.0 {
-        // We authorize it as we dont need any non available neighbor
-        weights[0] = 0.0;
-        weights[1] = 0.0;
-        weights[2] = 1.0;
-    } else {
-        weights[0] = 0.0;
-        weights[1] = 0.0;
-        weights[2] = 0.0;
-    }
+    debug_assert!((0.0..1.0).contains(&t), "phase out of [0, 1): {t}");
+    weights[0] = t;
+    weights[1] = 1.0 - t;
 }
 
 /// Linear interpolator implementation.
@@ -70,22 +50,22 @@ pub fn linear_kernel_weights(x: f64, weights: &mut [f64])
 /// interpolation operations.
 #[derive(Clone, Debug)]
 pub struct GxLinearInterpolator {
-    /// The size of the kernel alongs the rows - it is set to 3 in the
+    /// The size of the kernel alongs the rows - it is set to 2 in the
     /// implemented new() method.
     kernel_row_size: usize,
-    /// The size of the kernel alongs the columns - it is set to 3 in the
+    /// The size of the kernel alongs the columns - it is set to 2 in the
     /// implemented new() method.
     kernel_col_size: usize,
 }
 
 // Use generic implementation from GxArrayViewInterpolatorCore for
-// KROWS = 3, NCOLS = 3
-impl GxArrayViewInterpolatorCore<3, 3> for GxLinearInterpolator {
+// KROWS = 2, NCOLS = 2 (native support)
+impl GxArrayViewInterpolatorCore<2, 2> for GxLinearInterpolator {
     
     #[inline(always)]
-    fn compute_weights(&self, x: f64, weights: &mut [f64])
+    fn compute_weights(&self, t: f64, weights: &mut [f64])
     {
-        linear_kernel_weights(x, weights)
+        linear_kernel_weights(t, weights)
     }
 }
 
@@ -93,8 +73,8 @@ impl GxArrayViewInterpolator for GxLinearInterpolator
 {
     fn new(_args: &dyn GxArrayViewInterpolatorArgs) -> Self {
         Self {
-            kernel_row_size: 3,
-            kernel_col_size: 3,
+            kernel_row_size: 2,
+            kernel_col_size: 2,
         }
     }
     
@@ -154,7 +134,6 @@ impl GxArrayViewInterpolator for GxLinearInterpolator
 #[cfg(test)]
 mod gx_linear_kernel_tests {
     use super::*;
-    //use crate::interp::gx_array_view_interp::{GxArrayViewInterpolationContext, DefaultCtx};
     use crate::interp::gx_array_view_interp::{GxArrayViewInterpolatorNoArgs, GxArrayViewInterpolationContext, DefaultCtx, BinaryInputMask, BinaryOutputMask, BoundsCheck};
     
     /// Checks if two slices of f64 values are approximately equal within a given tolerance.
@@ -172,58 +151,21 @@ mod gx_linear_kernel_tests {
             .all(|(x, y)| (*x - *y).abs() <= tol)
     }
 
-    /// Tests the linear kernel weights function at the center (x = 0.0).
+    /// native weights against the continuous linear kernel.
     #[test]
-    fn test_linear_kernel_weights_at_center() {
-        let mut weights = [0.0; 3];
+    fn test_linear_kernel_weights_native() {
+        use crate::interp::gx_kernel_test_utils::{check_native_weights, phi_linear};
+        check_native_weights(linear_kernel_weights, 2, phi_linear, 1.0, 1e-15);
+    }
+
+    /// Phase 0: identity, the anchor tap carries the full weight.
+    #[test]
+    fn test_linear_kernel_weights_phase_zero() {
+        let mut weights = [-1.0; 2];
         linear_kernel_weights(0.0, &mut weights);
-        assert_eq!(weights, [0.0, 1.0, 0.0]);
+        assert_eq!(weights, [0.0, 1.0]);
     }
 
-    /// Tests the linear kernel weights function at x = 0.5.
-    /// Expected values are computed using the bicubic interpolation formula.
-    #[test]
-    fn test_linear_kernel_weights_at_halfway_positive() {
-        let mut weights = [0.0; 3];
-        linear_kernel_weights(0.5, &mut weights);
-        let expected = [0.5, 0.5, 0.];
-        assert!(approx_eq(&weights, &expected, 1e-6));
-    }
-
-    /// Tests the linear kernel weights function at x = -0.5.
-    /// Expected values are computed using the bicubic interpolation formula.
-    #[test]
-    fn test_linear_kernel_weights_at_halfway_negative() {
-        let mut weights = [0.0; 3];
-        linear_kernel_weights(-0.5, &mut weights);
-        let expected = [0., 0.5, 0.5];
-        assert!(approx_eq(&weights, &expected, 1e-6));
-    }
-
-    /// Tests the linear kernel weights function for values outside the valid range (|x| >= 1.0).
-    /// Expected output: all weights should be zero.
-    #[test]
-    fn test_linear_kernel_weights_outside_range() {
-        let mut weights = [0.0; 3];
-        linear_kernel_weights(1.01, &mut weights);
-        assert_eq!(weights, [0.0, 0.0, 0.0]);
-
-        linear_kernel_weights(-1.01, &mut weights);
-        assert_eq!(weights, [0.0, 0.0, 0.0]);
-    }
-
-    /// Tests the linear kernel weights function for values exactly at the bounds (x = ±1.0).
-    #[test]
-    fn test_optimized_bicubic_kernel_weights_exactly_on_bounds() {
-        let mut weights = [0.0; 3];
-        linear_kernel_weights(1.0, &mut weights);
-        assert_eq!(weights, [1., 0., 0.]);
-        
-        
-        linear_kernel_weights(-1.0, &mut weights);
-        assert_eq!(weights, [0., 0., 1.]);
-    }
-    
     #[test]
     fn test_array1_interp2_idendity_mask_full_valid() {
         

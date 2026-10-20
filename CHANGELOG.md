@@ -1,5 +1,107 @@
 # CHANGELOG
 
+## [Unreleased]
+
+### ⚠️ Breaking Changes
+
+- **Interpolation, native kernel supports (Rust crate `gridr` only)**: separable interpolators
+  now use the native support of their kernel instead of a centered odd stencil: linear 2 taps
+  (was 3), cubic 4 (was 5), B-spline of order *n* `n + 1` (was `n + 2`). The stencil is anchored
+  on `floor(x)` for an even support and on the nearest integer for an odd one (`support_left`,
+  `anchor_shift`). `GxArrayViewInterpolatorCore::compute_weights` receives the phase
+  `t = x - anchor`, in `[0, 1)` for an even support, and the `interpolate_*` methods take the
+  index of the first stencil tap instead of the stencil center. The centered weight functions
+  `optimized_bicubic_kernel_weights`, `optimized_bicubic_kernel_weights_opt` and
+  `bspline{3,5,7,9,11}_all_centered` are replaced by `bicubic_kernel_weights_native` and
+  `bspline{3,5,7,9,11}_weights_native`; `linear_kernel_weights` now writes 2 weights.
+  No change to the Python API; `total_margins` is unchanged.
+
+### Added
+
+#### Interpolation: Native Weight Functions
+
+*Modules: `core::interp::gx_optimized_bicubic_kernel`,
+`core::interp::gx_bspline_kernel`*
+
+- Added `bicubic_kernel_weights_native` and
+`bspline{3,5,7,9,11}_weights_native`.
+- They compute the kernel weights on the native support, from a phase
+in `[0, 1)`.
+- They contain no branch.
+
+#### Interpolation: Stencil Anchoring
+
+*Module: `core::interp::gx_array_view_interp`*
+
+- Added `support_left` and `anchor_shift`, which define the stencil
+layout of a support of `K` taps.
+
+#### Benchmarking: Rust Interpolators
+
+*File: `rust/gridr/benches/interp.rs`*
+
+- Added a criterion benchmark of `array1_interp2` for every interpolator.
+- Three scenarios: regular grid, random positions, regular grid with input mask.
+- Added `criterion` as a development dependency.
+
+#### Testing
+
+- Added `check_native_weights` (`core::interp::gx_kernel_test_utils`).
+It checks a weight function against its continuous kernel: values, sum,
+zero pattern at phase 0, no zero inside the support.
+- Added unit tests of the weights of every separable kernel, based on
+`check_native_weights`.
+- Added unit tests of `array1_interp2_separable_core` with test-only
+kernels: anchoring and phase for supports of 1 to 6 taps, polynomial
+reproduction, interior, border and outside paths.
+- Added integration tests in `rust/gridr/tests/interp/`. They compare
+`array1_interp2` with a direct evaluation of the continuous kernel, 
+for every interpolator, with and without input mask, safe window and 
+bounds check.
+- Added an integration test checking that `total_margins` covers the stencil.
+
+### Changed
+
+#### Interpolation: Native Kernel Supports
+
+*Modules: `core::interp::gx_array_view_interp`,
+`core::interp::gx_linear_kernel`,
+`core::interp::gx_optimized_bicubic_kernel`, `core::interp::gx_bspline_kernel`*
+
+- Separable interpolators use the native support of their kernel (see
+Breaking Changes).
+- The stencil is anchored on `floor(x)` for an even support, on the
+nearest integer for an odd one.
+
+#### Testing
+
+*Module: `core::interp::gx_array_view_interp_test`*
+
+- The core test mock is now a native 2-tap linear kernel.
+- A 3-tap quadratic B-spline mock covers odd supports.
+- Direct calls to the `interpolate_*` methods pass the first stencil tap.
+
+#### Documentation
+
+- Updated `grid_resampling_007_standalone_mode.ipynb`: the cubic stencil is 4×4.
+
+#### Code Cleanup
+
+*Module: `core::interp`*
+
+- Removed the empty `rust/gridr/src/interp/gx_interp.rs` module.
+
+### Build & Tooling
+
+- **Cargo**
+  - Added the `interp` bench target to `rust/gridr/Cargo.toml`.
+  - Excluded the library target from benchmarks (`bench = false`).
+- **Makefile**
+  - Added the `bench-save` and `bench-compare` targets. `BENCH_BASELINE` sets the baseline name.
+- **Benchmark**
+  - Added the `benchmark/scripts/bench_rust.py` tool to run and save benchmark results and metadata.  
+
+
 ## [0.7.0] - 2026-09-30 
 
 ### ⚠️ Breaking Changes

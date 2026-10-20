@@ -1,0 +1,3358 @@
+{
+    "machine_info": {
+        "node": "trex082.sis.cnes.fr",
+        "processor": "x86_64",
+        "machine": "x86_64",
+        "system": "Linux",
+        "release": "4.18.0-553.147.1.el8_10.x86_64",
+        "cpu": {
+            "python_version": "3.11.10.final.0 (64 bit)",
+            "cpuinfo_version": [
+                9,
+                0,
+                0
+            ],
+            "cpuinfo_version_string": "9.0.0",
+            "arch": "X86_64",
+            "bits": 64,
+            "count": 128,
+            "arch_string_raw": "x86_64",
+            "vendor_id_raw": "AuthenticAMD",
+            "brand_raw": "AMD EPYC 7713 64-Core Processor",
+            "hz_advertised_friendly": "3.0995 GHz",
+            "hz_actual_friendly": "3.0995 GHz",
+            "hz_advertised": [
+                3099540000,
+                0
+            ],
+            "hz_actual": [
+                3099540000,
+                0
+            ],
+            "stepping": 1,
+            "model": 1,
+            "family": 25,
+            "flags": [
+                "3dnowprefetch",
+                "abm",
+                "adx",
+                "aes",
+                "amd_ppin",
+                "aperfmperf",
+                "apic",
+                "arat",
+                "avx",
+                "avx2",
+                "bmi1",
+                "bmi2",
+                "bpext",
+                "brs",
+                "cat_l3",
+                "cdp_l3",
+                "clflush",
+                "clflushopt",
+                "clwb",
+                "clzero",
+                "cmov",
+                "cmp_legacy",
+                "constant_tsc",
+                "cpb",
+                "cpuid",
+                "cqm",
+                "cqm_llc",
+                "cqm_mbm_local",
+                "cqm_mbm_total",
+                "cqm_occup_llc",
+                "cr8_legacy",
+                "cx16",
+                "cx8",
+                "de",
+                "decodeassists",
+                "erms",
+                "extapic",
+                "extd_apicid",
+                "f16c",
+                "flushbyasid",
+                "fma",
+                "fpu",
+                "fsgsbase",
+                "fsrm",
+                "fxsr",
+                "fxsr_opt",
+                "ht",
+                "hw_pstate",
+                "ibpb",
+                "ibrs",
+                "ibs",
+                "invpcid",
+                "invpcid_single",
+                "irperf",
+                "lahf_lm",
+                "lbrv",
+                "lm",
+                "mba",
+                "mca",
+                "mce",
+                "misalignsse",
+                "mmx",
+                "mmxext",
+                "monitor",
+                "movbe",
+                "msr",
+                "mtrr",
+                "mwaitx",
+                "nonstop_tsc",
+                "nopl",
+                "npt",
+                "nrip_save",
+                "nx",
+                "ospke",
+                "osvw",
+                "overflow_recov",
+                "pae",
+                "pat",
+                "pausefilter",
+                "pcid",
+                "pclmulqdq",
+                "pdpe1gb",
+                "perfctr_core",
+                "perfctr_llc",
+                "perfctr_nb",
+                "pfthreshold",
+                "pge",
+                "pku",
+                "pni",
+                "popcnt",
+                "pse",
+                "pse36",
+                "rdpid",
+                "rdrand",
+                "rdseed",
+                "rdt_a",
+                "rdtscp",
+                "rep_good",
+                "sep",
+                "sha_ni",
+                "skinit",
+                "smca",
+                "smep",
+                "ssbd",
+                "sse",
+                "sse2",
+                "sse4_1",
+                "sse4_2",
+                "sse4a",
+                "ssse3",
+                "stibp",
+                "succor",
+                "svm",
+                "svm_lock",
+                "syscall",
+                "tce",
+                "topoext",
+                "tsc",
+                "tsc_scale",
+                "umip",
+                "v_spec_ctrl",
+                "v_vmsave_vmload",
+                "vaes",
+                "vgif",
+                "vmcb_clean",
+                "vme",
+                "vmmcall",
+                "vpclmulqdq",
+                "wbnoinvd",
+                "wdt",
+                "x2apic",
+                "xgetbv1",
+                "xsave",
+                "xsavec",
+                "xsaveerptr",
+                "xsaveopt",
+                "xsaves"
+            ],
+            "l3_cache_size": 524288,
+            "l2_cache_size": 524288,
+            "l1_data_cache_size": 32768,
+            "l1_instruction_cache_size": 32768
+        },
+        "cpu_flags": [
+            "aes",
+            "avx",
+            "avx2",
+            "fma",
+            "sse4_1",
+            "sse4_2"
+        ],
+        "cpu_hz_actual": "3.0995 GHz",
+        "cpu_l2_cache": 524288,
+        "cpu_l3_cache": 524288,
+        "memory_available_gb": 770.63,
+        "swap_total_gb": 4.19,
+        "bench_runner": "trex082.sis.cnes.fr",
+        "bench_runner_id": "local",
+        "lib_version": "0.7.0",
+        "git_commit": "4700a34c9693cb743864f06af34f533cb1e6adf9",
+        "git_dirty": false,
+        "rustc_version": "1.97.1",
+        "rustflags": "-C target-feature=+avx2,+fma",
+        "criterion_version": "0.8.2",
+        "cargo_profile": "bench",
+        "bench_injected": true,
+        "bench_source_commit": "3820d698d47221c636b0c499324360ba3c54bd8f"
+    },
+    "commit_info": {
+        "id": "4700a34c9693cb743864f06af34f533cb1e6adf9",
+        "dirty": false,
+        "project": "gridr",
+        "branch": ""
+    },
+    "benchmarks": [
+        {
+            "group": "interp/bspline11",
+            "name": "interp/bspline11/random",
+            "fullname": "rust/gridr/benches::interp/bspline11/random",
+            "params": {
+                "bench": "interp",
+                "method": "bspline11",
+                "scenario": "random"
+            },
+            "param": "random",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 2483483.260856006,
+                        "lower_bound": 2469403.644672983,
+                        "upper_bound": 2498485.849758067
+                    },
+                    "median": {
+                        "point_estimate": 2465850.3282608697,
+                        "lower_bound": 2451301.798611111,
+                        "upper_bound": 2500173.9325
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 29967.459222536596,
+                        "lower_bound": 8898.997467010982,
+                        "upper_bound": 64276.02578640196
+                    },
+                    "slope": {
+                        "point_estimate": 2514260.405129561,
+                        "lower_bound": 2494181.743925398,
+                        "upper_bound": 2529183.9444869896
+                    },
+                    "std_dev": {
+                        "point_estimate": 41348.67909116354,
+                        "lower_bound": 32171.946325691595,
+                        "upper_bound": 46644.668170438345
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        2.0,
+                        4.0,
+                        6.0,
+                        8.0,
+                        10.0,
+                        12.0,
+                        14.0,
+                        16.0,
+                        18.0,
+                        20.0,
+                        22.0,
+                        24.0,
+                        26.0,
+                        28.0,
+                        30.0,
+                        32.0,
+                        34.0,
+                        36.0,
+                        38.0,
+                        40.0,
+                        42.0,
+                        44.0,
+                        46.0,
+                        48.0,
+                        50.0,
+                        52.0,
+                        54.0,
+                        56.0,
+                        58.0,
+                        60.0
+                    ],
+                    "times_ns": [
+                        4901173.0,
+                        9785206.0,
+                        14663638.0,
+                        19607831.0,
+                        24852760.0,
+                        29350767.0,
+                        34235290.0,
+                        39267170.0,
+                        44129245.0,
+                        49288624.0,
+                        53792171.0,
+                        59246068.0,
+                        63526318.0,
+                        68599948.0,
+                        73563050.0,
+                        78491603.0,
+                        83316516.0,
+                        90313199.0,
+                        94035572.0,
+                        100270093.0,
+                        107173166.0,
+                        111723012.0,
+                        113494395.0,
+                        121648806.0,
+                        124679777.0,
+                        131735619.0,
+                        136509423.0,
+                        142826332.0,
+                        148462537.0,
+                        153344721.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.0024433199230769233,
+                "max": 0.0025596989137931033,
+                "mean": 0.0024834832608560064,
+                "stddev": 4.134867909116353e-05,
+                "rounds": 30,
+                "median": 0.00246585032826087,
+                "iqr": 7.262825285947764e-05,
+                "q1": 0.0024505109485294116,
+                "q3": 0.0025231392013888893,
+                "iqr_outliers": 0,
+                "stddev_outliers": 8,
+                "outliers": "8;0",
+                "ld15iqr": 0.0024433199230769233,
+                "hd15iqr": 0.0025596989137931033,
+                "ops": 402.66025374993677,
+                "total": 2.32683403,
+                "iterations": 31
+            }
+        },
+        {
+            "group": "interp/bspline11",
+            "name": "interp/bspline11/regular",
+            "fullname": "rust/gridr/benches::interp/bspline11/regular",
+            "params": {
+                "bench": "interp",
+                "method": "bspline11",
+                "scenario": "regular"
+            },
+            "param": "regular",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 2157286.379634346,
+                        "lower_bound": 2127830.9318522657,
+                        "upper_bound": 2190039.7031533187
+                    },
+                    "median": {
+                        "point_estimate": 2114157.891583055,
+                        "lower_bound": 2094376.5499999998,
+                        "upper_bound": 2165207.301851852
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 45069.73833281902,
+                        "lower_bound": 14987.263523577694,
+                        "upper_bound": 106063.94992525862
+                    },
+                    "slope": {
+                        "point_estimate": 2109009.781702803,
+                        "lower_bound": 2100795.1335385344,
+                        "upper_bound": 2120645.851771754
+                    },
+                    "std_dev": {
+                        "point_estimate": 88814.63038619552,
+                        "lower_bound": 57290.060392653235,
+                        "upper_bound": 109562.0030192411
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        3.0,
+                        6.0,
+                        9.0,
+                        12.0,
+                        15.0,
+                        18.0,
+                        21.0,
+                        24.0,
+                        27.0,
+                        30.0,
+                        33.0,
+                        36.0,
+                        39.0,
+                        42.0,
+                        45.0,
+                        48.0,
+                        51.0,
+                        54.0,
+                        57.0,
+                        60.0,
+                        63.0,
+                        66.0,
+                        69.0,
+                        72.0,
+                        75.0,
+                        78.0,
+                        81.0,
+                        84.0,
+                        87.0,
+                        90.0
+                    ],
+                    "times_ns": [
+                        7056490.0,
+                        12960904.0,
+                        19742848.0,
+                        26738389.0,
+                        35420631.0,
+                        42809667.0,
+                        46544236.0,
+                        54013342.0,
+                        58342852.0,
+                        65087047.0,
+                        72546623.0,
+                        81785539.0,
+                        83699357.0,
+                        87659823.0,
+                        94136219.0,
+                        100229161.0,
+                        106323612.0,
+                        112275796.0,
+                        118721613.0,
+                        125525056.0,
+                        131334980.0,
+                        137973456.0,
+                        146026165.0,
+                        150594854.0,
+                        157767942.0,
+                        164735575.0,
+                        172172061.0,
+                        176973336.0,
+                        182460525.0,
+                        188700195.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.0020791814074074075,
+                "max": 0.0023783148333333336,
+                "mean": 0.0021572863796343457,
+                "stddev": 8.88146303861955e-05,
+                "rounds": 30,
+                "median": 0.002114157891583055,
+                "iqr": 0.00010552394053030267,
+                "q1": 0.0020916753902777783,
+                "q3": 0.002197199330808081,
+                "iqr_outliers": 2,
+                "stddev_outliers": 5,
+                "outliers": "5;2",
+                "ld15iqr": 0.0020791814074074075,
+                "hd15iqr": 0.0023521633333333336,
+                "ops": 463.5453175991856,
+                "total": 2.960358294,
+                "iterations": 46
+            }
+        },
+        {
+            "group": "interp/bspline11",
+            "name": "interp/bspline11/regular_masked",
+            "fullname": "rust/gridr/benches::interp/bspline11/regular_masked",
+            "params": {
+                "bench": "interp",
+                "method": "bspline11",
+                "scenario": "regular_masked"
+            },
+            "param": "regular_masked",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 2249116.622645721,
+                        "lower_bound": 2239658.437679806,
+                        "upper_bound": 2259151.656706088
+                    },
+                    "median": {
+                        "point_estimate": 2234494.7,
+                        "lower_bound": 2228687.886029412,
+                        "upper_bound": 2259787.6962121213
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 22694.07832118636,
+                        "lower_bound": 5624.811330139591,
+                        "upper_bound": 43960.50581783448
+                    },
+                    "slope": {
+                        "point_estimate": 2250759.737070333,
+                        "lower_bound": 2238083.3695183066,
+                        "upper_bound": 2262058.1221215664
+                    },
+                    "std_dev": {
+                        "point_estimate": 27804.29257500184,
+                        "lower_bound": 21666.09449799309,
+                        "upper_bound": 31605.54108575016
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        2.0,
+                        4.0,
+                        6.0,
+                        8.0,
+                        10.0,
+                        12.0,
+                        14.0,
+                        16.0,
+                        18.0,
+                        20.0,
+                        22.0,
+                        24.0,
+                        26.0,
+                        28.0,
+                        30.0,
+                        32.0,
+                        34.0,
+                        36.0,
+                        38.0,
+                        40.0,
+                        42.0,
+                        44.0,
+                        46.0,
+                        48.0,
+                        50.0,
+                        52.0,
+                        54.0,
+                        56.0,
+                        58.0,
+                        60.0
+                    ],
+                    "times_ns": [
+                        4566993.0,
+                        9170136.0,
+                        13800977.0,
+                        17806638.0,
+                        22574575.0,
+                        27421070.0,
+                        32193667.0,
+                        35657154.0,
+                        40309815.0,
+                        44666015.0,
+                        48805580.0,
+                        53534769.0,
+                        57707755.0,
+                        62386364.0,
+                        66942938.0,
+                        71003087.0,
+                        75779324.0,
+                        80182862.0,
+                        84632819.0,
+                        89427546.0,
+                        93220592.0,
+                        99527094.0,
+                        103531124.0,
+                        107021500.0,
+                        111355230.0,
+                        117656702.0,
+                        123138837.0,
+                        128651753.0,
+                        131968514.0,
+                        135455759.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.0022184354545454546,
+                "max": 0.0023001628333333335,
+                "mean": 0.0022491166226457212,
+                "stddev": 2.7804292575001837e-05,
+                "rounds": 30,
+                "median": 0.0022344947,
+                "iqr": 4.464922751673626e-05,
+                "q1": 0.0022274973988095238,
+                "q3": 0.00227214662632626,
+                "iqr_outliers": 0,
+                "stddev_outliers": 11,
+                "outliers": "11;0",
+                "ld15iqr": 0.0022184354545454546,
+                "hd15iqr": 0.0023001628333333335,
+                "ops": 444.61900727213606,
+                "total": 2.090097189,
+                "iterations": 31
+            }
+        },
+        {
+            "group": "interp/bspline3",
+            "name": "interp/bspline3/random",
+            "fullname": "rust/gridr/benches::interp/bspline3/random",
+            "params": {
+                "bench": "interp",
+                "method": "bspline3",
+                "scenario": "random"
+            },
+            "param": "random",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 543347.1753935905,
+                        "lower_bound": 541331.1085985199,
+                        "upper_bound": 545402.2319946683
+                    },
+                    "median": {
+                        "point_estimate": 542353.9094967532,
+                        "lower_bound": 539849.1279891304,
+                        "upper_bound": 546640.4765625
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 7710.687240714888,
+                        "lower_bound": 4286.125245059846,
+                        "upper_bound": 8887.71003147302
+                    },
+                    "slope": {
+                        "point_estimate": 540465.7543759915,
+                        "lower_bound": 538331.9873586335,
+                        "upper_bound": 543088.450295348
+                    },
+                    "std_dev": {
+                        "point_estimate": 5799.5764679782615,
+                        "lower_bound": 4685.044263751496,
+                        "upper_bound": 6658.318450604271
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        8.0,
+                        16.0,
+                        24.0,
+                        32.0,
+                        40.0,
+                        48.0,
+                        56.0,
+                        64.0,
+                        72.0,
+                        80.0,
+                        88.0,
+                        96.0,
+                        104.0,
+                        112.0,
+                        120.0,
+                        128.0,
+                        136.0,
+                        144.0,
+                        152.0,
+                        160.0,
+                        168.0,
+                        176.0,
+                        184.0,
+                        192.0,
+                        200.0,
+                        208.0,
+                        216.0,
+                        224.0,
+                        232.0,
+                        240.0
+                    ],
+                    "times_ns": [
+                        4397578.0,
+                        8840375.0,
+                        13323372.0,
+                        17545042.0,
+                        21836131.0,
+                        26352607.0,
+                        30556647.0,
+                        34949845.0,
+                        39550670.0,
+                        43893959.0,
+                        48152687.0,
+                        51912483.0,
+                        57208380.0,
+                        60141075.0,
+                        65310944.0,
+                        69266486.0,
+                        73077201.0,
+                        77312532.0,
+                        81830697.0,
+                        86294565.0,
+                        90731201.0,
+                        95282218.0,
+                        99362699.0,
+                        103040806.0,
+                        107056808.0,
+                        111458335.0,
+                        115463397.0,
+                        121706274.0,
+                        127821671.0,
+                        129524061.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.0005345527638888889,
+                "max": 0.0005551405,
+                "mean": 0.0005433471753935904,
+                "stddev": 5.7995764679782635e-06,
+                "rounds": 30,
+                "median": 0.0005423539094967533,
+                "iqr": 9.97136192434217e-06,
+                "q1": 0.0005386051443256579,
+                "q3": 0.0005485765062500001,
+                "iqr_outliers": 0,
+                "stddev_outliers": 13,
+                "outliers": "13;0",
+                "ld15iqr": 0.0005345527638888889,
+                "hd15iqr": 0.0005551405,
+                "ops": 1840.4439100573568,
+                "total": 2.0132007460000003,
+                "iterations": 124
+            }
+        },
+        {
+            "group": "interp/bspline3",
+            "name": "interp/bspline3/regular",
+            "fullname": "rust/gridr/benches::interp/bspline3/regular",
+            "params": {
+                "bench": "interp",
+                "method": "bspline3",
+                "scenario": "regular"
+            },
+            "param": "regular",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 328862.87620052445,
+                        "lower_bound": 328376.6306457043,
+                        "upper_bound": 329518.00871120894
+                    },
+                    "median": {
+                        "point_estimate": 328341.78769841266,
+                        "lower_bound": 327961.51116071426,
+                        "upper_bound": 328826.0300207039
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 731.1692707147955,
+                        "lower_bound": 275.70018789526677,
+                        "upper_bound": 1258.9700143829164
+                    },
+                    "slope": {
+                        "point_estimate": 328523.7225202085,
+                        "lower_bound": 328313.04333183245,
+                        "upper_bound": 328783.5952883365
+                    },
+                    "std_dev": {
+                        "point_estimate": 1640.6992175799123,
+                        "lower_bound": 653.6812865212714,
+                        "upper_bound": 2496.637652462764
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        14.0,
+                        28.0,
+                        42.0,
+                        56.0,
+                        70.0,
+                        84.0,
+                        98.0,
+                        112.0,
+                        126.0,
+                        140.0,
+                        154.0,
+                        168.0,
+                        182.0,
+                        196.0,
+                        210.0,
+                        224.0,
+                        238.0,
+                        252.0,
+                        266.0,
+                        280.0,
+                        294.0,
+                        308.0,
+                        322.0,
+                        336.0,
+                        350.0,
+                        364.0,
+                        378.0,
+                        392.0,
+                        406.0,
+                        420.0
+                    ],
+                    "times_ns": [
+                        4590490.0,
+                        9175860.0,
+                        14118806.0,
+                        18365520.0,
+                        22941260.0,
+                        27539169.0,
+                        32474406.0,
+                        36715270.0,
+                        41355698.0,
+                        46246056.0,
+                        50487579.0,
+                        55431196.0,
+                        59683838.0,
+                        64596935.0,
+                        69202886.0,
+                        73464677.0,
+                        78365715.0,
+                        82994845.0,
+                        87575845.0,
+                        92050015.0,
+                        96600866.0,
+                        101249356.0,
+                        105884414.0,
+                        110134298.0,
+                        114783247.0,
+                        119560805.0,
+                        124293384.0,
+                        128661576.0,
+                        133179116.0,
+                        137782636.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.00032770928571428576,
+                "max": 0.00033616204761904763,
+                "mean": 0.0003288628762005245,
+                "stddev": 1.6406992175799076e-06,
+                "rounds": 30,
+                "median": 0.0003283417876984127,
+                "iqr": 1.320992123464784e-06,
+                "q1": 0.00032793791543956046,
+                "q3": 0.00032925890756302524,
+                "iqr_outliers": 2,
+                "stddev_outliers": 2,
+                "outliers": "2;2",
+                "ld15iqr": 0.00032770928571428576,
+                "hd15iqr": 0.00033032897142857144,
+                "ops": 3040.781043921324,
+                "total": 2.139505764,
+                "iterations": 217
+            }
+        },
+        {
+            "group": "interp/bspline3",
+            "name": "interp/bspline3/regular_masked",
+            "fullname": "rust/gridr/benches::interp/bspline3/regular_masked",
+            "params": {
+                "bench": "interp",
+                "method": "bspline3",
+                "scenario": "regular_masked"
+            },
+            "param": "regular_masked",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 578819.3545321849,
+                        "lower_bound": 578270.8061615858,
+                        "upper_bound": 579450.3792623865
+                    },
+                    "median": {
+                        "point_estimate": 578783.0476190476,
+                        "lower_bound": 578031.3326388889,
+                        "upper_bound": 579111.0998161765
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 1369.971023490687,
+                        "lower_bound": 589.6068439074033,
+                        "upper_bound": 2114.531737459582
+                    },
+                    "slope": {
+                        "point_estimate": 578253.860510312,
+                        "lower_bound": 577773.9306757739,
+                        "upper_bound": 578861.4933966085
+                    },
+                    "std_dev": {
+                        "point_estimate": 1678.1957148280455,
+                        "lower_bound": 961.4098702661892,
+                        "upper_bound": 2254.9274062903014
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        8.0,
+                        16.0,
+                        24.0,
+                        32.0,
+                        40.0,
+                        48.0,
+                        56.0,
+                        64.0,
+                        72.0,
+                        80.0,
+                        88.0,
+                        96.0,
+                        104.0,
+                        112.0,
+                        120.0,
+                        128.0,
+                        136.0,
+                        144.0,
+                        152.0,
+                        160.0,
+                        168.0,
+                        176.0,
+                        184.0,
+                        192.0,
+                        200.0,
+                        208.0,
+                        216.0,
+                        224.0,
+                        232.0,
+                        240.0
+                    ],
+                    "times_ns": [
+                        4633625.0,
+                        9260040.0,
+                        13886235.0,
+                        18467581.0,
+                        23373491.0,
+                        27758370.0,
+                        32319066.0,
+                        37308067.0,
+                        41633885.0,
+                        46225141.0,
+                        51099282.0,
+                        55587190.0,
+                        60266844.0,
+                        64963768.0,
+                        69316227.0,
+                        74196778.0,
+                        78761334.0,
+                        83372889.0,
+                        87725888.0,
+                        92655159.0,
+                        97240684.0,
+                        101812210.0,
+                        106582694.0,
+                        111133129.0,
+                        116034652.0,
+                        120033823.0,
+                        124707929.0,
+                        129288584.0,
+                        133871829.0,
+                        138502744.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.0005770337456896552,
+                "max": 0.0005843372750000001,
+                "mean": 0.0005788193545321848,
+                "stddev": 1.6781957148280473e-06,
+                "rounds": 30,
+                "median": 0.0005787830476190476,
+                "iqr": 1.8186614432367729e-06,
+                "q1": 0.0005774224486111111,
+                "q3": 0.0005792411100543479,
+                "iqr_outliers": 2,
+                "stddev_outliers": 8,
+                "outliers": "8;2",
+                "ld15iqr": 0.0005770337456896552,
+                "hd15iqr": 0.0005806736590909091,
+                "ops": 1727.6547374754307,
+                "total": 2.152019138,
+                "iterations": 124
+            }
+        },
+        {
+            "group": "interp/bspline5",
+            "name": "interp/bspline5/random",
+            "fullname": "rust/gridr/benches::interp/bspline5/random",
+            "params": {
+                "bench": "interp",
+                "method": "bspline5",
+                "scenario": "random"
+            },
+            "param": "random",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 921413.2177391865,
+                        "lower_bound": 917935.0461260339,
+                        "upper_bound": 925058.8521330145
+                    },
+                    "median": {
+                        "point_estimate": 920349.7047619048,
+                        "lower_bound": 916290.7413636365,
+                        "upper_bound": 923938.125
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 10788.754693461276,
+                        "lower_bound": 5693.677392917085,
+                        "upper_bound": 15280.207068914468
+                    },
+                    "slope": {
+                        "point_estimate": 914297.1045795875,
+                        "lower_bound": 912032.0613498626,
+                        "upper_bound": 917596.0564834448
+                    },
+                    "std_dev": {
+                        "point_estimate": 10120.447241043654,
+                        "lower_bound": 7543.090105788228,
+                        "upper_bound": 12028.28260885045
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        5.0,
+                        10.0,
+                        15.0,
+                        20.0,
+                        25.0,
+                        30.0,
+                        35.0,
+                        40.0,
+                        45.0,
+                        50.0,
+                        55.0,
+                        60.0,
+                        65.0,
+                        70.0,
+                        75.0,
+                        80.0,
+                        85.0,
+                        90.0,
+                        95.0,
+                        100.0,
+                        105.0,
+                        110.0,
+                        115.0,
+                        120.0,
+                        125.0,
+                        130.0,
+                        135.0,
+                        140.0,
+                        145.0,
+                        150.0
+                    ],
+                    "times_ns": [
+                        4694384.0,
+                        9213360.0,
+                        13849586.0,
+                        18553469.0,
+                        23320783.0,
+                        27610742.0,
+                        32211947.0,
+                        37771431.0,
+                        42258638.0,
+                        46587776.0,
+                        51532937.0,
+                        55474231.0,
+                        60465531.0,
+                        64748361.0,
+                        68773612.0,
+                        73718754.0,
+                        78381948.0,
+                        82809136.0,
+                        87108075.0,
+                        91650101.0,
+                        95877560.0,
+                        100768852.0,
+                        105270479.0,
+                        109297731.0,
+                        114055724.0,
+                        118500422.0,
+                        122545404.0,
+                        127183268.0,
+                        131837183.0,
+                        136027793.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.0009068519533333335,
+                "max": 0.000944285775,
+                "mean": 0.0009214132177391864,
+                "stddev": 1.012044724104365e-05,
+                "rounds": 30,
+                "median": 0.0009203497047619049,
+                "iqr": 1.3310652251552675e-05,
+                "q1": 0.0009136885816770188,
+                "q3": 0.0009269992339285715,
+                "iqr_outliers": 0,
+                "stddev_outliers": 11,
+                "outliers": "11;0",
+                "ld15iqr": 0.0009068519533333335,
+                "hd15iqr": 0.000944285775,
+                "ops": 1085.289401918541,
+                "total": 2.132099218,
+                "iterations": 78
+            }
+        },
+        {
+            "group": "interp/bspline5",
+            "name": "interp/bspline5/regular",
+            "fullname": "rust/gridr/benches::interp/bspline5/regular",
+            "params": {
+                "bench": "interp",
+                "method": "bspline5",
+                "scenario": "regular"
+            },
+            "param": "regular",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 608829.6986911277,
+                        "lower_bound": 608692.8607817428,
+                        "upper_bound": 608980.3875021777
+                    },
+                    "median": {
+                        "point_estimate": 608787.5436487854,
+                        "lower_bound": 608545.9973958333,
+                        "upper_bound": 608967.6958333333
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 394.5737896326015,
+                        "lower_bound": 214.06629014187178,
+                        "upper_bound": 576.970667597625
+                    },
+                    "slope": {
+                        "point_estimate": 608611.3267451084,
+                        "lower_bound": 608515.051410194,
+                        "upper_bound": 608748.4345388073
+                    },
+                    "std_dev": {
+                        "point_estimate": 410.096491855899,
+                        "lower_bound": 274.8072870872954,
+                        "upper_bound": 539.0559098799351
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        8.0,
+                        16.0,
+                        24.0,
+                        32.0,
+                        40.0,
+                        48.0,
+                        56.0,
+                        64.0,
+                        72.0,
+                        80.0,
+                        88.0,
+                        96.0,
+                        104.0,
+                        112.0,
+                        120.0,
+                        128.0,
+                        136.0,
+                        144.0,
+                        152.0,
+                        160.0,
+                        168.0,
+                        176.0,
+                        184.0,
+                        192.0,
+                        200.0,
+                        208.0,
+                        216.0,
+                        224.0,
+                        232.0,
+                        240.0
+                    ],
+                    "times_ns": [
+                        4871022.0,
+                        9740384.0,
+                        14607826.0,
+                        19488639.0,
+                        24359870.0,
+                        29211023.0,
+                        34168694.0,
+                        39006366.0,
+                        43864179.0,
+                        48729191.0,
+                        53595993.0,
+                        58460755.0,
+                        63332607.0,
+                        68197199.0,
+                        73076162.0,
+                        77991153.0,
+                        82873025.0,
+                        87600969.0,
+                        92534080.0,
+                        97376673.0,
+                        102223195.0,
+                        107097017.0,
+                        111966539.0,
+                        116837571.0,
+                        121680354.0,
+                        126630035.0,
+                        131402819.0,
+                        136263120.0,
+                        141154832.0,
+                        146035894.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.0006083175,
+                "max": 0.00061015525,
+                "mean": 0.0006088296986911277,
+                "stddev": 4.100964918559026e-07,
+                "rounds": 30,
+                "median": 0.0006087875436487855,
+                "iqr": 5.063805274210407e-07,
+                "q1": 0.000608507783535079,
+                "q3": 0.0006090141640625001,
+                "iqr_outliers": 1,
+                "stddev_outliers": 8,
+                "outliers": "8;1",
+                "ld15iqr": 0.0006083175,
+                "hd15iqr": 0.00060947446875,
+                "ops": 1642.4954336981536,
+                "total": 2.264377186,
+                "iterations": 124
+            }
+        },
+        {
+            "group": "interp/bspline5",
+            "name": "interp/bspline5/regular_masked",
+            "fullname": "rust/gridr/benches::interp/bspline5/regular_masked",
+            "params": {
+                "bench": "interp",
+                "method": "bspline5",
+                "scenario": "regular_masked"
+            },
+            "param": "regular_masked",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 905233.4574039007,
+                        "lower_bound": 904804.9615359018,
+                        "upper_bound": 905698.5333526151
+                    },
+                    "median": {
+                        "point_estimate": 905168.7666666666,
+                        "lower_bound": 904862.0066666666,
+                        "upper_bound": 905467.0375
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 1180.1923463550434,
+                        "lower_bound": 443.88054811951275,
+                        "upper_bound": 1489.281557559861
+                    },
+                    "slope": {
+                        "point_estimate": 905438.2975145426,
+                        "lower_bound": 904720.3519484951,
+                        "upper_bound": 906159.1389520912
+                    },
+                    "std_dev": {
+                        "point_estimate": 1276.6377028574566,
+                        "lower_bound": 823.5728983088738,
+                        "upper_bound": 1637.8390462858868
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        5.0,
+                        10.0,
+                        15.0,
+                        20.0,
+                        25.0,
+                        30.0,
+                        35.0,
+                        40.0,
+                        45.0,
+                        50.0,
+                        55.0,
+                        60.0,
+                        65.0,
+                        70.0,
+                        75.0,
+                        80.0,
+                        85.0,
+                        90.0,
+                        95.0,
+                        100.0,
+                        105.0,
+                        110.0,
+                        115.0,
+                        120.0,
+                        125.0,
+                        130.0,
+                        135.0,
+                        140.0,
+                        145.0,
+                        150.0
+                    ],
+                    "times_ns": [
+                        4541268.0,
+                        9058396.0,
+                        13577414.0,
+                        18103532.0,
+                        22623580.0,
+                        27166248.0,
+                        31652077.0,
+                        36212604.0,
+                        40774182.0,
+                        45268980.0,
+                        49734599.0,
+                        54262727.0,
+                        58783835.0,
+                        63347342.0,
+                        67858561.0,
+                        72431398.0,
+                        76943667.0,
+                        81320286.0,
+                        85857733.0,
+                        90342343.0,
+                        94835030.0,
+                        99398779.0,
+                        104085344.0,
+                        108824741.0,
+                        113270680.0,
+                        117795667.0,
+                        122311146.0,
+                        127238110.0,
+                        131244843.0,
+                        135868220.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.0009031907619047619,
+                "max": 0.0009088436428571428,
+                "mean": 0.0009052334574039009,
+                "stddev": 1.2766377028574567e-06,
+                "rounds": 30,
+                "median": 0.0009051687666666667,
+                "iqr": 1.4570182692308104e-06,
+                "q1": 0.0009043697150641026,
+                "q3": 0.0009058267333333334,
+                "iqr_outliers": 2,
+                "stddev_outliers": 8,
+                "outliers": "8;2",
+                "ld15iqr": 0.0009031907619047619,
+                "hd15iqr": 0.0009068728416666668,
+                "ops": 1104.6874061282247,
+                "total": 2.1047333320000003,
+                "iterations": 78
+            }
+        },
+        {
+            "group": "interp/bspline7",
+            "name": "interp/bspline7/random",
+            "fullname": "rust/gridr/benches::interp/bspline7/random",
+            "params": {
+                "bench": "interp",
+                "method": "bspline7",
+                "scenario": "random"
+            },
+            "param": "random",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 1390824.4458380144,
+                        "lower_bound": 1388673.980928598,
+                        "upper_bound": 1393165.9290933236
+                    },
+                    "median": {
+                        "point_estimate": 1390661.9705882352,
+                        "lower_bound": 1387637.0201388889,
+                        "upper_bound": 1392215.8075
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 5291.313737340219,
+                        "lower_bound": 2595.391723153235,
+                        "upper_bound": 7413.178719964276
+                    },
+                    "slope": {
+                        "point_estimate": 1387818.0132205181,
+                        "lower_bound": 1385492.1832513092,
+                        "upper_bound": 1390540.661934115
+                    },
+                    "std_dev": {
+                        "point_estimate": 6399.465679166585,
+                        "lower_bound": 4153.7294105334595,
+                        "upper_bound": 8295.444042592895
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        4.0,
+                        8.0,
+                        12.0,
+                        16.0,
+                        20.0,
+                        24.0,
+                        28.0,
+                        32.0,
+                        36.0,
+                        40.0,
+                        44.0,
+                        48.0,
+                        52.0,
+                        56.0,
+                        60.0,
+                        64.0,
+                        68.0,
+                        72.0,
+                        76.0,
+                        80.0,
+                        84.0,
+                        88.0,
+                        92.0,
+                        96.0,
+                        100.0,
+                        104.0,
+                        108.0,
+                        112.0,
+                        116.0,
+                        120.0
+                    ],
+                    "times_ns": [
+                        5561668.0,
+                        11131727.0,
+                        16689165.0,
+                        22277914.0,
+                        28201608.0,
+                        33443230.0,
+                        38931189.0,
+                        44925144.0,
+                        50208904.0,
+                        56009241.0,
+                        61340781.0,
+                        66538803.0,
+                        72364319.0,
+                        77941538.0,
+                        83427616.0,
+                        88576108.0,
+                        94558093.0,
+                        99918254.0,
+                        105961517.0,
+                        111001641.0,
+                        117178353.0,
+                        122064149.0,
+                        127498797.0,
+                        132867208.0,
+                        139206199.0,
+                        143714167.0,
+                        149109208.0,
+                        155166001.0,
+                        161829729.0,
+                        165793592.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.0013806408148148148,
+                "max": 0.0014100803999999999,
+                "mean": 0.0013908244458380147,
+                "stddev": 6.399465679166582e-06,
+                "rounds": 30,
+                "median": 0.0013906619705882353,
+                "iqr": 7.506526041666612e-06,
+                "q1": 0.001386441947443182,
+                "q3": 0.0013939484734848487,
+                "iqr_outliers": 1,
+                "stddev_outliers": 8,
+                "outliers": "8;1",
+                "ld15iqr": 0.0013806408148148148,
+                "hd15iqr": 0.00140391075,
+                "ops": 718.9980036606771,
+                "total": 2.583435863,
+                "iterations": 62
+            }
+        },
+        {
+            "group": "interp/bspline7",
+            "name": "interp/bspline7/regular",
+            "fullname": "rust/gridr/benches::interp/bspline7/regular",
+            "params": {
+                "bench": "interp",
+                "method": "bspline7",
+                "scenario": "regular"
+            },
+            "param": "regular",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 1063874.8685489085,
+                        "lower_bound": 1062969.0497323913,
+                        "upper_bound": 1064842.6182316376
+                    },
+                    "median": {
+                        "point_estimate": 1064140.2235294117,
+                        "lower_bound": 1062981.045614035,
+                        "upper_bound": 1064782.425
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 2141.538150611762,
+                        "lower_bound": 961.9833046604814,
+                        "upper_bound": 3718.953773975579
+                    },
+                    "slope": {
+                        "point_estimate": 1064759.5615653093,
+                        "lower_bound": 1064018.5137510898,
+                        "upper_bound": 1065453.5295361227
+                    },
+                    "std_dev": {
+                        "point_estimate": 2655.5624968738293,
+                        "lower_bound": 1838.8798936502476,
+                        "upper_bound": 3420.45289622588
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        5.0,
+                        10.0,
+                        15.0,
+                        20.0,
+                        25.0,
+                        30.0,
+                        35.0,
+                        40.0,
+                        45.0,
+                        50.0,
+                        55.0,
+                        60.0,
+                        65.0,
+                        70.0,
+                        75.0,
+                        80.0,
+                        85.0,
+                        90.0,
+                        95.0,
+                        100.0,
+                        105.0,
+                        110.0,
+                        115.0,
+                        120.0,
+                        125.0,
+                        130.0,
+                        135.0,
+                        140.0,
+                        145.0,
+                        150.0
+                    ],
+                    "times_ns": [
+                        5320591.0,
+                        10601742.0,
+                        15909962.0,
+                        21233343.0,
+                        26796152.0,
+                        31849134.0,
+                        37155566.0,
+                        42665064.0,
+                        47740167.0,
+                        53019159.0,
+                        58323399.0,
+                        63896927.0,
+                        69206059.0,
+                        74185322.0,
+                        79739980.0,
+                        85188500.0,
+                        90453791.0,
+                        95714533.0,
+                        100962424.0,
+                        106512932.0,
+                        111848932.0,
+                        117340852.0,
+                        122351976.0,
+                        127710746.0,
+                        133067596.0,
+                        138885352.0,
+                        143634358.0,
+                        149058358.0,
+                        154543846.0,
+                        159847688.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.0010597903142857143,
+                "max": 0.0010718460800000001,
+                "mean": 0.0010638748685489086,
+                "stddev": 2.655562496873826e-06,
+                "rounds": 30,
+                "median": 0.0010641402235294119,
+                "iqr": 3.4390483333334755e-06,
+                "q1": 0.0010616451375,
+                "q3": 0.0010650841858333335,
+                "iqr_outliers": 1,
+                "stddev_outliers": 10,
+                "outliers": "10;1",
+                "ld15iqr": 0.0010597903142857143,
+                "hd15iqr": 0.0010683488615384617,
+                "ops": 939.9601678381295,
+                "total": 2.474764451,
+                "iterations": 78
+            }
+        },
+        {
+            "group": "interp/bspline7",
+            "name": "interp/bspline7/regular_masked",
+            "fullname": "rust/gridr/benches::interp/bspline7/regular_masked",
+            "params": {
+                "bench": "interp",
+                "method": "bspline7",
+                "scenario": "regular_masked"
+            },
+            "param": "regular_masked",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 1352921.6342105353,
+                        "lower_bound": 1351172.3423699941,
+                        "upper_bound": 1355085.2950079236
+                    },
+                    "median": {
+                        "point_estimate": 1350865.5183404558,
+                        "lower_bound": 1349994.3705357143,
+                        "upper_bound": 1352430.6452850876
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 1953.8159693726518,
+                        "lower_bound": 976.5797700544363,
+                        "upper_bound": 4107.8976204911705
+                    },
+                    "slope": {
+                        "point_estimate": 1351363.401374934,
+                        "lower_bound": 1350762.2149139,
+                        "upper_bound": 1352226.7013405277
+                    },
+                    "std_dev": {
+                        "point_estimate": 5624.275897151579,
+                        "lower_bound": 2395.622425369235,
+                        "upper_bound": 8019.5192568642615
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        4.0,
+                        8.0,
+                        12.0,
+                        16.0,
+                        20.0,
+                        24.0,
+                        28.0,
+                        32.0,
+                        36.0,
+                        40.0,
+                        44.0,
+                        48.0,
+                        52.0,
+                        56.0,
+                        60.0,
+                        64.0,
+                        68.0,
+                        72.0,
+                        76.0,
+                        80.0,
+                        84.0,
+                        88.0,
+                        92.0,
+                        96.0,
+                        100.0,
+                        104.0,
+                        108.0,
+                        112.0,
+                        116.0,
+                        120.0
+                    ],
+                    "times_ns": [
+                        5393110.0,
+                        10795668.0,
+                        16495514.0,
+                        21594927.0,
+                        26980086.0,
+                        32391285.0,
+                        38165440.0,
+                        43209103.0,
+                        49112057.0,
+                        53963603.0,
+                        59728067.0,
+                        64824190.0,
+                        70493406.0,
+                        75911115.0,
+                        81063057.0,
+                        86766682.0,
+                        92023814.0,
+                        97404843.0,
+                        102810493.0,
+                        108103882.0,
+                        113372403.0,
+                        118740672.0,
+                        124181002.0,
+                        129800798.0,
+                        135122648.0,
+                        140506287.0,
+                        145876577.0,
+                        151191137.0,
+                        156639586.0,
+                        162008145.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.0013482775000000001,
+                "max": 0.001374626166666667,
+                "mean": 0.0013529216342105356,
+                "stddev": 5.6242758971515806e-06,
+                "rounds": 30,
+                "median": 0.0013508655183404562,
+                "iqr": 3.4692190563727354e-06,
+                "q1": 0.001349710578125,
+                "q3": 0.0013531797971813727,
+                "iqr_outliers": 3,
+                "stddev_outliers": 3,
+                "outliers": "3;3",
+                "ld15iqr": 0.0013482775000000001,
+                "hd15iqr": 0.0013574560681818182,
+                "ops": 739.1411111431636,
+                "total": 2.514669597,
+                "iterations": 62
+            }
+        },
+        {
+            "group": "interp/bspline9",
+            "name": "interp/bspline9/random",
+            "fullname": "rust/gridr/benches::interp/bspline9/random",
+            "params": {
+                "bench": "interp",
+                "method": "bspline9",
+                "scenario": "random"
+            },
+            "param": "random",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 1913899.4768026003,
+                        "lower_bound": 1912181.6926033855,
+                        "upper_bound": 1915648.8283169176
+                    },
+                    "median": {
+                        "point_estimate": 1913740.170940171,
+                        "lower_bound": 1910442.5821662,
+                        "upper_bound": 1916073.4785714285
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 6270.177364439776,
+                        "lower_bound": 3302.239303769404,
+                        "upper_bound": 7809.108679615947
+                    },
+                    "slope": {
+                        "point_estimate": 1912256.0918032788,
+                        "lower_bound": 1910461.0102549926,
+                        "upper_bound": 1914162.0126428045
+                    },
+                    "std_dev": {
+                        "point_estimate": 4943.240919572763,
+                        "lower_bound": 3886.7966232819954,
+                        "upper_bound": 5741.426600050979
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        3.0,
+                        6.0,
+                        9.0,
+                        12.0,
+                        15.0,
+                        18.0,
+                        21.0,
+                        24.0,
+                        27.0,
+                        30.0,
+                        33.0,
+                        36.0,
+                        39.0,
+                        42.0,
+                        45.0,
+                        48.0,
+                        51.0,
+                        54.0,
+                        57.0,
+                        60.0,
+                        63.0,
+                        66.0,
+                        69.0,
+                        72.0,
+                        75.0,
+                        78.0,
+                        81.0,
+                        84.0,
+                        87.0,
+                        90.0
+                    ],
+                    "times_ns": [
+                        5761086.0,
+                        11485350.0,
+                        17297055.0,
+                        23059630.0,
+                        28675897.0,
+                        34451042.0,
+                        40241107.0,
+                        46048391.0,
+                        51780936.0,
+                        57477113.0,
+                        63491685.0,
+                        68954843.0,
+                        74835337.0,
+                        80163066.0,
+                        85736064.0,
+                        91599598.0,
+                        97427163.0,
+                        103530554.0,
+                        109043830.0,
+                        114519129.0,
+                        120364564.0,
+                        126017370.0,
+                        131663866.0,
+                        137503451.0,
+                        143071328.0,
+                        149255618.0,
+                        154608968.0,
+                        160663330.0,
+                        166657522.0,
+                        172691644.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.0019052458666666669,
+                "max": 0.0019239904545454546,
+                "mean": 0.0019138994768026006,
+                "stddev": 4.943240919572755e-06,
+                "rounds": 30,
+                "median": 0.001913740170940171,
+                "iqr": 8.209347327441455e-06,
+                "q1": 0.0019094581063762626,
+                "q3": 0.001917667453703704,
+                "iqr_outliers": 0,
+                "stddev_outliers": 12,
+                "outliers": "12;0",
+                "ld15iqr": 0.0019052458666666669,
+                "hd15iqr": 0.0019239904545454546,
+                "ops": 522.4934810424946,
+                "total": 2.668076537,
+                "iterations": 46
+            }
+        },
+        {
+            "group": "interp/bspline9",
+            "name": "interp/bspline9/regular",
+            "fullname": "rust/gridr/benches::interp/bspline9/regular",
+            "params": {
+                "bench": "interp",
+                "method": "bspline9",
+                "scenario": "regular"
+            },
+            "param": "regular",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 1610306.2418702587,
+                        "lower_bound": 1609278.705447926,
+                        "upper_bound": 1611389.7000524828
+                    },
+                    "median": {
+                        "point_estimate": 1609601.4722222222,
+                        "lower_bound": 1608445.463768116,
+                        "upper_bound": 1610549.638888889
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 2774.950600734705,
+                        "lower_bound": 1433.6067836390184,
+                        "upper_bound": 4694.268906531962
+                    },
+                    "slope": {
+                        "point_estimate": 1609622.6910981843,
+                        "lower_bound": 1608393.3652226801,
+                        "upper_bound": 1611278.8955690817
+                    },
+                    "std_dev": {
+                        "point_estimate": 2997.2897539647133,
+                        "lower_bound": 2231.269566290634,
+                        "upper_bound": 3499.5434497739448
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        3.0,
+                        6.0,
+                        9.0,
+                        12.0,
+                        15.0,
+                        18.0,
+                        21.0,
+                        24.0,
+                        27.0,
+                        30.0,
+                        33.0,
+                        36.0,
+                        39.0,
+                        42.0,
+                        45.0,
+                        48.0,
+                        51.0,
+                        54.0,
+                        57.0,
+                        60.0,
+                        63.0,
+                        66.0,
+                        69.0,
+                        72.0,
+                        75.0,
+                        78.0,
+                        81.0,
+                        84.0,
+                        87.0,
+                        90.0
+                    ],
+                    "times_ns": [
+                        4840606.0,
+                        9647821.0,
+                        14495917.0,
+                        19300592.0,
+                        24105129.0,
+                        28971113.0,
+                        33803630.0,
+                        38650604.0,
+                        43469241.0,
+                        48278686.0,
+                        53112671.0,
+                        57950308.0,
+                        62806752.0,
+                        67691968.0,
+                        72400144.0,
+                        77580366.0,
+                        82405712.0,
+                        87266987.0,
+                        92053534.0,
+                        96856178.0,
+                        101684395.0,
+                        106375732.0,
+                        110987070.0,
+                        115775796.0,
+                        120527552.0,
+                        125343268.0,
+                        130157364.0,
+                        134993069.0,
+                        139771446.0,
+                        144749270.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.0016065683448275865,
+                "max": 0.0016162576250000002,
+                "mean": 0.001610306241870259,
+                "stddev": 2.9972897539647134e-06,
+                "rounds": 30,
+                "median": 0.0016096014722222223,
+                "iqr": 3.6643367604615416e-06,
+                "q1": 0.0016080791805555559,
+                "q3": 0.0016117435173160174,
+                "iqr_outliers": 0,
+                "stddev_outliers": 13,
+                "outliers": "13;0",
+                "ld15iqr": 0.0016065683448275865,
+                "hd15iqr": 0.0016162576250000002,
+                "ops": 620.9998905789307,
+                "total": 2.246052921,
+                "iterations": 46
+            }
+        },
+        {
+            "group": "interp/bspline9",
+            "name": "interp/bspline9/regular_masked",
+            "fullname": "rust/gridr/benches::interp/bspline9/regular_masked",
+            "params": {
+                "bench": "interp",
+                "method": "bspline9",
+                "scenario": "regular_masked"
+            },
+            "param": "regular_masked",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 1680141.9071257384,
+                        "lower_bound": 1675259.4088270057,
+                        "upper_bound": 1686064.3000516086
+                    },
+                    "median": {
+                        "point_estimate": 1672902.7831417625,
+                        "lower_bound": 1671942.222142857,
+                        "upper_bound": 1679128.4622807018
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 5891.542548047925,
+                        "lower_bound": 2038.7122415833876,
+                        "upper_bound": 13724.546799673913
+                    },
+                    "slope": {
+                        "point_estimate": 1676676.0073682356,
+                        "lower_bound": 1674043.2300367993,
+                        "upper_bound": 1680271.8492207238
+                    },
+                    "std_dev": {
+                        "point_estimate": 15492.405703704713,
+                        "lower_bound": 8048.869409781981,
+                        "upper_bound": 22014.812407481528
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        3.0,
+                        6.0,
+                        9.0,
+                        12.0,
+                        15.0,
+                        18.0,
+                        21.0,
+                        24.0,
+                        27.0,
+                        30.0,
+                        33.0,
+                        36.0,
+                        39.0,
+                        42.0,
+                        45.0,
+                        48.0,
+                        51.0,
+                        54.0,
+                        57.0,
+                        60.0,
+                        63.0,
+                        66.0,
+                        69.0,
+                        72.0,
+                        75.0,
+                        78.0,
+                        81.0,
+                        84.0,
+                        87.0,
+                        90.0
+                    ],
+                    "times_ns": [
+                        4996084.0,
+                        10015677.0,
+                        15019891.0,
+                        20022235.0,
+                        25249295.0,
+                        30616374.0,
+                        35796506.0,
+                        41780700.0,
+                        45200261.0,
+                        50351623.0,
+                        55793352.0,
+                        60886373.0,
+                        66092496.0,
+                        70203328.0,
+                        75291131.0,
+                        80157008.0,
+                        85299879.0,
+                        90252012.0,
+                        95752561.0,
+                        100337510.0,
+                        105145816.0,
+                        111882268.0,
+                        116255169.0,
+                        120408533.0,
+                        125395336.0,
+                        130371841.0,
+                        135770131.0,
+                        140443517.0,
+                        145522231.0,
+                        150954209.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.0016653613333333333,
+                "max": 0.0017408625,
+                "mean": 0.0016801419071257385,
+                "stddev": 1.5492405703704718e-05,
+                "rounds": 30,
+                "median": 0.0016729027831417626,
+                "iqr": 1.301237802595924e-05,
+                "q1": 0.0016714523466117219,
+                "q3": 0.0016844647246376811,
+                "iqr_outliers": 2,
+                "stddev_outliers": 3,
+                "outliers": "3;2",
+                "ld15iqr": 0.0016653613333333333,
+                "hd15iqr": 0.0017009096666666668,
+                "ops": 595.1878205994668,
+                "total": 2.341263347,
+                "iterations": 46
+            }
+        },
+        {
+            "group": "interp/cubic",
+            "name": "interp/cubic/random",
+            "fullname": "rust/gridr/benches::interp/cubic/random",
+            "params": {
+                "bench": "interp",
+                "method": "cubic",
+                "scenario": "random"
+            },
+            "param": "random",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 696067.8285556639,
+                        "lower_bound": 694319.5495251348,
+                        "upper_bound": 698234.0180365448
+                    },
+                    "median": {
+                        "point_estimate": 694828.0833333333,
+                        "lower_bound": 693459.3214285714,
+                        "upper_bound": 697243.8152472528
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 4124.405873854248,
+                        "lower_bound": 2354.7948796225046,
+                        "upper_bound": 5380.56609590439
+                    },
+                    "slope": {
+                        "point_estimate": 697396.787081665,
+                        "lower_bound": 695525.3236056706,
+                        "upper_bound": 699317.0024600702
+                    },
+                    "std_dev": {
+                        "point_estimate": 5632.556097407776,
+                        "lower_bound": 2793.2892461353795,
+                        "upper_bound": 8244.564973545437
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        7.0,
+                        14.0,
+                        21.0,
+                        28.0,
+                        35.0,
+                        42.0,
+                        49.0,
+                        56.0,
+                        63.0,
+                        70.0,
+                        77.0,
+                        84.0,
+                        91.0,
+                        98.0,
+                        105.0,
+                        112.0,
+                        119.0,
+                        126.0,
+                        133.0,
+                        140.0,
+                        147.0,
+                        154.0,
+                        161.0,
+                        168.0,
+                        175.0,
+                        182.0,
+                        189.0,
+                        196.0,
+                        203.0,
+                        210.0
+                    ],
+                    "times_ns": [
+                        5032399.0,
+                        9710491.0,
+                        14536023.0,
+                        19384673.0,
+                        24203693.0,
+                        29181454.0,
+                        33972295.0,
+                        39025603.0,
+                        43568657.0,
+                        48640175.0,
+                        53381518.0,
+                        57989510.0,
+                        62880290.0,
+                        67541654.0,
+                        73145676.0,
+                        77407943.0,
+                        83363103.0,
+                        88115504.0,
+                        92784566.0,
+                        97402630.0,
+                        102242900.0,
+                        106926353.0,
+                        111850513.0,
+                        116647454.0,
+                        122083159.0,
+                        126963539.0,
+                        132219396.0,
+                        137014166.0,
+                        141783699.0,
+                        148272912.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.0006892005510204082,
+                "max": 0.0007189141428571429,
+                "mean": 0.0006960678285556639,
+                "stddev": 5.632556097407771e-06,
+                "rounds": 30,
+                "median": 0.0006948280833333334,
+                "iqr": 5.076820316131229e-06,
+                "q1": 0.000692548929383117,
+                "q3": 0.0006976257496992482,
+                "iqr_outliers": 2,
+                "stddev_outliers": 4,
+                "outliers": "4;2",
+                "ld15iqr": 0.0006892005510204082,
+                "hd15iqr": 0.0007005302773109244,
+                "ops": 1436.6416015447708,
+                "total": 2.2672719480000003,
+                "iterations": 108
+            }
+        },
+        {
+            "group": "interp/cubic",
+            "name": "interp/cubic/regular",
+            "fullname": "rust/gridr/benches::interp/cubic/regular",
+            "params": {
+                "bench": "interp",
+                "method": "cubic",
+                "scenario": "regular"
+            },
+            "param": "regular",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 445319.38902020943,
+                        "lower_bound": 442703.7038402263,
+                        "upper_bound": 448026.3354841108
+                    },
+                    "median": {
+                        "point_estimate": 444717.715,
+                        "lower_bound": 439262.69615384616,
+                        "upper_bound": 450194.4125
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 10104.137381923407,
+                        "lower_bound": 4237.048784050086,
+                        "upper_bound": 12483.740855169217
+                    },
+                    "slope": {
+                        "point_estimate": 448385.94125859335,
+                        "lower_bound": 444066.19319783984,
+                        "upper_bound": 451869.7703813509
+                    },
+                    "std_dev": {
+                        "point_estimate": 7561.020581726471,
+                        "lower_bound": 6117.774841252611,
+                        "upper_bound": 8665.49696151752
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        10.0,
+                        20.0,
+                        30.0,
+                        40.0,
+                        50.0,
+                        60.0,
+                        70.0,
+                        80.0,
+                        90.0,
+                        100.0,
+                        110.0,
+                        120.0,
+                        130.0,
+                        140.0,
+                        150.0,
+                        160.0,
+                        170.0,
+                        180.0,
+                        190.0,
+                        200.0,
+                        210.0,
+                        220.0,
+                        230.0,
+                        240.0,
+                        250.0,
+                        260.0,
+                        270.0,
+                        280.0,
+                        290.0,
+                        300.0
+                    ],
+                    "times_ns": [
+                        4500064.0,
+                        8978949.0,
+                        13419243.0,
+                        18015297.0,
+                        22204564.0,
+                        26720649.0,
+                        30910196.0,
+                        36115963.0,
+                        39653127.0,
+                        44163051.0,
+                        48029132.0,
+                        52303938.0,
+                        56931562.0,
+                        61301806.0,
+                        66351626.0,
+                        70056198.0,
+                        74433213.0,
+                        78733849.0,
+                        82790788.0,
+                        87308053.0,
+                        91734087.0,
+                        99811135.0,
+                        104776225.0,
+                        109584356.0,
+                        113891492.0,
+                        118080690.0,
+                        121767452.0,
+                        125070368.0,
+                        130752451.0,
+                        138389543.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.00043574098947368425,
+                "max": 0.0004612984766666667,
+                "mean": 0.0004453193890202095,
+                "stddev": 7.561020581726477e-06,
+                "rounds": 30,
+                "median": 0.00044471771500000003,
+                "iqr": 1.31046135553503e-05,
+                "q1": 0.00043785593883928573,
+                "q3": 0.00045096055239463603,
+                "iqr_outliers": 0,
+                "stddev_outliers": 12,
+                "outliers": "12;0",
+                "ld15iqr": 0.00043574098947368425,
+                "hd15iqr": 0.0004612984766666667,
+                "ops": 2245.5792957953104,
+                "total": 2.076779067,
+                "iterations": 155
+            }
+        },
+        {
+            "group": "interp/cubic",
+            "name": "interp/cubic/regular_masked",
+            "fullname": "rust/gridr/benches::interp/cubic/regular_masked",
+            "params": {
+                "bench": "interp",
+                "method": "cubic",
+                "scenario": "regular_masked"
+            },
+            "param": "regular_masked",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 621869.8690875507,
+                        "lower_bound": 620459.5043997765,
+                        "upper_bound": 623397.331093241
+                    },
+                    "median": {
+                        "point_estimate": 621440.2364285714,
+                        "lower_bound": 620107.1991104134,
+                        "upper_bound": 621858.7142857143
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 2997.5061858745325,
+                        "lower_bound": 1221.6522925970846,
+                        "upper_bound": 6173.115126119616
+                    },
+                    "slope": {
+                        "point_estimate": 622324.1851476921,
+                        "lower_bound": 621440.9873191781,
+                        "upper_bound": 623492.1842966136
+                    },
+                    "std_dev": {
+                        "point_estimate": 4193.881695034064,
+                        "lower_bound": 2962.0471009246667,
+                        "upper_bound": 5044.387758260825
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        7.0,
+                        14.0,
+                        21.0,
+                        28.0,
+                        35.0,
+                        42.0,
+                        49.0,
+                        56.0,
+                        63.0,
+                        70.0,
+                        77.0,
+                        84.0,
+                        91.0,
+                        98.0,
+                        105.0,
+                        112.0,
+                        119.0,
+                        126.0,
+                        133.0,
+                        140.0,
+                        147.0,
+                        154.0,
+                        161.0,
+                        168.0,
+                        175.0,
+                        182.0,
+                        189.0,
+                        196.0,
+                        203.0,
+                        210.0
+                    ],
+                    "times_ns": [
+                        4322386.0,
+                        8642222.0,
+                        13233106.0,
+                        17271684.0,
+                        21569501.0,
+                        25893097.0,
+                        30241362.0,
+                        34835896.0,
+                        38907774.0,
+                        43647437.0,
+                        47700825.0,
+                        52333348.0,
+                        56401146.0,
+                        61639514.0,
+                        65694903.0,
+                        70622622.0,
+                        75071686.0,
+                        79008607.0,
+                        82395613.0,
+                        86995975.0,
+                        91201973.0,
+                        95668367.0,
+                        100060113.0,
+                        104414228.0,
+                        108759114.0,
+                        113139910.0,
+                        117467996.0,
+                        122223717.0,
+                        126009208.0,
+                        130459384.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.0006162714571428571,
+                "max": 0.0006308545042016807,
+                "mean": 0.0006218698690875508,
+                "stddev": 4.193881695034064e-06,
+                "rounds": 30,
+                "median": 0.0006214402364285715,
+                "iqr": 3.907725489861046e-06,
+                "q1": 0.0006194973971291866,
+                "q3": 0.0006234051226190477,
+                "iqr_outliers": 3,
+                "stddev_outliers": 12,
+                "outliers": "12;3",
+                "ld15iqr": 0.0006162714571428571,
+                "hd15iqr": 0.0006289746326530613,
+                "ops": 1608.053468593465,
+                "total": 2.0258327140000003,
+                "iterations": 108
+            }
+        },
+        {
+            "group": "interp/linear",
+            "name": "interp/linear/random",
+            "fullname": "rust/gridr/benches::interp/linear/random",
+            "params": {
+                "bench": "interp",
+                "method": "linear",
+                "scenario": "random"
+            },
+            "param": "random",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 504640.2259938566,
+                        "lower_bound": 500784.5589528105,
+                        "upper_bound": 508805.0373922171
+                    },
+                    "median": {
+                        "point_estimate": 502460.1931216931,
+                        "lower_bound": 499263.6175925926,
+                        "upper_bound": 507233.9559386973
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 9522.911124333215,
+                        "lower_bound": 5044.387110594133,
+                        "upper_bound": 12655.524292895301
+                    },
+                    "slope": {
+                        "point_estimate": 502929.477113814,
+                        "lower_bound": 500165.97735614073,
+                        "upper_bound": 505461.97420970723
+                    },
+                    "std_dev": {
+                        "point_estimate": 11379.896862721213,
+                        "lower_bound": 7254.288710473686,
+                        "upper_bound": 14934.160508725301
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        9.0,
+                        18.0,
+                        27.0,
+                        36.0,
+                        45.0,
+                        54.0,
+                        63.0,
+                        72.0,
+                        81.0,
+                        90.0,
+                        99.0,
+                        108.0,
+                        117.0,
+                        126.0,
+                        135.0,
+                        144.0,
+                        153.0,
+                        162.0,
+                        171.0,
+                        180.0,
+                        189.0,
+                        198.0,
+                        207.0,
+                        216.0,
+                        225.0,
+                        234.0,
+                        243.0,
+                        252.0,
+                        261.0,
+                        270.0
+                    ],
+                    "times_ns": [
+                        4311646.0,
+                        9712101.0,
+                        14048727.0,
+                        18737420.0,
+                        23165754.0,
+                        28216694.0,
+                        32153003.0,
+                        36846595.0,
+                        41022513.0,
+                        45054482.0,
+                        49626916.0,
+                        53775563.0,
+                        58129009.0,
+                        63301286.0,
+                        66770771.0,
+                        71219636.0,
+                        75874099.0,
+                        80022606.0,
+                        84727389.0,
+                        89309702.0,
+                        94978024.0,
+                        98549048.0,
+                        104075192.0,
+                        108219560.0,
+                        114873952.0,
+                        117596585.0,
+                        122767422.0,
+                        126366535.0,
+                        132592472.0,
+                        138321193.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.0004790717777777778,
+                "max": 0.0005395611666666666,
+                "mean": 0.0005046402259938567,
+                "stddev": 1.1379896862721204e-05,
+                "rounds": 30,
+                "median": 0.0005024601931216932,
+                "iqr": 1.3451986353646373e-05,
+                "q1": 0.0004970524687257188,
+                "q3": 0.0005105044550793652,
+                "iqr_outliers": 1,
+                "stddev_outliers": 5,
+                "outliers": "5;1",
+                "ld15iqr": 0.0004790717777777778,
+                "hd15iqr": 0.0005225313703703705,
+                "ops": 1981.6097657109358,
+                "total": 2.104365895,
+                "iterations": 140
+            }
+        },
+        {
+            "group": "interp/linear",
+            "name": "interp/linear/regular",
+            "fullname": "rust/gridr/benches::interp/linear/regular",
+            "params": {
+                "bench": "interp",
+                "method": "linear",
+                "scenario": "regular"
+            },
+            "param": "regular",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 322600.92728749086,
+                        "lower_bound": 319879.1187444391,
+                        "upper_bound": 325318.93397296756
+                    },
+                    "median": {
+                        "point_estimate": 324245.1693277311,
+                        "lower_bound": 316452.51892446633,
+                        "upper_bound": 328181.50952380954
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 10746.049636719485,
+                        "lower_bound": 4587.190793561145,
+                        "upper_bound": 12562.958468402305
+                    },
+                    "slope": {
+                        "point_estimate": 317392.12728714966,
+                        "lower_bound": 315557.4814920298,
+                        "upper_bound": 320147.5516822283
+                    },
+                    "std_dev": {
+                        "point_estimate": 7745.147602591697,
+                        "lower_bound": 6603.891714197411,
+                        "upper_bound": 8488.818935806925
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        14.0,
+                        28.0,
+                        42.0,
+                        56.0,
+                        70.0,
+                        84.0,
+                        98.0,
+                        112.0,
+                        126.0,
+                        140.0,
+                        154.0,
+                        168.0,
+                        182.0,
+                        196.0,
+                        210.0,
+                        224.0,
+                        238.0,
+                        252.0,
+                        266.0,
+                        280.0,
+                        294.0,
+                        308.0,
+                        322.0,
+                        336.0,
+                        350.0,
+                        364.0,
+                        378.0,
+                        392.0,
+                        406.0,
+                        420.0
+                    ],
+                    "times_ns": [
+                        4594813.0,
+                        9180357.0,
+                        13628851.0,
+                        17845289.0,
+                        22686969.0,
+                        27903726.0,
+                        32224242.0,
+                        36982685.0,
+                        41254860.0,
+                        46200921.0,
+                        51301908.0,
+                        55537965.0,
+                        60523365.0,
+                        65498784.0,
+                        68914039.0,
+                        74135916.0,
+                        77205006.0,
+                        81052255.0,
+                        84559721.0,
+                        87966335.0,
+                        91933225.0,
+                        96903825.0,
+                        100713196.0,
+                        105278970.0,
+                        109577696.0,
+                        113933261.0,
+                        118282248.0,
+                        122728962.0,
+                        128473564.0,
+                        132916429.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.0003126980442176871,
+                "max": 0.00033417746938775513,
+                "mean": 0.00032260092728749086,
+                "stddev": 7.7451476025917e-06,
+                "rounds": 30,
+                "median": 0.0003242451693277311,
+                "iqr": 1.5429819190630766e-05,
+                "q1": 0.0003142798137175325,
+                "q3": 0.00032970963290816324,
+                "iqr_outliers": 0,
+                "stddev_outliers": 15,
+                "outliers": "15;0",
+                "ld15iqr": 0.0003126980442176871,
+                "hd15iqr": 0.00033417746938775513,
+                "ops": 3099.8051010214062,
+                "total": 2.079939383,
+                "iterations": 217
+            }
+        },
+        {
+            "group": "interp/linear",
+            "name": "interp/linear/regular_masked",
+            "fullname": "rust/gridr/benches::interp/linear/regular_masked",
+            "params": {
+                "bench": "interp",
+                "method": "linear",
+                "scenario": "regular_masked"
+            },
+            "param": "regular_masked",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 376887.19132826413,
+                        "lower_bound": 375066.38437700825,
+                        "upper_bound": 378894.7923603126
+                    },
+                    "median": {
+                        "point_estimate": 374021.2896730462,
+                        "lower_bound": 373046.04076086957,
+                        "upper_bound": 379963.00347222225
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 4335.810395213308,
+                        "lower_bound": 1608.2490344686958,
+                        "upper_bound": 7284.333242646891
+                    },
+                    "slope": {
+                        "point_estimate": 373197.6655120747,
+                        "lower_bound": 372468.25737437716,
+                        "upper_bound": 374294.77084908396
+                    },
+                    "std_dev": {
+                        "point_estimate": 5444.516406191254,
+                        "lower_bound": 3848.1866600172443,
+                        "upper_bound": 7072.663536093382
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        12.0,
+                        24.0,
+                        36.0,
+                        48.0,
+                        60.0,
+                        72.0,
+                        84.0,
+                        96.0,
+                        108.0,
+                        120.0,
+                        132.0,
+                        144.0,
+                        156.0,
+                        168.0,
+                        180.0,
+                        192.0,
+                        204.0,
+                        216.0,
+                        228.0,
+                        240.0,
+                        252.0,
+                        264.0,
+                        276.0,
+                        288.0,
+                        300.0,
+                        312.0,
+                        324.0,
+                        336.0,
+                        348.0,
+                        360.0
+                    ],
+                    "times_ns": [
+                        4733092.0,
+                        9201356.0,
+                        13639322.0,
+                        18298724.0,
+                        22883987.0,
+                        27603939.0,
+                        32031265.0,
+                        36601258.0,
+                        40814035.0,
+                        45931973.0,
+                        50438767.0,
+                        54716593.0,
+                        59272148.0,
+                        63196957.0,
+                        67008019.0,
+                        71717281.0,
+                        76016947.0,
+                        80464632.0,
+                        85292222.0,
+                        89580270.0,
+                        94206102.0,
+                        98723826.0,
+                        102904104.0,
+                        107621246.0,
+                        111723504.0,
+                        116284047.0,
+                        120373676.0,
+                        124660293.0,
+                        129165577.0,
+                        133570152.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.0003710127767857143,
+                "max": 0.00039442433333333336,
+                "mean": 0.0003768871913282643,
+                "stddev": 5.444516406191257e-06,
+                "rounds": 30,
+                "median": 0.0003740212896730463,
+                "iqr": 8.602792727187031e-06,
+                "q1": 0.00037265038956447967,
+                "q3": 0.0003812531822916667,
+                "iqr_outliers": 1,
+                "stddev_outliers": 7,
+                "outliers": "7;1",
+                "ld15iqr": 0.0003710127767857143,
+                "hd15iqr": 0.0003833898333333333,
+                "ops": 2653.3138376915863,
+                "total": 2.088675314,
+                "iterations": 186
+            }
+        },
+        {
+            "group": "interp/nearest",
+            "name": "interp/nearest/random",
+            "fullname": "rust/gridr/benches::interp/nearest/random",
+            "params": {
+                "bench": "interp",
+                "method": "nearest",
+                "scenario": "random"
+            },
+            "param": "random",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 103240.39346427067,
+                        "lower_bound": 102567.95375817809,
+                        "upper_bound": 103934.10721450644
+                    },
+                    "median": {
+                        "point_estimate": 102708.12790697675,
+                        "lower_bound": 102355.40662438338,
+                        "upper_bound": 104507.27687338501
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 2529.129306552468,
+                        "lower_bound": 1274.0183224133793,
+                        "upper_bound": 3006.8977842913127
+                    },
+                    "slope": {
+                        "point_estimate": 104555.18477242261,
+                        "lower_bound": 103855.1871624811,
+                        "upper_bound": 105166.67383656724
+                    },
+                    "std_dev": {
+                        "point_estimate": 1947.0639524704052,
+                        "lower_bound": 1523.8688937498657,
+                        "upper_bound": 2274.154261455249
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        43.0,
+                        86.0,
+                        129.0,
+                        172.0,
+                        215.0,
+                        258.0,
+                        301.0,
+                        344.0,
+                        387.0,
+                        430.0,
+                        473.0,
+                        516.0,
+                        559.0,
+                        602.0,
+                        645.0,
+                        688.0,
+                        731.0,
+                        774.0,
+                        817.0,
+                        860.0,
+                        903.0,
+                        946.0,
+                        989.0,
+                        1032.0,
+                        1075.0,
+                        1118.0,
+                        1161.0,
+                        1204.0,
+                        1247.0,
+                        1290.0
+                    ],
+                    "times_ns": [
+                        4405983.0,
+                        8810386.0,
+                        12954502.0,
+                        17334444.0,
+                        21817628.0,
+                        25944502.0,
+                        30550324.0,
+                        34785489.0,
+                        39627008.0,
+                        43820613.0,
+                        48429564.0,
+                        52798528.0,
+                        57549908.0,
+                        60821060.0,
+                        66069647.0,
+                        69469318.0,
+                        75430688.0,
+                        80207148.0,
+                        85489064.0,
+                        89969187.0,
+                        95609759.0,
+                        100771485.0,
+                        104089478.0,
+                        108702739.0,
+                        113787006.0,
+                        120198843.0,
+                        121349703.0,
+                        124575227.0,
+                        131114171.0,
+                        134795771.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 0.00010042249612403101,
+                "max": 0.00010751238193202147,
+                "mean": 0.00010324039346427068,
+                "stddev": 1.947063952470405e-06,
+                "rounds": 30,
+                "median": 0.00010270812790697675,
+                "iqr": 3.0329960067319454e-06,
+                "q1": 0.00010159917034883721,
+                "q3": 0.00010463216635556916,
+                "iqr_outliers": 0,
+                "stddev_outliers": 12,
+                "outliers": "12;0",
+                "ld15iqr": 0.00010042249612403101,
+                "hd15iqr": 0.00010751238193202147,
+                "ops": 9686.131236472658,
+                "total": 2.081279173,
+                "iterations": 666
+            }
+        },
+        {
+            "group": "interp/nearest",
+            "name": "interp/nearest/regular",
+            "fullname": "rust/gridr/benches::interp/nearest/regular",
+            "params": {
+                "bench": "interp",
+                "method": "nearest",
+                "scenario": "regular"
+            },
+            "param": "regular",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 66789.94640145877,
+                        "lower_bound": 65923.60521871809,
+                        "upper_bound": 67790.94000331004
+                    },
+                    "median": {
+                        "point_estimate": 66088.60182044323,
+                        "lower_bound": 65249.79270315091,
+                        "upper_bound": 67157.79358887381
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 2067.1651972557097,
+                        "lower_bound": 1079.0953200891831,
+                        "upper_bound": 2962.0777758273707
+                    },
+                    "slope": {
+                        "point_estimate": 67561.57282492876,
+                        "lower_bound": 65934.04986984472,
+                        "upper_bound": 69468.70399193003
+                    },
+                    "std_dev": {
+                        "point_estimate": 2663.8702348465986,
+                        "lower_bound": 1505.2730230336817,
+                        "upper_bound": 3530.0180434273425
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        67.0,
+                        134.0,
+                        201.0,
+                        268.0,
+                        335.0,
+                        402.0,
+                        469.0,
+                        536.0,
+                        603.0,
+                        670.0,
+                        737.0,
+                        804.0,
+                        871.0,
+                        938.0,
+                        1005.0,
+                        1072.0,
+                        1139.0,
+                        1206.0,
+                        1273.0,
+                        1340.0,
+                        1407.0,
+                        1474.0,
+                        1541.0,
+                        1608.0,
+                        1675.0,
+                        1742.0,
+                        1809.0,
+                        1876.0,
+                        1943.0,
+                        2010.0
+                    ],
+                    "times_ns": [
+                        4326064.0,
+                        8587088.0,
+                        13115220.0,
+                        17858400.0,
+                        22003296.0,
+                        25695265.0,
+                        30486634.0,
+                        35262785.0,
+                        39345590.0,
+                        43694654.0,
+                        48689132.0,
+                        53155055.0,
+                        57448788.0,
+                        62534616.0,
+                        66515893.0,
+                        72359084.0,
+                        78975908.0,
+                        83556681.0,
+                        87536326.0,
+                        93205329.0,
+                        95182653.0,
+                        98487435.0,
+                        104738833.0,
+                        108842177.0,
+                        108486431.0,
+                        130758845.0,
+                        133821757.0,
+                        121397044.0,
+                        124147750.0,
+                        129327126.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 6.389487905301081e-05,
+                "max": 7.506248277841561e-05,
+                "mean": 6.678994640145877e-05,
+                "stddev": 2.663870234846598e-06,
+                "rounds": 30,
+                "median": 6.608860182044325e-05,
+                "iqr": 2.6216930037313324e-06,
+                "q1": 6.505658837953092e-05,
+                "q3": 6.767828138326226e-05,
+                "iqr_outliers": 2,
+                "stddev_outliers": 6,
+                "outliers": "6;2",
+                "ld15iqr": 6.389487905301081e-05,
+                "hd15iqr": 6.95562156716418e-05,
+                "ops": 14972.313257885153,
+                "total": 2.0995418590000003,
+                "iterations": 1038
+            }
+        },
+        {
+            "group": "interp/nearest",
+            "name": "interp/nearest/regular_masked",
+            "fullname": "rust/gridr/benches::interp/nearest/regular_masked",
+            "params": {
+                "bench": "interp",
+                "method": "nearest",
+                "scenario": "regular_masked"
+            },
+            "param": "regular_masked",
+            "extra_info": {
+                "elements_per_iteration": 16384,
+                "criterion_estimates_ns": {
+                    "mean": {
+                        "point_estimate": 93280.52884566567,
+                        "lower_bound": 90529.31757054469,
+                        "upper_bound": 96238.71358140919
+                    },
+                    "median": {
+                        "point_estimate": 89177.73700365727,
+                        "lower_bound": 88130.64934210526,
+                        "upper_bound": 93416.61694004525
+                    },
+                    "median_abs_dev": {
+                        "point_estimate": 4090.8734515294755,
+                        "lower_bound": 1967.5216250731116,
+                        "upper_bound": 11463.19241265353
+                    },
+                    "slope": {
+                        "point_estimate": 89823.0213996122,
+                        "lower_bound": 88276.81097506198,
+                        "upper_bound": 92013.2478892158
+                    },
+                    "std_dev": {
+                        "point_estimate": 8124.46568267768,
+                        "lower_bound": 6264.4584641468755,
+                        "upper_bound": 9152.278972632601
+                    }
+                },
+                "criterion_samples": {
+                    "sampling_mode": "Linear",
+                    "iters": [
+                        48.0,
+                        96.0,
+                        144.0,
+                        192.0,
+                        240.0,
+                        288.0,
+                        336.0,
+                        384.0,
+                        432.0,
+                        480.0,
+                        528.0,
+                        576.0,
+                        624.0,
+                        672.0,
+                        720.0,
+                        768.0,
+                        816.0,
+                        864.0,
+                        912.0,
+                        960.0,
+                        1008.0,
+                        1056.0,
+                        1104.0,
+                        1152.0,
+                        1200.0,
+                        1248.0,
+                        1296.0,
+                        1344.0,
+                        1392.0,
+                        1440.0
+                    ],
+                    "times_ns": [
+                        5010118.0,
+                        10049125.0,
+                        14926855.0,
+                        19842314.0,
+                        24799182.0,
+                        29748231.0,
+                        30246747.0,
+                        32627657.0,
+                        36689323.0,
+                        41058306.0,
+                        47161494.0,
+                        49614475.0,
+                        59601041.0,
+                        72941759.0,
+                        78117255.0,
+                        80580905.0,
+                        74516096.0,
+                        74909422.0,
+                        80455286.0,
+                        84521072.0,
+                        90974537.0,
+                        92897682.0,
+                        96148656.0,
+                        100111082.0,
+                        105890602.0,
+                        111103520.0,
+                        115003816.0,
+                        121592431.0,
+                        123935972.0,
+                        122883140.0
+                    ]
+                }
+            },
+            "options": {
+                "timer": "criterion",
+                "warmup": true
+            },
+            "stats": {
+                "min": 8.492898842592593e-05,
+                "max": 0.00010854428422619049,
+                "mean": 9.328052884566563e-05,
+                "stddev": 8.12446568267768e-06,
+                "rounds": 30,
+                "median": 8.917773700365726e-05,
+                "iqr": 1.6009358059535582e-05,
+                "q1": 8.731120287796443e-05,
+                "q3": 0.00010332056093750002,
+                "iqr_outliers": 0,
+                "stddev_outliers": 11,
+                "outliers": "11;0",
+                "ld15iqr": 8.492898842592593e-05,
+                "hd15iqr": 0.00010854428422619049,
+                "ops": 10720.35088538701,
+                "total": 2.0279581010000003,
+                "iterations": 744
+            }
+        }
+    ],
+    "datetime": "2026-10-20T12:54:33.210640+00:00",
+    "version": "criterion 0.8.2"
+}

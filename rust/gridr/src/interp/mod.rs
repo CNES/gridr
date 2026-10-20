@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
+// Copyright (c) 2024-2026 Centre National d'Etudes Spatiales (CNES).
 //
 // This file is part of GRIDR
 // (see https://github.com/CNES/gridr).
@@ -17,7 +17,6 @@
 
 #![warn(missing_docs)]
 //! Crate doc
-pub mod gx_interp;
 pub mod gx_array_view_interp;
 #[cfg(test)]
 pub mod gx_array_view_interp_test;
@@ -26,3 +25,5 @@ pub mod gx_nearest_kernel;
 pub mod gx_linear_kernel;
 pub mod gx_bspline_kernel;
 pub mod gx_bspline_prefiltering;
+#[cfg(test)]
+mod gx_kernel_test_utils;
