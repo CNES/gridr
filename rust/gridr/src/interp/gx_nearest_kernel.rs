@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
+// Copyright (c) 2024-2026 Centre National d'Etudes Spatiales (CNES).
 //
 // This file is part of GRIDR
 // (see https://github.com/CNES/gridr).
@@ -42,6 +42,14 @@ pub struct GxNearestInterpolator {
     /// The size of the kernel alongs the columns - it is set to 1 in the 
     ///implemented new() method.
     kernel_col_size: usize,
+}
+
+/// Helper function that tells wether the sample `(row, col)` lies inside
+/// `array`.
+#[inline(always)]
+fn is_inside<T>(row: i64, col: i64, array: &GxArrayView<'_, T>) -> bool
+{
+    row >= 0 && row < array.nrow_i64 && col >= 0 && col < array.ncol_i64
 }
 
 impl GxArrayViewInterpolator for GxNearestInterpolator
@@ -104,113 +112,57 @@ impl GxArrayViewInterpolator for GxNearestInterpolator
  
         let in_var_sz: usize = array_in.nrow * array_in.ncol;
         let out_var_sz: usize = array_out.nrow * array_out.ncol;
-        
-        let mut arr_iflat: usize =
-            (kernel_center_row as usize) * array_in.ncol +
-            (kernel_center_col as usize);
         let mut out_idx_ivar: usize = out_idx;
         
-        // Initialise the output mask as valid; the interpolation variants will
-        // overwrite it to 0 if the pixel turns out to be invalid.
-        context.output_mask().set_value(out_idx, 1);
-        
         if IC::BoundsCheck::do_check() {
-            // Interior path: the full stencil fits strictly inside the array.
-            // No per-element bounds checking is needed inside the inner loops.
-            if (kernel_center_row >=0)
-                    && (kernel_center_row < array_in.nrow_i64)
-                    && (kernel_center_col >= 0)
-                    && (kernel_center_col < array_in.ncol_i64) {
-                
-                if context.input_mask().is_enabled() {
-                    if context.input_mask().is_valid(arr_iflat) == 1 {
-                        // The mask is valid by default - set output data
-                        for _ivar in 0..array_in.nvar {
-                            array_out.data[out_idx_ivar] =
-                                V::from((array_in.data[arr_iflat]).into());
-                            
-                            // Prepare indices for next iteration
-                            arr_iflat += in_var_sz;
-                            out_idx_ivar += out_var_sz;
-                        }
-                    }
-                    else {
-                        // Set output data as nodata
-                        for _ivar in 0..array_in.nvar {
-                            array_out.data[out_idx_ivar] = nodata_out;
-                            
-                            // Prepare indices for next iteration
-                            out_idx_ivar += out_var_sz;
-                        }
-                        // Set output_mask as invalid
-                        context.output_mask().set_value(out_idx, 0);
-                    }
-                }
-                else {
-                    // There is no mask - the boundary check has been performed
-                    for _ivar in 0..array_in.nvar {
-                        // Set output data
-                        array_out.data[out_idx_ivar] =
-                            V::from((array_in.data[arr_iflat]).into());
-                            
-                        // Prepare indices for next iteration
-                        arr_iflat += in_var_sz;
-                        out_idx_ivar += out_var_sz;
-                    }
-                }
-            }
-            else {
+            // Outside the array: set nodata as output and mark mask as invalid
+            if !is_inside(kernel_center_row, kernel_center_col, array_in) {
+                // Set output data as nodata
                 for _ivar in 0..array_in.nvar {
-                    // Set output to nodata
                     array_out.data[out_idx_ivar] = nodata_out;
-                            
                     // Prepare indices for next iteration
                     out_idx_ivar += out_var_sz;
                 }
                 // Set output_mask as invalid
                 context.output_mask().set_value(out_idx, 0);
-            }
+                return Ok(());
+           }
         } else {
-            // No bounds check: the caller guarantees all indices are valid.
-            if context.input_mask().is_enabled() {
-                if context.input_mask().is_valid(arr_iflat) == 1 {
-                    // The mask is valid by default - set output data
-                    for _ivar in 0..array_in.nvar {
-                        array_out.data[out_idx_ivar] =
-                            V::from((array_in.data[arr_iflat]).into());
-                        
-                        // Prepare indices for next iteration
-                        arr_iflat += in_var_sz;
-                        out_idx_ivar += out_var_sz;
-                    }
-                }
-                else {
-                    // Set output data as nodata
-                    for _ivar in 0..array_in.nvar {
-                        array_out.data[out_idx_ivar] = nodata_out;
-                        
-                        // Prepare indices for next iteration
-                        out_idx_ivar += out_var_sz;
-                    }
-                    // Set output_mask as invalid
-                    context.output_mask().set_value(out_idx, 0);
-                }
-            }
-            else {
-                // Set output data
-                for _ivar in 0..array_in.nvar {
-                    array_out.data[out_idx_ivar] =
-                        V::from((array_in.data[arr_iflat]).into());
-                    
-                    // Prepare indices for next iteration
-                    arr_iflat += in_var_sz;
-                    out_idx_ivar += out_var_sz;
-                }
-            }
+            // No bound check, the caller guarantees that the center lies inside the
+            // array. Only checked in debug build in order to preserve the fast path.
+            debug_assert!(
+                is_inside(kernel_center_row, kernel_center_col, array_in),
+                "nearest center ({kernel_center_row}, {kernel_center_col}) outside the array"
+            );
         }
+        
+        // The center is inside the array
+        let mut arr_iflat: usize =
+            (kernel_center_row as usize) * array_in.ncol +
+            (kernel_center_col as usize);
+        
+        if context.input_mask().is_enabled() && context.input_mask().is_valid(arr_iflat) == 0 {
+            // Set output data as nodata
+            for _ivar in 0..array_in.nvar {
+                array_out.data[out_idx_ivar] = nodata_out;
+                // Prepare indices for next iteration
+                out_idx_ivar += out_var_sz;
+            }
+            // Set output_mask as invalid
+            context.output_mask().set_value(out_idx, 0);
+            return Ok(())
+        }
+        
+        for _ivar in 0..array_in.nvar {
+            array_out.data[out_idx_ivar] = V::from((array_in.data[arr_iflat]).into());
+                            
+            // Prepare indices for next iteration
+            arr_iflat += in_var_sz;
+            out_idx_ivar += out_var_sz;
+        }
+        context.output_mask().set_value(out_idx, 1);
         Ok(())
     }
-
 }
 
 
@@ -222,7 +174,11 @@ mod gx_linear_kernel_tests {
         GxArrayViewInterpolationContext,
         BinaryInputMask,
         BinaryOutputMask,
-        BoundsCheck
+        BoundsCheck,
+        DefaultCtx,
+        NoBoundsCheck,
+        NoInputMask,
+        NoOutputMask,
     };
 
     #[test]
@@ -403,5 +359,47 @@ mod gx_linear_kernel_tests {
             assert_eq!(array_out.data, expected);
             assert_eq!(mask_data_out, expected_mask);
         }
+    }
+    
+    /// A target whose nearest center is outside the data gives nodata.
+    /// A negative center must not overflow in debug builds.
+    #[test]
+    fn test_array1_interp2_centre_outside() {
+        let data_in = [1.0, 2.0, 3.0, 4.0];
+        let array_in = GxArrayView::new(&data_in, 1, 2, 2);
+        let interp = GxNearestInterpolator::new(&GxArrayViewInterpolatorNoArgs {});
+        let mut weights = interp.allocate_kernel_buffer();
+        for (y, x) in [(-0.75, 0.0), (0.0, -0.75), (1.0, -0.75), (-3.0, -3.0), (2.0, 0.0), (0.0, 2.0)] {
+            let mut data_out = [0.0f64; 1];
+            let mut array_out = GxArrayViewMut::new(&mut data_out, 1, 1, 1);
+            let mut context = DefaultCtx::default();
+            interp
+                .array1_interp2::<f64, f64, DefaultCtx>(
+                    &mut weights, y, x, 0, &array_in, &mut array_out, -9.0, &mut context,
+                )
+                .unwrap();
+            assert_eq!(data_out[0], -9.0, "({y}, {x})");
+        }
+    }
+
+    /// Without bounds check, a centre outside the array breaks the caller
+    /// contract: debug builds stop on the assertion.
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "outside the array")]
+    fn test_array1_interp2_no_bounds_check_contract() {
+        let data_in = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let array_in = GxArrayView::new(&data_in, 1, 2, 3);
+        let interp = GxNearestInterpolator::new(&GxArrayViewInterpolatorNoArgs {});
+        let mut weights = interp.allocate_kernel_buffer();
+        let mut data_out = [0.0f64; 1];
+        let mut array_out = GxArrayViewMut::new(&mut data_out, 1, 1, 1);
+        let mut context =
+            GxArrayViewInterpolationContext::new(NoInputMask, NoOutputMask, NoBoundsCheck {});
+        // Centre (-1, 4): its wrapped flat index -1 * 3 + 4 = 1 lies inside
+        // the data, so the slice bounds check alone would not catch it.
+        let _ = interp.array1_interp2(
+            &mut weights, -1.0, 4.0, 0, &array_in, &mut array_out, -9.0, &mut context,
+        );
     }
 }

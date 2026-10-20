@@ -91,6 +91,17 @@ nearest integer for an odd one.
 
 - Removed the empty `rust/gridr/src/interp/gx_interp.rs` module.
 
+### Fixed
+
+#### Interpolation: nearest neighbour
+
+*Module: `core::interp::gx_nearest_kernel`*
+
+- The flat input index was computed before the bounds check. A target with a negative
+  nearest center panicked with an arithmetic overflow in debug builds. Release builds were
+  not affected.
+- Without bounds check, the caller contract is asserted in debug builds. 
+
 ### Build & Tooling
 
 - **Cargo**

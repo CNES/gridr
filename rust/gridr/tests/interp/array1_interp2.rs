@@ -547,7 +547,7 @@ fn bspline11_matches_reference() {
     check_separable("bspline11", &bspline::<11>(), BSPLINE11, RTOL);
 }
 
-/* #[test]
+#[test]
 fn nearest_matches_reference() {
     let interp = GxNearestInterpolator::new(&GxArrayViewInterpolatorNoArgs {});
     let fx = fixture();
@@ -560,4 +560,4 @@ fn nearest_matches_reference() {
         BinaryInputMask { mask: &mask_view }, BoundsCheck);
     compare("nearest / bounds / binary mask", &pts, &out, &m,
         |y, x| reference_nearest(&fx.data, Some(&fx.mask_sparse), y, x), 0.0);
-} */
+}
