@@ -18,9 +18,13 @@
 //! Test helpers shared by the kernel unit tests.
 //!
 //! [`check_native_weights`] validates a weight function on its native
-//! support against the continuous kernel it implements. Reference kernels
-//! that have no public scalar implementation in the crate are defined here.
+//! support against the continuous kernel it implements.
+//! [`check_zero_pattern`] validates the [`ZeroPattern`] a kernel declares
+//! against its computed weights. Reference kernels that have no public
+//! scalar implementation in the crate are defined here.
 #![cfg(test)]
+
+use super::gx_array_view_interp::ZeroPattern;
 
 /// Weight function on a native support: phase `t`, `K` weights in inverted
 /// order (`weights[i]` is the weight of tap `first + K - 1 - i`).
@@ -64,7 +68,7 @@ fn phases() -> Vec<f64> {
 /// - the weights sum to `sum` within `tol` relative;
 /// - at `t = 0`, a weight is an exact zero if and only if `phi` is;
 /// - for `t` in `(0, 1)`, no weight is an exact zero. This is the kernel
-///   contract the core relies on: the conservative mask policy ignores
+///   contract the core relies on: the effective support policy ignores
 ///   zero-weight samples, and the anchor tap must never vanish.
 pub fn check_native_weights(w: WeightFn, k: usize, phi: fn(f64) -> f64, sum: f64, tol: f64) {
     assert!(k % 2 == 0, "check_native_weights expects an even support");
@@ -97,5 +101,44 @@ pub fn check_native_weights(w: WeightFn, k: usize, phi: fn(f64) -> f64, sum: f64
         }
         let total: f64 = buf.iter().sum();
         assert!((total - sum).abs() <= tol * sum, "t={t:e}: weights sum to {total}, expected {sum}");
+    }
+}
+
+/// Checks that a weight function has its exact zeros where `pattern` says.
+///
+/// `pattern` is the `ZERO_PATTERN` the kernel declares to the core. For
+/// [`ZeroPattern::AtPhase`], the phases tested cover `[phase, phase + 1)`,
+/// the phase domain of the kernel: at `phase` itself, exactly the taps
+/// outside `[start, start + len)` must have a zero weight; at every other
+/// phase, no weight may be zero. For [`ZeroPattern::None`], no weight may
+/// ever be zero. [`ZeroPattern::FromWeights`] makes no claim and is not
+/// checked.
+///
+/// Tap offsets are counted from the first stencil tap: `weights[i]` is the
+/// weight of offset `k - 1 - i`.
+pub fn check_zero_pattern(w: WeightFn, k: usize, pattern: ZeroPattern) {
+    let (phase, start, len) = match pattern {
+        ZeroPattern::AtPhase { phase, start, len } => (Some(phase), start, len),
+        ZeroPattern::None => (None, 0, k),
+        ZeroPattern::FromWeights => return,
+    };
+    assert!(start + len <= k, "pattern {pattern:?} exceeds the {k}-tap support");
+    let base = phase.unwrap_or(0.0);
+    let mut phases: Vec<f64> = (0..200).map(|i| base + i as f64 / 200.0).collect();
+    phases.extend_from_slice(&[
+        base + 1e-15, base + 1e-12, base + 1e-9,
+        base + 1.0 - 1e-9, base + 1.0 - 1e-12, base + 1.0 - f64::EPSILON,
+    ]);
+    let mut buf = vec![f64::NAN; k];
+    for t in phases {
+        w(t, &mut buf);
+        for (i, &wi) in buf.iter().enumerate() {
+            let offset = k - 1 - i;
+            let active = Some(t) != phase || (start..start + len).contains(&offset);
+            assert_eq!(
+                wi != 0.0, active,
+                "t={t:e} tap offset {offset}: weight {wi:e}, pattern {pattern:?}",
+            );
+        }
     }
 }

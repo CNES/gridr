@@ -24,6 +24,7 @@ use super::gx_array_view_interp::{
     GxArrayViewInterpolatorArgs,
     GxArrayViewInterpolatorCore,
     GxArrayViewInterpolationContextTrait,
+    ZeroPattern,
 };
 
 /// Optimized bicubic interpolator implementation.
@@ -43,6 +44,10 @@ pub struct GxOptimizedBicubicInterpolator {
 // Use generic implementation from GxArrayViewInterpolatorCore for
 // KROWS = 4, NCOLS = 4
 impl GxArrayViewInterpolatorCore<4, 4> for GxOptimizedBicubicInterpolator {
+    /// Taps `anchor - 1` to `anchor + 2`
+    /// At `t = 0` only the anchor (offset 1) has a non-zero weight
+    const ZERO_PATTERN: ZeroPattern = ZeroPattern::AtPhase { phase: 0.0, start: 1, len: 1 };
+
     #[inline(always)]
     fn compute_weights(&self, t: f64, weights: &mut [f64])
     {
@@ -223,6 +228,16 @@ mod gx_optimized_bicubic_kernel_tests {
         DefaultCtx
     };
        
+    /// The declared zero pattern matches the computed weights.
+    #[test]
+    fn test_bicubic_zero_pattern() {
+        use crate::interp::gx_kernel_test_utils::check_zero_pattern;
+        check_zero_pattern(
+            bicubic_kernel_weights_native, 4,
+            <GxOptimizedBicubicInterpolator as GxArrayViewInterpolatorCore<4, 4>>::ZERO_PATTERN,
+        );
+    }
+
     /// Native weights against the continuous kernel.
     #[test]
     fn test_bicubic_kernel_weights_native() {

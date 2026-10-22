@@ -48,7 +48,7 @@
 //!
 //! # Generic strategies
 //!
-//! Behaviour at array borders and on masked data is governed by three
+//! Behaviour at array borders and on masked data is governed by four
 //! orthogonal strategy types that are composed at compile time inside a
 //! context object:
 //!
@@ -60,6 +60,10 @@
 //!
 //! 3. **Bounds check** ([`GxArrayViewInterpolatorBoundsCheckStrategy`]):
 //!    controls whether index boundary checks are performed.
+//!
+//! 4. **Support policy** ([`GxArrayViewInterpolatorSupportPolicy`]): defines
+//!    which taps of the kernel support must lie inside the array and be valid
+//!    in the input mask ([`Effective`] or [`Full`]).
 //!
 //! The strategies are assembled in a [`GxArrayViewInterpolationContext`] and
 //! passed through all internal methods, enabling monomorphic code with zero
@@ -77,7 +81,8 @@
 //! │  ├─ InputMaskStrategy  (NoInputMask | BinaryInputMask        │
 //! |  │                       | BinaryInputMaskWithSafeWindow     │
 //! │  ├─ OutputMaskStrategy (NoOutputMask | BinaryOutputMask)     │
-//! │  └─ BoundsCheckStrategy (NoBoundsCheck | BoundsCheck)        │
+//! │  ├─ BoundsCheckStrategy (NoBoundsCheck | BoundsCheck)        │
+//! │  └─ SupportPolicy       (Effective | Full)                   │
 //! └──────────────────────────────────────────────────────────────┘
 //!
 //!  ┌──────────────────────────────────────────────────────────────┐
@@ -92,7 +97,8 @@
 //!  │ <KROWS, KCOLS>              │   │  implement GxArrayViewInterp-   │
 //!  │                             │   │  olator directly)               │
 //!  │ INTERNAL TRAIT              │   └─────────────────────────────────┘
-//!  │ compute_weights()           │ <- only method to implement
+//!  │ compute_weights()           │ <- method to implement for each interpolator
+//!  │ ZERO_PATTERN                │ <- interpolator dependant, default FromWeights
 //!  │ interpolate_nomask_*        │ <- default implementations
 //!  │ interpolate_masked_*        │
 //!  │ array1_interp2_             │
@@ -110,9 +116,18 @@
 //!
 //! # Design notes
 //!
-//! * **Zero-cost abstractions** - `do_check()` and `is_enabled()` return
-//!   compile-time constants that LLVM folds away; the resulting machine code
-//!   contains only the branch taken for the instantiated strategy type.
+//! * **Zero-cost abstractions** - `do_check()`, `is_enabled()` and
+//!   `ignore_zero_weights()` return compile-time constants, as does the 
+//!   `ZERO_PATTERN` of the kernel.
+//!
+//! * **Validity before computation** - when the kernel declares where its
+//!   weights are 0 ([`ZeroPattern::AtPhase`]), or under the [`Full`]
+//!   policy, the validity of a target (bounds and input mask) is decided
+//!   before its weights are computed. Invalid targets never compute weights,
+//!   and the convolution of a valid target runs without any mask test.
+//!
+//! * **Finite input data** - the input data must be finite (caller's contract).
+//!   A NaN or an infinite value in input data would leak into the result.
 use std::marker::PhantomData;
 use crate::gx_array::{GxArrayView, GxArrayViewMut};
 use crate::gx_errors::GxError;
@@ -182,10 +197,36 @@ pub trait GxArrayViewInterpolatorInputMaskStrategy {
     /// representation is more optimal, avoiding unnecessary index calculations
     /// that would be required to convert between 1D and 2D representations.
     unsafe fn is_valid_window_unsafe<const H: usize, const W: usize>(
-        &self, 
+        &self,
         start_idx: usize,
         start_row_idx: usize,
         start_col_idx: usize,
+    ) -> u8;
+
+    /// Returns `1` if all points of the `nrows x ncols` window are valid,
+    /// `0` otherwise.
+    ///
+    /// Run-time size variant of
+    /// [`is_valid_window_unsafe`](Self::is_valid_window_unsafe). It serves
+    /// the reduced windows of the effective support policy, whose size
+    /// depends on the phase and cannot be a const generic parameter.
+    ///
+    /// # Parameters
+    /// - `start_idx`: flat index of the top-left corner of the window
+    /// - `start_row_idx`: row index of the top-left corner of the window
+    /// - `start_col_idx`: column index of the top-left corner of the window
+    /// - `nrows`: window's height.
+    /// - `ncols`: window's width.
+    ///
+    /// # Safety
+    /// The caller guarantees that the whole window lies inside the mask.
+    unsafe fn is_valid_window_dyn_unsafe(
+        &self,
+        start_idx: usize,
+        start_row_idx: usize,
+        start_col_idx: usize,
+        nrows: usize,
+        ncols: usize,
     ) -> u8;
 
     /// Returns the number of valid points within the window
@@ -200,9 +241,9 @@ pub trait GxArrayViewInterpolatorInputMaskStrategy {
     /// - `W`: widows's width.
     ///
     /// # Design Rationale
-    /// This function accepts both a 1D flat index and its corresponding 2D 
+    /// This function accepts both a 1D flat index and its corresponding 2D
     /// row/column indices for the window's top-left corner. This dual-parameter
-    /// approach allows the implementation to chosse whichever coordinate 
+    /// approach allows the implementation to chosse whichever coordinate
     /// representation is more optimal, avoiding unnecessary index calculations
     /// that would be required to convert between 1D and 2D representations.
     fn count_valid_window<const H: usize, const W: usize>(
@@ -337,7 +378,21 @@ impl<T: GxArrayViewInterpolatorInputMaskStrategy>
             start_idx, start_row_idx, start_col_idx
         )
     }}
-    
+
+    #[inline(always)]
+    unsafe fn is_valid_window_dyn_unsafe(
+        &self,
+        start_idx: usize,
+        start_row_idx: usize,
+        start_col_idx: usize,
+        nrows: usize,
+        ncols: usize,
+    ) -> u8 { unsafe {
+        (*self).is_valid_window_dyn_unsafe(
+            start_idx, start_row_idx, start_col_idx, nrows, ncols
+        )
+    }}
+
     #[inline(always)]
     fn count_valid_window<const H: usize, const W: usize>(
         &self, 
@@ -433,10 +488,22 @@ impl GxArrayViewInterpolatorInputMaskStrategy for NoInputMask {
 
     #[inline(always)]
     unsafe fn is_valid_window_unsafe<const H: usize, const W: usize>(
-        &self, 
+        &self,
         _start_idx: usize,
         _start_row_idx: usize,
         _start_col_idx: usize,
+    ) -> u8 {
+        1
+    }
+
+    #[inline(always)]
+    unsafe fn is_valid_window_dyn_unsafe(
+        &self,
+        _start_idx: usize,
+        _start_row_idx: usize,
+        _start_col_idx: usize,
+        _nrows: usize,
+        _ncols: usize,
     ) -> u8 {
         1
     }
@@ -553,6 +620,32 @@ impl<'a> GxArrayViewInterpolatorInputMaskStrategy for BinaryInputMask<'a> {
         // all irow in 0..H and icol in 0..W.
         for _irow in 0..H {
             for icol in 0..W {
+                acc &= *data.get_unchecked(row_base + icol);
+            }
+            row_base += ncol;
+        }
+        acc
+    }}
+
+    #[inline(always)]
+    unsafe fn is_valid_window_dyn_unsafe(
+        &self,
+        start_idx: usize,
+        _start_row_idx: usize,
+        _start_col_idx: usize,
+        nrows: usize,
+        ncols: usize,
+    ) -> u8 { unsafe {
+        let ncol = self.mask.ncol;
+        let data = &self.mask.data;
+        let mut row_base = start_idx;
+        let mut acc: u8 = 1;
+
+        // SAFETY: the caller guarantees that
+        // start_idx + irow * ncol + icol is within bounds for
+        // all irow in 0..nrows and icol in 0..ncols.
+        for _irow in 0..nrows {
+            for icol in 0..ncols {
                 acc &= *data.get_unchecked(row_base + icol);
             }
             row_base += ncol;
@@ -820,6 +913,25 @@ for BinaryInputMaskWithSafeWindow<'a> {
         }
     }}
 
+    #[inline(always)]
+    unsafe fn is_valid_window_dyn_unsafe(
+        &self,
+        start_idx: usize,
+        start_row_idx: usize,
+        start_col_idx: usize,
+        nrows: usize,
+        ncols: usize,
+    ) -> u8 { unsafe {
+        if self.is_in_conv_safe_box(start_row_idx, start_col_idx)
+        {
+            1
+        } else {
+            self.inner.is_valid_window_dyn_unsafe(
+                start_idx, start_row_idx, start_col_idx, nrows, ncols
+            )
+        }
+    }}
+
     /// Pre-slices one row at a time.  The `map(|&v| v as usize).sum()`
     /// pattern compiles to a tight add chain without bounds checks.
     #[inline(always)]
@@ -1044,25 +1156,108 @@ impl GxArrayViewInterpolatorBoundsCheckStrategy for BoundsCheck {
 
 
 // =============================================================================
+// Support policy
+// =============================================================================
+
+/// Strategy trait defining which taps of the kernel support must be valid.
+///
+/// For a target position, the policy defines the set of input samples the
+/// interpolated value depends on. The bounds check and the input mask are
+/// then evaluated on that set only:
+///
+/// - [`Effective`]: only the taps with a non-zero weight count. A sample
+///   outside the array or masked is ignored when its weight is zero.
+/// - [`Full`]: every tap of the `KROWS x KCOLS` stencil counts, whatever
+///   its weight.
+///
+/// The two policies differ only at the phases where some weights are
+/// exactly zero, see [`ZeroPattern`].
+pub trait GxArrayViewInterpolatorSupportPolicy {
+    /// Returns `true` if taps with a zero weight are ignored by the validity
+    /// tests (array bounds and input mask).
+    fn ignore_zero_weights() -> bool;
+}
+
+/// Effective support policy (default).
+///
+/// Only the taps with a non-zero weight must lie inside the array and be
+/// valid in the input mask.
+#[derive(Default, Clone, Copy, Debug)]
+pub struct Effective;
+
+impl GxArrayViewInterpolatorSupportPolicy for Effective {
+    #[inline(always)]
+    fn ignore_zero_weights() -> bool {
+        true
+    }
+}
+
+/// Full support policy.
+///
+/// Every tap of the stencil must lie inside the array and be valid in the
+/// input mask, whatever its weight. The validity never depends on the
+/// weights. It is the cheapest policy to evaluate.
+#[derive(Default, Clone, Copy, Debug)]
+pub struct Full;
+
+impl GxArrayViewInterpolatorSupportPolicy for Full {
+    #[inline(always)]
+    fn ignore_zero_weights() -> bool {
+        false
+    }
+}
+
+/// Run-time selection of the support policy.
+///
+/// Callers that choose the policy at run time pass this value.
+/// The dispatching functions translate it into
+/// [`Effective`] or [`Full`].
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SupportPolicy {
+    /// See [`Effective`].
+    #[default]
+    Effective,
+    /// See [`Full`].
+    Full,
+}
+
+impl std::str::FromStr for SupportPolicy {
+    type Err = String;
+
+    /// Parses `"effective"` or `"full"` (case-insensitive).
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "effective" => Ok(SupportPolicy::Effective),
+            "full" => Ok(SupportPolicy::Full),
+            other => Err(format!(
+                "unknown support policy '{other}' (expected 'effective' or 'full')"
+            )),
+        }
+    }
+}
+
+// =============================================================================
 // Interpolation context
 // =============================================================================
 
-/// Interpolation context aggregating the three orthogonal strategies.
+/// Interpolation context aggregating the four orthogonal strategies.
 ///
 /// The context is generic over the strategies, enabling compile-time
 /// monomorphisation with zero runtime overhead.  `PhantomData` markers are
-/// used to carry the `BoundsCheck` type (which has no runtime state) and the
-/// lifetime `'a`.
+/// used to carry the `BoundsCheck` and `SupportPolicy` types (which have no
+/// runtime state) and the lifetime `'a`.
 ///
 /// # Type parameters
 /// - `IM`: input mask strategy.
 /// - `OM`: output mask strategy.
 /// - `BC`: bounds check strategy.
-pub struct GxArrayViewInterpolationContext<'a, IM, OM, BC>
+/// - `SP`: support policy, [`Effective`] by default.
+pub struct GxArrayViewInterpolationContext<'a, IM, OM, BC, SP = Effective>
 where
     IM: GxArrayViewInterpolatorInputMaskStrategy + 'a,
     OM: GxArrayViewInterpolatorOutputMaskStrategy + 'a,
     BC: GxArrayViewInterpolatorBoundsCheckStrategy + 'a,
+    SP: GxArrayViewInterpolatorSupportPolicy + 'a,
 {
     /// Input mask strategy instance.
     pub input_mask: IM,
@@ -1072,6 +1267,9 @@ where
 
     /// Carries the bounds-check strategy type without storing a value.
     pub _phantom_bounds: PhantomData<BC>,
+
+    /// Carries the support policy type without storing a value.
+    pub _phantom_policy: PhantomData<SP>,
 
     /// Carries the lifetime `'a`.
     pub _phantom_lifetime: PhantomData<&'a ()>,
@@ -1091,6 +1289,9 @@ pub trait GxArrayViewInterpolationContextTrait {
     /// The concrete bounds-check strategy type.
     type BoundsCheck: GxArrayViewInterpolatorBoundsCheckStrategy;
 
+    /// The concrete support policy type.
+    type SupportPolicy: GxArrayViewInterpolatorSupportPolicy;
+
     /// Returns a shared reference to the input mask strategy.
     fn input_mask(&self) -> &Self::InputMask;
 
@@ -1098,16 +1299,18 @@ pub trait GxArrayViewInterpolationContextTrait {
     fn output_mask(&mut self) -> &mut Self::OutputMask;
 }
 
-impl<'a, IM, OM, BC> GxArrayViewInterpolationContextTrait
-    for GxArrayViewInterpolationContext<'a, IM, OM, BC>
+impl<'a, IM, OM, BC, SP> GxArrayViewInterpolationContextTrait
+    for GxArrayViewInterpolationContext<'a, IM, OM, BC, SP>
 where
     IM: GxArrayViewInterpolatorInputMaskStrategy,
     OM: GxArrayViewInterpolatorOutputMaskStrategy,
     BC: GxArrayViewInterpolatorBoundsCheckStrategy,
+    SP: GxArrayViewInterpolatorSupportPolicy,
 {
     type InputMask = IM;
     type OutputMask = OM;
     type BoundsCheck = BC;
+    type SupportPolicy = SP;
 
     #[inline(always)]
     fn input_mask(&self) -> &Self::InputMask {
@@ -1120,28 +1323,52 @@ where
     }
 }
 
-impl<'a, IM, OM, BC> GxArrayViewInterpolationContext<'a, IM, OM, BC>
+impl<'a, IM, OM, BC> GxArrayViewInterpolationContext<'a, IM, OM, BC, Effective>
 where
     IM: GxArrayViewInterpolatorInputMaskStrategy + 'a,
     OM: GxArrayViewInterpolatorOutputMaskStrategy + 'a,
     BC: GxArrayViewInterpolatorBoundsCheckStrategy + 'a,
 {
-    /// Creates a new interpolation context with the given strategies.
+    /// Creates a new interpolation context with the given strategies and the
+    /// default [`Effective`] support policy.
     ///
     /// The `_bounds_check` argument is consumed only to infer the `BC` type;
     /// no value is stored (the type carries all information).
     pub fn new(input_mask: IM, output_mask: OM, _bounds_check: BC) -> Self {
+        Self::with_policy(input_mask, output_mask, _bounds_check, Effective)
+    }
+}
+
+impl<'a, IM, OM, BC, SP> GxArrayViewInterpolationContext<'a, IM, OM, BC, SP>
+where
+    IM: GxArrayViewInterpolatorInputMaskStrategy + 'a,
+    OM: GxArrayViewInterpolatorOutputMaskStrategy + 'a,
+    BC: GxArrayViewInterpolatorBoundsCheckStrategy + 'a,
+    SP: GxArrayViewInterpolatorSupportPolicy + 'a,
+{
+    /// Creates a new interpolation context with the given strategies and
+    /// support policy.
+    ///
+    /// The `_bounds_check` and `_policy` arguments are consumed only to infer
+    /// the `BC` and `SP` types; no value is stored.
+    pub fn with_policy(
+        input_mask: IM,
+        output_mask: OM,
+        _bounds_check: BC,
+        _policy: SP,
+    ) -> Self {
         Self {
             input_mask,
             output_mask,
             _phantom_bounds: PhantomData,
+            _phantom_policy: PhantomData,
             _phantom_lifetime: PhantomData,
         }
     }
 }
 
 /// Default interpolation context: no input mask, no output mask, bounds
-/// checking enabled.
+/// checking enabled, effective support policy.
 pub type DefaultCtx<'a> =
     GxArrayViewInterpolationContext<'a, NoInputMask, NoOutputMask, BoundsCheck>;
 
@@ -1152,6 +1379,7 @@ impl<'a> DefaultCtx<'a> {
             input_mask:        NoInputMask::default(),
             output_mask:       NoOutputMask::default(),
             _phantom_bounds:   PhantomData,
+            _phantom_policy:   PhantomData,
             _phantom_lifetime: PhantomData,
         }
     }
@@ -1236,8 +1464,8 @@ impl GxArrayViewInterpolatorArgs for GxArrayViewInterpolatorNoArgs {
 /// Public trait defining the 2D interpolation interface.
 ///
 /// An implementor computes interpolated values at arbitrary floating-point
-/// positions within a flattened 3D input array
-/// `[nvar, nrow, ncol]` and writes the result to a matching output array.
+/// positions within a flattened 3D input array `[nvar, nrow, ncol]` and writes
+/// the result to a matching output array.
 ///
 /// # Coordinate Convention
 /// Target positions are expressed in the index space of the input array:
@@ -1259,12 +1487,14 @@ impl GxArrayViewInterpolatorArgs for GxArrayViewInterpolatorNoArgs {
 /// # Context parameter
 ///
 /// The generic `context` argument of [`array1_interp2`](Self::array1_interp2)
-/// encapsulates three orthogonal behaviours:
+/// encapsulates four orthogonal behaviours:
 ///
 /// - **Input mask** - whether a given input sample is valid.
 /// - **Output mask** - whether to record which output pixels were written.
 /// - **Bounds check** - whether to verify that the interpolation stencil lies
 ///   fully within the input array.
+/// - **Support policy** - which taps of the stencil the bounds check and the
+///   input mask apply to (all of them, or only those with a non-zero weight).
 ///
 /// # Thread safety
 ///
@@ -1440,6 +1670,70 @@ fn stencil_inside<const KROWS: usize, const KCOLS: usize, T>(
         && first_col + KCOLS as i64 <= array.ncol_i64
 }
 
+/// Where the exact zeros of the weights of a separable kernel can occur.
+///
+/// Each kernel declares it through
+/// [`GxArrayViewInterpolatorCore::ZERO_PATTERN`]. It is a property of the
+/// kernel, independent of the support policy: it tells the core which taps
+/// have a zero weight at a given phase without computing the weights, so
+/// that the validity of a target can be decided first.
+///
+/// The pattern applies to both axes, with offsets counted from the first tap
+/// of the stencil.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ZeroPattern {
+    /// No weight is ever an exact zero: every tap always counts, and the
+    /// effective support policy behaves like the full support policy.
+    None,
+
+    /// Weights are exact zeros only when the phase equals `phase`: there,
+    /// exactly the taps outside `[first + start, first + start + len)` have
+    /// a zero weight. For any other phase, no weight is zero.
+    ///
+    /// This covers every kernel whose continuous function vanishes only on
+    /// integer distances (linear, cubic, B-splines): 
+    /// with an even support, `phase` is `0.0`.
+    AtPhase {
+        /// Phase at which the zeros occur.
+        phase: f64,
+        /// Offset of the first non-zero tap from the first stencil tap.
+        start: usize,
+        /// Number of non-zero taps at that phase.
+        len: usize,
+    },
+
+    /// Zeros can occur at any phase: they are read from the computed
+    /// weights. This is the generic and slowest path: the weights must be
+    /// computed before the validity can be decided.
+    FromWeights,
+}
+
+/// Taps of one axis checked by the validity tests of the effective support
+/// policy, as `(offset, len)` from the first stencil tap.
+#[inline(always)]
+fn active_taps<const K: usize>(pattern: ZeroPattern, t: f64) -> (usize, usize) {
+    match pattern {
+        ZeroPattern::AtPhase { phase, start, len } if t == phase => (start, len),
+        _ => (0, K),
+    }
+}
+
+/// Tells whether the window of `nrows x ncols` samples starting at
+/// `(row0, col0)` lies entirely inside `array`.
+#[inline(always)]
+fn window_inside<T>(
+    row0: i64,
+    nrows: usize,
+    col0: i64,
+    ncols: usize,
+    array: &GxArrayView<'_, T>,
+) -> bool {
+    row0 >= 0
+        && row0 + nrows as i64 <= array.nrow_i64
+        && col0 >= 0
+        && col0 + ncols as i64 <= array.ncol_i64
+}
+
 // =============================================================================
 // Internal interpolator trait
 // =============================================================================
@@ -1460,8 +1754,10 @@ fn stencil_inside<const KROWS: usize, const KCOLS: usize, T>(
 /// * `array1_interp2_separable_core` (dispatcher, calls the four above)
 ///
 /// A concrete interpolator implementing this trait inherits all five methods
-/// for free; it only needs to provide
-/// [`compute_weights`](Self::compute_weights).
+/// for free; it only needs to provide [`compute_weights`](Self::compute_weights).
+/// It should also declare where its weights are 0 with 
+/// [`ZERO_PATTERN`](Self::ZERO_PATTERN), which selects the fast validity path;
+/// the default, [`ZeroPattern::FromWeights`], is correct for any kernel but slower.
 ///
 /// # When to implement this trait
 ///
@@ -1495,10 +1791,14 @@ fn stencil_inside<const KROWS: usize, const KCOLS: usize, T>(
 /// ```ignore
 /// // Only `compute_weights` is required; all other methods are inherited.
 /// impl GxArrayViewInterpolatorCore<4, 4> for MyInterpolator {
+///     // Recommended: at t = 0 only the anchor (offset 1) has a non-zero
+///     // weight. Without it, the zeros are read from the computed weights.
+///     const ZERO_PATTERN: ZeroPattern = ZeroPattern::AtPhase { phase: 0.0, start: 1, len: 1 };
+///
 ///     // Even support: phase `t` in [0, 1), taps anchor - 1 ..= anchor + 2.
 ///     fn compute_weights(&self, t: f64, weights: &mut [f64]) {
 ///         my_kernel_weights(t, weights);
-//     }
+///     }
 /// }
 /// ```
 ///
@@ -1520,7 +1820,24 @@ fn stencil_inside<const KROWS: usize, const KCOLS: usize, T>(
 /// }
 /// ```
 pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
-    
+
+    // =========================================================================
+    // ZERO_PATTERN  (to define for each implementation)
+    // =========================================================================
+
+    /// Where the exact zeros of [`compute_weights`](Self::compute_weights)
+    /// occur, see [`ZeroPattern`].
+    ///
+    /// # Contract
+    /// For every phase, a tap that the pattern declares active must have a
+    /// non-zero computed weight, and a tap it declares inactive must have an
+    /// exact zero weight. Declaring a zero that the weights do not have
+    /// would make the effective support policy ignore a sample that contributes
+    /// to the result.
+    ///
+    /// The default is set to [`ZeroPattern::FromWeights`].
+    const ZERO_PATTERN: ZeroPattern = ZeroPattern::FromWeights;
+
     // =========================================================================
     // interpolate_nomask_unchecked
     // =========================================================================
@@ -1733,7 +2050,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
 
     /// Separable 2D convolution with input mask validation, no bounds checking.
     ///
-    /// # Design : Exact Interpolation Policy
+    /// # Design : effective support policy, zeros read from the weights
     /// The mask validation operates on weighted support rather than on the 
     /// target coordinates alone. Stencil positions whose kernel weight is zero
     /// are excluded from the validity check, regardless of their mask value.
@@ -1741,7 +2058,12 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
     /// node (all off-centre wieghts vanish), the method returns the source 
     /// value provided that single node is valid -- even if neighbouring samples
     /// in the convolution are masked.
-    /// This is a design choice
+    ///
+    /// [`array1_interp2_separable_core`](Self::array1_interp2_separable_core)
+    /// uses this variant only under the [`Effective`] policy for a kernel
+    /// with the [`ZeroPattern::FromWeights`] pattern. Otherwise the validity
+    /// is decided before the weights are computed, see
+    /// [`stencil_mask_valid`](Self::stencil_mask_valid).
     ///
     /// # Parameters
     /// - `weights_row`: row-direction kernel weights, length `KROWS`.
@@ -1768,7 +2090,7 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
     /// 3. 0 < count < KROWS x KZIZE -- Both guards pass, triggering the full
     ///   [`is_valid_weighted_window()`](
     ///   GxArrayViewInterpolatorInputMaskStrategy::is_valid_weighted_window())
-    ///   check required due to the exact policy.
+    ///   check required by the effective support policy.
     ///
     /// # Safety
     /// The caller must guarantee that every stencil index is within the bounds
@@ -2343,8 +2665,9 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
     /// - The anchor tap has a non-zero weight for every phase: the core
     ///   rejects an anchor outside the array without computing the weights.
     /// - A weight is an exact zero only where the continuous kernel is zero:
-    ///   samples with a zero weight are ignored by the mask validation and
-    ///   by the bounds check of the border path.
+    ///   under the effective support policy, samples with a zero weight are
+    ///   ignored by the mask validation and by the bounds check.
+    /// - The exact zeros match [`ZERO_PATTERN`](Self::ZERO_PATTERN).
     ///
     /// # Parameters
     /// - `t`: phase of the target position relative to the anchor.
@@ -2352,6 +2675,189 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
     ///   implementor writes one weight per stencil position.
     fn compute_weights(&self, t: f64, weights: &mut [f64]);
     
+    // =========================================================================
+    // stencil_mask_valid
+    // =========================================================================
+
+    /// Input mask validity of a stencil lying inside the array, decided
+    /// without the weights.
+    ///
+    /// The full `KROWS x KCOLS` stencil is tested first, with the
+    /// constant-size window function: when it is valid, the target is valid
+    /// under every policy. This is the favorized paht as it should be the 
+    /// most frequent case (hypothetically).
+    /// Otherwise the full support policy rejects the target at once. Only the
+    /// effective support policy can still accept it, when the phase of an
+    /// axis matches [`ZeroPattern::AtPhase`]; the reduced window of the
+    /// active taps is then tested with the run-time size window function.
+    ///
+    /// Not used under the effective support policy with
+    /// [`ZeroPattern::FromWeights`], where the validity needs the weights.
+    ///
+    /// # Parameters
+    /// - `context`: interpolation context (input mask and support policy).
+    /// - `ncol`: number of columns of the input array.
+    /// - `first_row`, `first_col`: first stencil tap, inside the array.
+    /// - `t_row`, `t_col`: phases of the target on each axis.
+    ///
+    /// # Safety
+    /// The caller guarantees that:
+    /// - `first_row >= 0`, `first_col >= 0`, and the full stencil
+    ///   `[first_row, first_row + KROWS) x [first_col, first_col + KCOLS)`
+    ///   lies inside the input array;
+    /// - the input mask has the shape of the input array, with `ncol`
+    ///   columns.
+    ///
+    /// The reduced window of the effective support policy is included in the
+    /// full stencil, so it is read without bounds check.
+    #[inline(always)]
+    unsafe fn stencil_mask_valid<IC: GxArrayViewInterpolationContextTrait>(
+        &self,
+        context: &IC,
+        ncol: usize,
+        first_row: i64,
+        first_col: i64,
+        t_row: f64,
+        t_col: f64,
+    ) -> bool {
+        let row_start = first_row as usize;
+        let col_start = first_col as usize;
+        let flat_base = row_start * ncol + col_start;
+
+        // SAFETY: the caller guarantees that the full stencil lies
+        // inside the array.
+        unsafe {
+            if context.input_mask()
+                .is_valid_window_unsafe::<KROWS, KCOLS>(flat_base, row_start, col_start) == 1
+            {
+                return true;
+            }
+        }
+        // Full support policy: the whole stencil must be valid.
+        if !IC::SupportPolicy::ignore_zero_weights() {
+            return false;
+        }
+        let (r0, nr) = active_taps::<KROWS>(Self::ZERO_PATTERN, t_row);
+        let (c0, nc) = active_taps::<KCOLS>(Self::ZERO_PATTERN, t_col);
+
+        // Test if full support is defined as active - return false in such case.
+        if nr == KROWS && nc == KCOLS {
+            return false;
+        }
+        // SAFETY: the reduced window (r0..r0 + nr, c0..c0 + nc) is included
+        // in the full stencil, which lies inside the array and its mask
+        // (contract of this function).
+        unsafe {
+            context.input_mask().is_valid_window_dyn_unsafe(
+                flat_base + r0 * ncol + c0, row_start + r0, col_start + c0, nr, nc,
+            ) == 1
+        }
+    }
+
+    // =========================================================================
+    // interpolate_inside
+    // =========================================================================
+
+    /// Interpolates a target whose full stencil lies inside the array:
+    /// interior path, or any target without bounds check.
+    ///
+    /// Two constants select the path: `validity_from_weights` (effective
+    /// support policy with [`ZeroPattern::FromWeights`]) and
+    /// `IM::is_enabled()`. Both are known at compile time, so each
+    /// instantiation keeps a single path.
+    ///
+    /// | `validity_from_weights` | Input mask | Validity test | Convolution |
+    /// |---|---|---|---|
+    /// | `false` | enabled | [`stencil_mask_valid`](Self::stencil_mask_valid), before the weights | `interpolate_nomask_unchecked_unsafe` |
+    /// | `false` | disabled | none | `interpolate_nomask_unchecked_unsafe` |
+    /// | `true` | enabled | inside `interpolate_masked_unchecked_unsafe`, after the weights | `interpolate_masked_unchecked_unsafe` |
+    /// | `true` | disabled | none | `interpolate_nomask_unchecked_unsafe` |
+    ///
+    /// - When the validity is decided before the weights (first row), writes 
+    ///   `nodata` and returns without computing them.
+    ///   A valid target is convolved without any further mask test.
+    /// - When the validity needs the weights (third row),
+    ///   [`stencil_mask_valid`](Self::stencil_mask_valid) is not called.
+    ///   `interpolate_masked_unchecked_unsafe` decides alone: a fully valid
+    ///   stencil (`count_valid_window == KROWS * KCOLS`) is convolved at once,
+    ///   a partly valid one only if every masked tap has a zero weight,
+    ///   otherwise `nodata` is written.
+    /// - Without an input mask, there is nothing to validate: the bounds are
+    ///   guaranteed by the caller and the convolution runs without any test.
+    ///
+    /// # Safety
+    /// The caller guarantees that the full stencil starting at
+    /// `(first_row, first_col)` lies inside `array_in` and its mask.
+    #[inline(always)]
+    unsafe fn interpolate_inside<T, V, IC>(
+        &self,
+        weights_buffer: &mut [f64],
+        t_row: f64,
+        t_col: f64,
+        first_row: i64,
+        first_col: i64,
+        out_idx: usize,
+        array_in: &GxArrayView<'_, T>,
+        array_out: &mut GxArrayViewMut<'_, V>,
+        nodata_out: V,
+        context: &mut IC,
+        validity_from_weights: bool,
+    ) where
+        T: Copy + PartialEq + std::ops::Mul<f64, Output=f64> + Into<f64>,
+        V: Copy + PartialEq + From<f64>,
+        IC: GxArrayViewInterpolationContextTrait,
+    { unsafe {
+        // Validity before the weights:
+        // only when the zeros of the kernel are known a priori and an input
+        // mask is enabled. An invalid target exits here without computing its
+        // weights. When validity_from_weights is true, this test is skipped
+        // and the validity is decided after the weights, below.
+        //
+        // SAFETY (stencil_mask_valid): same contract as this function, the
+        // full stencil lies inside the array and its mask.
+        if !validity_from_weights
+            && context.input_mask().is_enabled()
+            && !self.stencil_mask_valid(
+                &*context, array_in.ncol, first_row, first_col, t_row, t_col)
+        {
+            write_nodata_all_vars(
+                array_out, out_idx, nodata_out,
+                context.output_mask(), array_in.nvar, array_out.var_size,
+            );
+            return;
+        }
+
+        // From here, the target is either valid or its validity needs the
+        // weights.
+        let (w_row, w_col) = weights_buffer.split_at_mut(KROWS);
+        self.compute_weights(t_row, w_row);
+        self.compute_weights(t_col, w_col);
+
+        if validity_from_weights && context.input_mask().is_enabled() {
+            // SAFETY: the caller guarantees that the full stencil lies
+            // inside the array.
+            self.interpolate_masked_unchecked_unsafe(
+                w_row, w_col,
+                array_in, array_out, out_idx,
+                first_row, first_col,
+                nodata_out, context,
+            );
+        } else {
+            // Fallback for every other case, no mask test left to do:
+            // - input mask enabled, validity decided before the weights: the
+            //   target passed stencil_mask_valid at begining;
+            // - no input mask, whatever the support policy and the zero
+            //   pattern.
+            // SAFETY: the caller guarantees that the full stencil lies
+            // inside the array; the input mask, if any, has been validated.
+            self.interpolate_nomask_unchecked_unsafe(
+                w_row, w_col,
+                array_in, array_out, out_idx,
+                first_row, first_col,
+            );
+        }
+    }}
+
     // =========================================================================
     // array1_interp2_separable_core
     // =========================================================================
@@ -2361,26 +2867,36 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
     ///
     /// This method implements the full interpolation pipeline:
     ///
-    /// 1. Computes the stencil anchor and its first tap from the target
-    ///    position (see [`compute_weights`](Self::compute_weights)).
+    /// 1. Computes the stencil anchor, its first tap and the phases from the
+    ///    target position (see [`compute_weights`](Self::compute_weights)).
     /// 2. If bounds checking is enabled (`IC::BoundsCheck::do_check()`):
     ///    - **Interior path** - the entire `KROWS × KCOLS` stencil fits inside
-    ///      the array: calls `interpolate_*_unchecked`.
+    ///      the array: see [`interpolate_inside`](Self::interpolate_inside).
     ///    - **Border path** - the anchor is inside the array but the stencil
-    ///      may cross a border: calls `interpolate_*_partial`.
-    ///    - **Outside path** - the anchor is outside the array: writes `nodata
+    ///      crosses a border. The full support policy rejects the target at
+    ///      once, without computing its weights. Under the effective support
+    ///      policy, the active window (see [`ZeroPattern`]) must lie inside
+    ///      the array and be valid in the input mask; it is the full stencil
+    ///      when no weight vanishes, so the target is then rejected without
+    ///      computing its weights. A valid target is convolved with
+    ///      `interpolate_nomask_partial_unsafe`, which skips the taps outside
+    ///      the array (their weight is zero).
+    ///    - **Outside path** - the anchor is outside the array: writes `nodata`
     ///      and sets the output mask to `0`.
-    /// 3. If bounds checking is disabled: always calls `interpolate_*_unchecked`.
+    /// 3. If bounds checking is disabled: see
+    ///    [`interpolate_inside`](Self::interpolate_inside).
     ///    The caller guarantees that the full stencil lies inside the array;
     ///    otherwise the reads are out of bounds (undefined behaviour). The
     ///    contract is asserted in debug builds only.
     ///
-    /// The mask branch (`interpolate_masked_*` vs `interpolate_nomask_*`) is
-    /// selected at compile time via `context.input_mask().is_enabled()`.
+    /// Under the effective support policy with [`ZeroPattern::FromWeights`], the
+    /// validity can only be read from the computed weights: the interior and
+    /// border paths then compute the weights first and call the
+    /// `interpolate_masked_*` and `interpolate_*_partial` variants, which
+    /// skip the zero-weight taps.
     ///
-    /// Both branches compile to zero-cost monomorphic code: the bounds-check
-    /// and mask-check conditionals are eliminated by the compiler when the
-    /// corresponding strategy types implement constant-folding methods.
+    /// The strategy, policy and pattern conditionals are compile-time
+    /// constants and are eliminated by the compiler.
     ///
     /// # Parameters
     /// - `weights_buffer`: pre-allocated scratch buffer of length
@@ -2391,7 +2907,8 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
     /// - `array_in`: input data array `[nvar, nrow, ncol]`, flattened.
     /// - `array_out`: output array (same layout), written in place.
     /// - `nodata_out`: sentinel value written for invalid output pixels.
-    /// - `context`: interpolation context (masks + bounds check strategy).
+    /// - `context`: interpolation context (masks, bounds check strategy and
+    ///   support policy).
     ///
     /// # Returns
     /// - `Ok(())` on success.
@@ -2428,81 +2945,116 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
         let anchor_col: i64 = (target_col_pos + anchor_shift(KCOLS)).floor() as i64;
         let first_row: i64 = anchor_row - support_left(KROWS) as i64;
         let first_col: i64 = anchor_col - support_left(KCOLS) as i64;
- 
-        let out_var_sz = array_out.var_size;
-        
-        // Initialise the output mask as valid; the interpolation variants will
-        // overwrite it to 0 if the pixel turns out to be invalid.
-        context.output_mask().set_value(out_idx, 1);
-        
-        if IC::BoundsCheck::do_check() {
-            // Interior path: the full stencil fits strictly inside the array.
-            // No per-element bounds checking is needed inside the inner loops.
-            if stencil_inside::<KROWS, KCOLS, T>(first_row, first_col, array_in) {
-                let rel_row: f64 = target_row_pos - anchor_row as f64;
-                let rel_col: f64 = target_col_pos - anchor_col as f64;
-                
-                // Create slices to give to weight computation methods
-                let (w_row, w_col) =
-                    weights_buffer.split_at_mut(KROWS);
-                self.compute_weights(rel_row, w_row);
-                self.compute_weights(rel_col, w_col);
+        let t_row: f64 = target_row_pos - anchor_row as f64;
+        let t_col: f64 = target_col_pos - anchor_col as f64;
 
-                if context.input_mask().is_enabled() {
-                    // SAFETY: the interior test above guarantees that the full
-                    // stencil lies inside the array.
-                    unsafe {
-                        self.interpolate_masked_unchecked_unsafe(
-                            w_row, w_col,
-                            array_in, array_out, out_idx,
-                            first_row, first_col,
-                            nodata_out, context,
-                        );
-                    }
-                } else {
-                    // SAFETY: the interior test above guarantees that the full
-                    // stencil lies inside the array.
-                    unsafe {
-                        self.interpolate_nomask_unchecked_unsafe(
-                            w_row, w_col,
-                            array_in, array_out, out_idx,
-                            first_row, first_col,
-                        );
-                    }
+        let out_var_sz = array_out.var_size;
+
+        // The validity is decided before the weights, except under the
+        // effective support policy for a kernel whose zeros are only known from
+        // its computed weights. Both terms are compile-time constants.
+        let full_support = !IC::SupportPolicy::ignore_zero_weights();
+        let validity_from_weights =
+            !full_support && matches!(Self::ZERO_PATTERN, ZeroPattern::FromWeights);
+
+        // Initialise the output mask as valid; the paths below overwrite it
+        // to 0 if the pixel turns out to be invalid.
+        context.output_mask().set_value(out_idx, 1);
+
+        if IC::BoundsCheck::do_check() {
+            if stencil_inside::<KROWS, KCOLS, T>(first_row, first_col, array_in) {
+                // Interior path.
+                // SAFETY: the interior test above guarantees that the full
+                // stencil lies inside the array.
+                unsafe {
+                    self.interpolate_inside(
+                        weights_buffer, t_row, t_col, first_row, first_col,
+                        out_idx, array_in, array_out, nodata_out, context,
+                        validity_from_weights,
+                    );
                 }
             }
-            // Border path: the anchor is inside the array but the stencil may
-            // cross one or more borders. Kernel contract: the anchor tap has a
-            // non-zero weight for every phase, so an anchor outside the array
-            // always yields an invalid output (outside path below).
+            // Border path: the anchor is inside the array but the stencil
+            // crosses one or more borders. Kernel contract: the anchor tap has
+            // a non-zero weight for every phase, so an anchor outside the
+            // array always yields an invalid output (outside path below).
             else if (anchor_row >= 0)
                     && (anchor_row < array_in.nrow_i64)
                     && (anchor_col >= 0)
                     && (anchor_col < array_in.ncol_i64) {
-                let rel_row: f64 = target_row_pos - anchor_row as f64;
-                let rel_col: f64 = target_col_pos - anchor_col as f64;
-                
-                let (w_row, w_col) =
-                    weights_buffer.split_at_mut(KROWS);
-                self.compute_weights(rel_row, w_row);
-                self.compute_weights(rel_col, w_col);
+                let (w_row, w_col) = weights_buffer.split_at_mut(KROWS);
 
-                if context.input_mask().is_enabled() {
-                    // SAFETY: the anchor is inside the array (test above).
-                    // The partial variant ensures that out of bounds position
-                    // are not used by checking the kernel weights
-                    unsafe {
-                        self.interpolate_masked_partial_unsafe(
-                            w_row, w_col,
-                            array_in, array_out, out_idx,
-                            first_row, first_col,
-                            nodata_out, context,
-                        );
+                if validity_from_weights {
+                    self.compute_weights(t_row, w_row);
+                    self.compute_weights(t_col, w_col);
+
+                    if context.input_mask().is_enabled() {
+                        // SAFETY: the anchor is inside the array (test above).
+                        // The partial variant skips the zero-weight taps and
+                        // rejects a non-zero tap outside the array.
+                        unsafe {
+                            self.interpolate_masked_partial_unsafe(
+                                w_row, w_col,
+                                array_in, array_out, out_idx,
+                                first_row, first_col,
+                                nodata_out, context,
+                            );
+                        }
+                    } else {
+                        // SAFETY: same as above.
+                        unsafe {
+                            self.interpolate_nomask_partial_unsafe(
+                                w_row, w_col,
+                                array_in, array_out,
+                                context.output_mask(), out_idx,
+                                first_row, first_col,
+                                nodata_out,
+                            );
+                        }
                     }
+                } else if full_support {
+                    // Full support policy: the whole stencil crosses a border
+                    // on this path. The target is rejected without computing
+                    // its weights.
+                    write_nodata_all_vars(
+                        array_out, out_idx, nodata_out,
+                        context.output_mask(), array_in.nvar, out_var_sz,
+                    );
                 } else {
-                    // SAFETY: the anchor is inside the array (test above).
-                    // The partial variant ensures that out of bounds position
-                    // are not used by checking the kernel weights
+                    // Active window of the effective support policy. At a
+                    // phase where no weight vanishes, it is the full stencil,
+                    // which crosses a border on this path: the target is
+                    // rejected without computing its weights.
+                    let (r0, nr) = active_taps::<KROWS>(Self::ZERO_PATTERN, t_row);
+                    let (c0, nc) = active_taps::<KCOLS>(Self::ZERO_PATTERN, t_col);
+                    let row0 = first_row + r0 as i64;
+                    let col0 = first_col + c0 as i64;
+
+                    // SAFETY: `window_inside` is evaluated first and
+                    // guarantees that the window lies inside the array.
+                    if !window_inside(row0, nr, col0, nc, array_in)
+                        || (context.input_mask().is_enabled()
+                            && unsafe {
+                                context.input_mask().is_valid_window_dyn_unsafe(
+                                    row0 as usize * array_in.ncol + col0 as usize,
+                                    row0 as usize, col0 as usize, nr, nc,
+                                )
+                            } == 0)
+                    {
+                        write_nodata_all_vars(
+                            array_out, out_idx, nodata_out,
+                            context.output_mask(), array_in.nvar, out_var_sz,
+                        );
+                        return Ok(());
+                    }
+
+                    self.compute_weights(t_row, w_row);
+                    self.compute_weights(t_col, w_col);
+
+                    // SAFETY: the active window lies inside the array and the
+                    // taps outside it have a zero weight (`ZERO_PATTERN`
+                    // contract). The partial variant skips the taps outside
+                    // the array; its pre-check finds no non-zero tap there.
                     unsafe {
                         self.interpolate_nomask_partial_unsafe(
                             w_row, w_col,
@@ -2532,36 +3084,15 @@ pub trait GxArrayViewInterpolatorCore<const KROWS: usize, const KCOLS: usize> {
                 first_row + KROWS as i64, first_col + KCOLS as i64,
                 array_in.nrow, array_in.ncol,
             );
-            let rel_row: f64 = target_row_pos - anchor_row as f64;
-            let rel_col: f64 = target_col_pos - anchor_col as f64;
-            
-            let (w_row, w_col) = weights_buffer.split_at_mut(KROWS);
-            self.compute_weights(rel_row, w_row);
-            self.compute_weights(rel_col, w_col);
-
-            if context.input_mask().is_enabled() {
-                unsafe {
-                    // SAFETY: the caller guarantees that the full stencil lies
-                    // inside the array (NoBoundsCheck contract, asserted above
-                    // in debug builds).
-                    self.interpolate_masked_unchecked_unsafe(
-                        w_row, w_col,
-                        array_in, array_out, out_idx,
-                        first_row, first_col,
-                        nodata_out, context,
-                    );
-                }
-            } else {
-                unsafe {
-                    // SAFETY: the caller guarantees that the full stencil lies
-                    // inside the array (NoBoundsCheck contract, asserted above
-                    // in debug builds).
-                    self.interpolate_nomask_unchecked_unsafe(
-                        w_row, w_col,
-                        array_in, array_out, out_idx,
-                        first_row, first_col,
-                    );
-                }
+            // SAFETY: the caller guarantees that the full stencil lies
+            // inside the array (NoBoundsCheck contract, asserted above in
+            // debug builds).
+            unsafe {
+                self.interpolate_inside(
+                    weights_buffer, t_row, t_col, first_row, first_col,
+                    out_idx, array_in, array_out, nodata_out, context,
+                    validity_from_weights,
+                );
             }
         }
         Ok(())

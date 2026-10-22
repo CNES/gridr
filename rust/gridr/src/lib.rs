@@ -50,7 +50,7 @@
 //! use gridr::gx_array::{GxArrayView, GxArrayViewMut};
 //! use gridr::gx_grid_resampling::{array1_grid_resampling, NoCheckGridMeshValidator};
 //! use gridr::interp::gx_array_view_interp::{
-//! GxArrayViewInterpolator, GxArrayViewInterpolatorNoArgs,
+//! GxArrayViewInterpolator, GxArrayViewInterpolatorNoArgs, SupportPolicy,
 //! };
 //! use gridr::interp::gx_linear_kernel::GxLinearInterpolator;
 //!
@@ -94,6 +94,7 @@
 //! None, // input origin row
 //! None, // input origin column
 //! true, // check boundaries
+//! SupportPolicy::Effective,
 //! )
 //! .unwrap();
 //!

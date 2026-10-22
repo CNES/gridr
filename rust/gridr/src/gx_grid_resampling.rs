@@ -67,7 +67,7 @@
 //! - Interpolators are generic over:
 //!   - The input and output scalar types (`T`, `V`), typically `f64`, `f32`, etc.
 //!   - The interpolation strategy (e.g., bilinear, B-spline).
-//!   - The context type (`IC`), which controls validity and boundary behavior.
+//!   - The context type (`IC`), which controls validity, boundary behavior and support policy.
 //!
 //! - This design supports both safe and unsafe (optimized) execution paths, with clear contracts
 //!   for when each may be used.
@@ -95,7 +95,11 @@ use crate::interp::gx_array_view_interp::{
     NoOutputMask,
     BinaryOutputMask,
     BoundsCheck,
-    NoBoundsCheck
+    NoBoundsCheck,
+    GxArrayViewInterpolatorSupportPolicy,
+    SupportPolicy,
+    Effective,
+    Full,
 };
 use crate::gx_errors::GxError;
 
@@ -972,6 +976,9 @@ impl<'a> GridPointMesh<'a> {
 ///    subregion of the complete source raster.
 /// - `check_boundaries`: If `true`, the `BoundsCheck` strategy is adopted; otherwise the
 ///    `NoBoundsCheck` strategy is used. Use with caution!
+/// - `support_policy`: Which taps of the interpolation stencil must lie inside `ima_in`
+///    and be valid in `ima_mask_in`: only those with a non-zero weight
+///    ([`SupportPolicy::Effective`]) or all of them ([`SupportPolicy::Full`]).
 ///
 /// # Output
 /// The function computes interpolated values for both grid rows and columns at each
@@ -1023,12 +1030,13 @@ impl<'a> GridPointMesh<'a> {
 /// accurate grid-based computations.
 ///
 /// # Implementation: successive dispatch pattern
-/// The interpolation context is assembled from three independent components:
+/// The interpolation context is assembled from four independent components:
 /// - Input mask: `BinaryInputMask` or `NoInputMask`
 /// - Output mask: `BinaryOutputMask` or `NoOutputMask`
+/// - Support policy: `Effective` or `Full`
 /// - Bounds checking: `BoundsCheck` or `NoBoundsCheck`
 ///
-/// Rather than enumerating all 2×2×2 = 8 combinations in a single `match` block,
+/// Rather than enumerating all 2×2×2×2 = 16 combinations in a single `match` block,
 /// the function uses a **successive dispatch** approach: each component is resolved
 /// independently via a small helper function that forwards to the next level.
 ///
@@ -1037,9 +1045,11 @@ impl<'a> GridPointMesh<'a> {
 ///     └─ match ima_mask_in  (2 branches)
 ///          └─ dispatch_output_mask
 ///               └─ match ima_mask_out  (2 branches)
-///                    └─ dispatch_bounds_check
-///                         └─ if/else check_boundaries  (2 branches)
-///                              └─ perform_grid_resampling_loop  (single call)
+///                    └─ dispatch_support_policy
+///                         └─ match support_policy  (2 branches)
+///                              └─ dispatch_bounds_check
+///                                   └─ if/else check_boundaries  (2 branches)
+///                                        └─ perform_grid_resampling_loop  (single call)
 /// ```
 pub fn array1_grid_resampling<'a, T, V, W, I, C>(
     interp: &I,
@@ -1059,6 +1069,7 @@ pub fn array1_grid_resampling<'a, T, V, W, I, C>(
     ima_in_origin_row: Option<f64>,
     ima_in_origin_col: Option<f64>,
     check_boundaries: bool,
+    support_policy: SupportPolicy,
 ) -> Result<(), GxError>
 where
     T: Copy + PartialEq + std::ops::Mul<f64, Output = f64> + Into<f64>,
@@ -1144,6 +1155,7 @@ where
             BinaryInputMask { mask: in_mask },
             ima_mask_out,
             check_boundaries,
+            support_policy,
             interp,
             grid_validity_checker,
             ima_in,
@@ -1181,6 +1193,7 @@ where
                 },
                 ima_mask_out,
                 check_boundaries,
+                support_policy,
                 interp,
                 grid_validity_checker,
                 ima_in,
@@ -1203,6 +1216,7 @@ where
             NoInputMask {},
             ima_mask_out,
             check_boundaries,
+            support_policy,
             interp,
             grid_validity_checker,
             ima_in,
@@ -1233,12 +1247,13 @@ where
 ///
 /// This function receives an already-resolved input mask (`IM`) and dispatches
 /// on the presence of `ima_mask_out` to select either `BinaryOutputMask` or
-/// `NoOutputMask`. It then forwards all parameters to [`dispatch_bounds_check`].
+/// `NoOutputMask`. It then forwards all parameters to [`dispatch_support_policy`].
 #[inline(always)]
 fn dispatch_output_mask<'a, T, V, W, I, C, IM>(
     in_mask: IM,
     ima_mask_out: Option<&'a mut GxArrayViewMut<'a, u8>>,
     check_boundaries: bool,
+    support_policy: SupportPolicy,
     interp: &I,
     grid_validity_checker: &C,
     ima_in: &GxArrayView<'_, T>,
@@ -1265,10 +1280,11 @@ where
     IM: GxArrayViewInterpolatorInputMaskStrategy,
 {
     match ima_mask_out {
-        Some(out_mask) => dispatch_bounds_check(
+        Some(out_mask) => dispatch_support_policy(
             in_mask,
             BinaryOutputMask { mask: out_mask },
             check_boundaries,
+            support_policy,
             interp,
             grid_validity_checker,
             ima_in,
@@ -1286,10 +1302,11 @@ where
             ncol_out,
             size_out,
         ),
-        None => dispatch_bounds_check(
+        None => dispatch_support_policy(
             in_mask,
             NoOutputMask {},
             check_boundaries,
+            support_policy,
             interp,
             grid_validity_checker,
             ima_in,
@@ -1310,22 +1327,18 @@ where
     }
 }
 
-/// Dispatch level 3: resolve the bounds-checking component and perform the resampling.
+/// Dispatch level 3: resolve the support policy component.
 ///
 /// This function receives already-resolved input mask (`IM`) and output mask (`OM`)
-/// components, then dispatches on `check_boundaries` to select either `BoundsCheck`
-/// or `NoBoundsCheck`. It assembles the final `GxArrayViewInterpolationContext` and
-/// calls `perform_grid_resampling_loop` exactly once per branch.
-///
-/// This is the terminal dispatch level — after this, no further branching is needed.
-/// The `if/else` here is the only remaining duplication (2 branches), which is the
-/// minimum required since `BoundsCheck` and `NoBoundsCheck` are distinct types that
-/// must be monomorphized separately.
+/// components, and dispatches on `support_policy` to select either the
+/// [`Effective`] or the [`Full`] policy type. It then forwards all parameters
+/// to [`dispatch_bounds_check`].
 #[inline(always)]
-fn dispatch_bounds_check<T, V, W, I, C, IM, OM>(
+fn dispatch_support_policy<T, V, W, I, C, IM, OM>(
     in_mask: IM,
     out_mask: OM,
     check_boundaries: bool,
+    support_policy: SupportPolicy,
     interp: &I,
     grid_validity_checker: &C,
     ima_in: &GxArrayView<'_, T>,
@@ -1352,9 +1365,102 @@ where
     IM: GxArrayViewInterpolatorInputMaskStrategy,
     OM: GxArrayViewInterpolatorOutputMaskStrategy,
 {
+    match support_policy {
+        SupportPolicy::Effective => dispatch_bounds_check(
+            in_mask,
+            out_mask,
+            Effective,
+            check_boundaries,
+            interp,
+            grid_validity_checker,
+            ima_in,
+            grid_row_array,
+            grid_col_array,
+            grid_row_oversampling,
+            grid_col_oversampling,
+            ima_out,
+            nodata_val_out,
+            ima_in_origin_row,
+            ima_in_origin_col,
+            grid_window_src,
+            grid_window_rel,
+            out_window,
+            ncol_out,
+            size_out,
+        ),
+        SupportPolicy::Full => dispatch_bounds_check(
+            in_mask,
+            out_mask,
+            Full,
+            check_boundaries,
+            interp,
+            grid_validity_checker,
+            ima_in,
+            grid_row_array,
+            grid_col_array,
+            grid_row_oversampling,
+            grid_col_oversampling,
+            ima_out,
+            nodata_val_out,
+            ima_in_origin_row,
+            ima_in_origin_col,
+            grid_window_src,
+            grid_window_rel,
+            out_window,
+            ncol_out,
+            size_out,
+        ),
+    }
+}
+
+/// Dispatch level 4: resolve the bounds-checking component and perform the resampling.
+///
+/// This function receives already-resolved input mask (`IM`), output mask (`OM`) and
+/// support policy (`SP`) components, then dispatches on `check_boundaries` to select either `BoundsCheck`
+/// or `NoBoundsCheck`. It assembles the final `GxArrayViewInterpolationContext` and
+/// calls `perform_grid_resampling_loop` exactly once per branch.
+///
+/// This is the terminal dispatch level — after this, no further branching is needed.
+/// The `if/else` here is the only remaining duplication (2 branches), which is the
+/// minimum required since `BoundsCheck` and `NoBoundsCheck` are distinct types that
+/// must be monomorphized separately.
+#[inline(always)]
+fn dispatch_bounds_check<T, V, W, I, C, IM, OM, SP>(
+    in_mask: IM,
+    out_mask: OM,
+    support_policy: SP,
+    check_boundaries: bool,
+    interp: &I,
+    grid_validity_checker: &C,
+    ima_in: &GxArrayView<'_, T>,
+    grid_row_array: &GxArrayView<'_, W>,
+    grid_col_array: &GxArrayView<'_, W>,
+    grid_row_oversampling: usize,
+    grid_col_oversampling: usize,
+    ima_out: &mut GxArrayViewMut<'_, V>,
+    nodata_val_out: V,
+    ima_in_origin_row: f64,
+    ima_in_origin_col: f64,
+    grid_window_src: &GxArrayWindow,
+    grid_window_rel: &GxArrayWindow,
+    out_window: &GxArrayWindow,
+    ncol_out: usize,
+    size_out: usize,
+) -> Result<(), GxError>
+where
+    T: Copy + PartialEq + std::ops::Mul<f64, Output = f64> + Into<f64>,
+    V: Copy + PartialEq + From<f64>,
+    W: Copy + PartialEq + std::ops::Mul<f64, Output = f64> + Into<f64>,
+    I: GxArrayViewInterpolator,
+    C: GridMeshValidator<W>,
+    IM: GxArrayViewInterpolatorInputMaskStrategy,
+    OM: GxArrayViewInterpolatorOutputMaskStrategy,
+    SP: GxArrayViewInterpolatorSupportPolicy,
+{
     if check_boundaries {
         let mut context =
-            GxArrayViewInterpolationContext::new(in_mask, out_mask, BoundsCheck {});
+            GxArrayViewInterpolationContext::with_policy(
+                in_mask, out_mask, BoundsCheck {}, support_policy);
 
         perform_grid_resampling_loop(
             interp,
@@ -1377,7 +1483,8 @@ where
         )
     } else {
         let mut context =
-            GxArrayViewInterpolationContext::new(in_mask, out_mask, NoBoundsCheck {});
+            GxArrayViewInterpolationContext::with_policy(
+                in_mask, out_mask, NoBoundsCheck {}, support_policy);
 
         perform_grid_resampling_loop(
             interp,
@@ -1697,6 +1804,7 @@ mod gx_grid_resampling_test {
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
                 true, // check_boundaries
+                SupportPolicy::Effective,
                 );
         
         let _ = array1_grid_resampling::<f64, f64, f64, GxOptimizedBicubicInterpolator, NoCheckGridMeshValidator>(&interp,
@@ -1716,6 +1824,7 @@ mod gx_grid_resampling_test {
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
                 true, // check_boundaries
+                SupportPolicy::Effective,
                 );
         
         // println!("  {:?}, {:?}", data_out_highres, data_out_lowres);
@@ -1783,6 +1892,7 @@ mod gx_grid_resampling_test {
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
                 true, // check_boundaries
+                SupportPolicy::Effective,
                 );
         
         assert!(approx_eq(&data_out, &data_expected, 1e-10));
@@ -1872,6 +1982,7 @@ mod gx_grid_resampling_test {
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
                 true, // check_boundaries
+                SupportPolicy::Effective, // effective support policy
                 );
                 
         /*      UNCOMMENT FOR MANUAL DEBUGGING
@@ -1991,6 +2102,7 @@ mod gx_grid_resampling_test {
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
                 true, // check_boundaries
+                SupportPolicy::Effective, // effective support policy
                 );
                 
         /*      UNCOMMENT FOR MANUAL DEBUGGING
@@ -2087,6 +2199,7 @@ mod gx_grid_resampling_test {
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
                 true, // check_boundaries
+                SupportPolicy::Effective, // effective support policy
                 );
         
         //assert!(approx_eq(&data_out, &data_expected, 1e-10));
@@ -2153,6 +2266,7 @@ mod gx_grid_resampling_test {
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
                 true, // check_boundaries
+                SupportPolicy::Effective, // effective support policy
                 );
     }
     
@@ -2236,6 +2350,7 @@ mod gx_grid_resampling_test {
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
                 true, // check_boundaries
+                SupportPolicy::Effective, // effective support policy
                 );
         
         // Run resampling on window
@@ -2256,6 +2371,7 @@ mod gx_grid_resampling_test {
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
                 true, // check_boundaries
+                SupportPolicy::Effective, // effective support policy
                 );
         
         // Compare the results
@@ -2337,6 +2453,7 @@ mod gx_grid_resampling_test {
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
                 true, // check_boundaries
+                SupportPolicy::Effective, // effective support policy
                 );
         
         assert!(window.size() == 1);
@@ -2425,6 +2542,7 @@ mod gx_grid_resampling_test {
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
                 true, // check_boundaries
+                SupportPolicy::Effective, // effective support policy
                 );
         
         // Run resampling on window 
@@ -2445,6 +2563,7 @@ mod gx_grid_resampling_test {
                 None, //ima_in_origin_row: Option<f64>,
                 None, //ima_in_origin_col: Option<f64>,
                 true, // check_boundaries
+                SupportPolicy::Effective, // effective support policy
                 );
         
         // Compare the results

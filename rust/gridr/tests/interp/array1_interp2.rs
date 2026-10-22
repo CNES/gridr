@@ -29,8 +29,19 @@
 //!               lies inside the array and is valid in the input mask
 //! ```
 //!
-//! The validity rule is the conservative principle: samples with a zero
-//! weight are ignored, whether they lie outside the array or are masked.
+//! The validity rule above is the effective support policy: samples with
+//! a zero weight are ignored, whether they lie outside the array or are
+//! masked.
+//!
+//! Every case is also run under the full support policy, where the rule is
+//!
+//! ```text
+//! valid(y, x) = every tap of the native stencil lies inside the array
+//!               and is valid in the input mask, whatever its weight
+//! ```
+//!
+//! the stencil being `floor(y) - (K / 2 - 1) ..= floor(y) + K / 2` on each
+//! axis for a support of `K = 2 * radius` taps.
 //!
 //! The tests do not depend on how the stencil is anchored nor on the order in
 //! which the weights are stored. Output masks are compared exactly; values
@@ -39,9 +50,10 @@
 use gridr::gx_array::{GxArrayView, GxArrayViewMut};
 use gridr::interp::gx_array_view_interp::{
     BinaryInputMask, BinaryInputMaskWithSafeWindow, BinaryOutputMask, BoundsCheck,
-    GxArrayViewInterpolationContext, GxArrayViewInterpolator,
+    Effective, GxArrayViewInterpolationContext, GxArrayViewInterpolator,
     GxArrayViewInterpolatorBoundsCheckStrategy, GxArrayViewInterpolatorInputMaskStrategy,
-    GxArrayViewInterpolatorNoArgs, NoBoundsCheck, NoInputMask,
+    GxArrayViewInterpolatorNoArgs, GxArrayViewInterpolatorSupportPolicy, NoBoundsCheck,
+    NoInputMask, Full,
 };
 use gridr::interp::gx_bspline_kernel::{bspline11, bspline3, bspline5, bspline7, bspline9};
 
@@ -192,7 +204,7 @@ fn positions_all(seed: u64) -> Vec<(f64, f64)> {
     for _ in 0..3000 {
         pts.push((rng.uniform(-3.0, nr + 2.0), rng.uniform(-3.0, nc + 2.0)));
     }
-    // Integer positions on both axes (phase 0, exercises the conservative
+    // Integer positions on both axes (phase 0 : exercices the effective
     // policy for interpolating kernels).
     for r in -2..=(NROW as i64 + 1) {
         for c in -2..=(NCOL as i64 + 1) {
@@ -259,6 +271,7 @@ fn positions_interior(seed: u64, margin: usize) -> Vec<(f64, f64)> {
 /// Brute-force reference. Returns `None` when the output must be invalid,
 /// otherwise the value of every variable and the scale used for the
 /// tolerance.
+/// Weights equal to 0 are ignored - corresponds to the effective policy.
 fn reference(
     k: Kernel,
     data: &[f64],
@@ -306,6 +319,33 @@ fn reference(
     Some((acc, scale))
 }
 
+/// Full-support reference: every tap of the native stencil (even support of
+/// `2 * radius` taps anchored on `floor`) must lie inside the array and be
+/// valid in the input mask; the value is the same as the effective one.
+fn reference_full(
+    k: Kernel,
+    data: &[f64],
+    mask: Option<&[u8]>,
+    y: f64,
+    x: f64,
+) -> Option<([f64; NVAR], f64)> {
+    let half = k.radius as i64;
+    let (fy, fx) = (y.floor() as i64, x.floor() as i64);
+    for i in (fy - half + 1)..=(fy + half) {
+        for j in (fx - half + 1)..=(fx + half) {
+            if i < 0 || i >= NROW as i64 || j < 0 || j >= NCOL as i64 {
+                return None;
+            }
+            if let Some(m) = mask {
+                if m[i as usize * NCOL + j as usize] == 0 {
+                    return None;
+                }
+            }
+        }
+    }
+    reference(k, data, mask, y, x)
+}
+
 /// Reference for the nearest neighbour interpolator.
 fn reference_nearest(
     data: &[f64],
@@ -335,20 +375,22 @@ fn reference_nearest(
 // Runner
 // =============================================================================
 
-/// Calls `array1_interp2` for every position with the given input mask and
-/// bounds-check strategies. Returns the output values (`NVAR` planes) and the
-/// output mask.
-fn run<I, IM, BC>(
+/// Calls `array1_interp2` for every position with the given input mask,
+/// bounds-check strategy and support policy. Returns the output values
+/// (`NVAR` planes) and the output mask.
+fn run<I, IM, BC, SP>(
     interp: &I,
     data: &[f64],
     pts: &[(f64, f64)],
     input_mask: IM,
     bounds: BC,
+    policy: SP,
 ) -> (Vec<f64>, Vec<u8>)
 where
     I: GxArrayViewInterpolator,
     IM: GxArrayViewInterpolatorInputMaskStrategy,
     BC: GxArrayViewInterpolatorBoundsCheckStrategy,
+    SP: GxArrayViewInterpolatorSupportPolicy,
 {
     let n = pts.len();
     let mut out = vec![f64::NAN; NVAR * n];
@@ -357,10 +399,11 @@ where
         let arr_in = GxArrayView::new(data, NVAR, NROW, NCOL);
         let mut arr_out = GxArrayViewMut::new(&mut out, NVAR, 1, n);
         let mut mask_view = GxArrayViewMut::new(&mut mask_out, 1, 1, n);
-        let mut ctx = GxArrayViewInterpolationContext::new(
+        let mut ctx = GxArrayViewInterpolationContext::with_policy(
             input_mask,
             BinaryOutputMask { mask: &mut mask_view },
             bounds,
+            policy,
         );
         let mut buf = interp.allocate_kernel_buffer();
         for (k, &(y, x)) in pts.iter().enumerate() {
@@ -440,28 +483,50 @@ fn compare(
     }
 }
 
-/// Runs the full suite for one separable interpolator.
+/// Reference evaluation of a support policy.
+type Reference = fn(Kernel, &[f64], Option<&[u8]>, f64, f64) -> Option<([f64; NVAR], f64)>;
+
+/// Runs the full suite for one separable interpolator under both policies.
 fn check_separable<I: GxArrayViewInterpolator>(name: &str, interp: &I, kernel: Kernel, rtol: f64) {
+    check_separable_policy(name, interp, kernel, rtol, Effective, "effective", reference);
+    check_separable_policy(name, interp, kernel, rtol, Full, "full", reference_full);
+}
+
+/// Runs the full suite for one separable interpolator and one policy.
+fn check_separable_policy<I, SP>(
+    name: &str,
+    interp: &I,
+    kernel: Kernel,
+    rtol: f64,
+    policy: SP,
+    policy_name: &str,
+    expected: Reference,
+)
+where
+    I: GxArrayViewInterpolator,
+    SP: GxArrayViewInterpolatorSupportPolicy + Copy,
+{
     let fx = fixture();
     let pts = positions_all(0xA11);
+    let name = format!("{name} / {policy_name}");
 
     // Bounds check, no input mask.
-    let (out, m) = run(interp, &fx.data, &pts, NoInputMask, BoundsCheck);
+    let (out, m) = run(interp, &fx.data, &pts, NoInputMask, BoundsCheck, policy);
     compare(&format!("{name} / bounds / no mask"), &pts, &out, &m,
-        |y, x| reference(kernel, &fx.data, None, y, x), rtol);
+        |y, x| expected(kernel, &fx.data, None, y, x), rtol);
 
     // Bounds check, binary input mask.
     let mask_view = GxArrayView::new(&fx.mask_sparse, 1, NROW, NCOL);
     let (out, m) = run(interp, &fx.data, &pts,
-        BinaryInputMask { mask: &mask_view }, BoundsCheck);
+        BinaryInputMask { mask: &mask_view }, BoundsCheck, policy);
     compare(&format!("{name} / bounds / binary mask"), &pts, &out, &m,
-        |y, x| reference(kernel, &fx.data, Some(&fx.mask_sparse), y, x), rtol);
+        |y, x| expected(kernel, &fx.data, Some(&fx.mask_sparse), y, x), rtol);
 
     let rare_view = GxArrayView::new(&fx.mask_rare, 1, NROW, NCOL);
     let (out, m) = run(interp, &fx.data, &pts,
-        BinaryInputMask { mask: &rare_view }, BoundsCheck);
+        BinaryInputMask { mask: &rare_view }, BoundsCheck, policy);
     compare(&format!("{name} / bounds / binary mask (rare)"), &pts, &out, &m,
-        |y, x| reference(kernel, &fx.data, Some(&fx.mask_rare), y, x), rtol);
+        |y, x| expected(kernel, &fx.data, Some(&fx.mask_rare), y, x), rtol);
 
     // Bounds check, binary input mask with safe window. The convolution
     // bounds are derived exactly as in `gx_grid_resampling`.
@@ -481,23 +546,22 @@ fn check_separable<I: GxArrayViewInterpolator>(name: &str, interp: &I, kernel: K
             conv_safe_min_col: c0,
             conv_safe_max_col: conv_c1,
         };
-        let (out, m) = run(interp, &fx.data, &pts, safe, BoundsCheck);
+        let (out, m) = run(interp, &fx.data, &pts, safe, BoundsCheck, policy);
         compare(&format!("{name} / bounds / safe window mask"), &pts, &out, &m,
-            |y, x| reference(kernel, &fx.data, Some(&fx.mask_band), y, x), rtol);
+            |y, x| expected(kernel, &fx.data, Some(&fx.mask_band), y, x), rtol);
     }
 
     // No bounds check: interior positions only. A margin of K / 2 + 1 keeps
-    // the whole stencil inside the array for both the centred and the native
-    // anchoring.
+    // the whole stencil inside the array.
     let margin = interp.kernel_row_size().max(interp.kernel_col_size()) / 2 + 1;
     let pts_in = positions_interior(0xB22, margin);
-    let (out, m) = run(interp, &fx.data, &pts_in, NoInputMask, NoBoundsCheck);
+    let (out, m) = run(interp, &fx.data, &pts_in, NoInputMask, NoBoundsCheck, policy);
     compare(&format!("{name} / no bounds / no mask"), &pts_in, &out, &m,
-        |y, x| reference(kernel, &fx.data, None, y, x), rtol);
+        |y, x| expected(kernel, &fx.data, None, y, x), rtol);
     let (out, m) = run(interp, &fx.data, &pts_in,
-        BinaryInputMask { mask: &rare_view }, NoBoundsCheck);
+        BinaryInputMask { mask: &rare_view }, NoBoundsCheck, policy);
     compare(&format!("{name} / no bounds / binary mask (rare)"), &pts_in, &out, &m,
-        |y, x| reference(kernel, &fx.data, Some(&fx.mask_rare), y, x), rtol);
+        |y, x| expected(kernel, &fx.data, Some(&fx.mask_rare), y, x), rtol);
 }
 
 
@@ -552,12 +616,18 @@ fn nearest_matches_reference() {
     let interp = GxNearestInterpolator::new(&GxArrayViewInterpolatorNoArgs {});
     let fx = fixture();
     let pts = positions_all(0xC33);
-    let (out, m) = run(&interp, &fx.data, &pts, NoInputMask, BoundsCheck);
+    let (out, m) = run(&interp, &fx.data, &pts, NoInputMask, BoundsCheck, Effective);
     compare("nearest / bounds / no mask", &pts, &out, &m,
         |y, x| reference_nearest(&fx.data, None, y, x), 0.0);
     let mask_view = GxArrayView::new(&fx.mask_sparse, 1, NROW, NCOL);
     let (out, m) = run(&interp, &fx.data, &pts,
-        BinaryInputMask { mask: &mask_view }, BoundsCheck);
+        BinaryInputMask { mask: &mask_view }, BoundsCheck, Effective);
     compare("nearest / bounds / binary mask", &pts, &out, &m,
+        |y, x| reference_nearest(&fx.data, Some(&fx.mask_sparse), y, x), 0.0);
+    // The support of the nearest neighbour is a single tap: the full
+    // policy gives the same results.
+    let (out, m) = run(&interp, &fx.data, &pts,
+        BinaryInputMask { mask: &mask_view }, BoundsCheck, Full);
+    compare("nearest / full / bounds / binary mask", &pts, &out, &m,
         |y, x| reference_nearest(&fx.data, Some(&fx.mask_sparse), y, x), 0.0);
 }

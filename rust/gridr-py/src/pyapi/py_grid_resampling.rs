@@ -24,7 +24,7 @@ use numpy::{PyArray1, PyReadwriteArray1, PyArrayMethods, Element};
 use gridr::assert_options_exclusive;
 use gridr::gx_array::{GxArrayWindow, GxArrayView, GxArrayViewMut};
 use gridr::gx_grid_resampling::{array1_grid_resampling, NoCheckGridMeshValidator, MaskGridMeshValidator, InvalidValueGridMeshValidator};
-use gridr::interp::gx_array_view_interp::GxArrayViewInterpolator;
+use gridr::interp::gx_array_view_interp::{GxArrayViewInterpolator, SupportPolicy};
 use gridr::gx_const::{F64_TOLERANCE};
 
 use super::py_array::{PyArrayWindow2};
@@ -66,6 +66,9 @@ use super::interp::py_interp::AnyInterpolator;
 ///   interpolation stencil inside `array_in`. This is not checked in release
 ///   builds: if it does not hold, the reads are out of bounds (undefined
 ///   behaviour). Debug builds stop on the first violation.
+/// - `support_policy`: Which taps of the interpolation stencil must lie inside
+///   `array_in` and be valid in `array_in_mask`: only those with a non-zero
+///   weight (`SupportPolicy::Effective`) or all of them (`SupportPolicy::Full`).
 ///
 /// # Type Parameters
 /// - `T`: Input array element type implementing Element + Copy + PartialEq + Default + Mul<f64, Output=f64> + Into<f64>
@@ -148,6 +151,7 @@ fn py_array1_grid_resampling<T, V, W>(
     grid_win: Option<PyArrayWindow2>,
     out_win: Option<PyArrayWindow2>,
     check_boundaries: bool,
+    support_policy: SupportPolicy,
     ) -> Result<(), PyErr>
 where
     T: Element + Copy + PartialEq + Default + std::ops::Mul<f64, Output=f64> + Into<f64>,
@@ -197,6 +201,7 @@ where
                 &*arc_r_interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution,
                 array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, array_in_mask_safe_win,
                 grid_mask, grid_mask_valid_value, grid_nodata, array_out_mask, grid_win, out_win, check_boundaries,
+                support_policy,
             )
         },
         AnyInterpolator::Linear(arc_interp) => {
@@ -205,6 +210,7 @@ where
                 &*arc_r_interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution,
                 array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, array_in_mask_safe_win,
                 grid_mask, grid_mask_valid_value, grid_nodata, array_out_mask, grid_win, out_win, check_boundaries,
+                support_policy,
             )
         },
         AnyInterpolator::OptimizedBicubic(arc_interp) => {
@@ -213,6 +219,7 @@ where
                 &*arc_r_interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution,
                 array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, array_in_mask_safe_win,
                 grid_mask, grid_mask_valid_value, grid_nodata, array_out_mask, grid_win, out_win, check_boundaries,
+                support_policy,
             )
         },
         AnyInterpolator::BSpline3(arc_interp) => {
@@ -221,6 +228,7 @@ where
                 &*arc_r_interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution,
                 array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, array_in_mask_safe_win,
                 grid_mask, grid_mask_valid_value, grid_nodata, array_out_mask, grid_win, out_win, check_boundaries,
+                support_policy,
             )
         },
         AnyInterpolator::BSpline5(arc_interp) => {
@@ -229,6 +237,7 @@ where
                 &*arc_r_interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution,
                 array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, array_in_mask_safe_win,
                 grid_mask, grid_mask_valid_value, grid_nodata, array_out_mask, grid_win, out_win, check_boundaries,
+                support_policy,
             )
         },
         AnyInterpolator::BSpline7(arc_interp) => {
@@ -237,6 +246,7 @@ where
                 &*arc_r_interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution,
                 array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, array_in_mask_safe_win,
                 grid_mask, grid_mask_valid_value, grid_nodata, array_out_mask, grid_win, out_win, check_boundaries,
+                support_policy,
             )
         },
         AnyInterpolator::BSpline9(arc_interp) => {
@@ -245,6 +255,7 @@ where
                 &*arc_r_interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution,
                 array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, array_in_mask_safe_win,
                 grid_mask, grid_mask_valid_value, grid_nodata, array_out_mask, grid_win, out_win, check_boundaries,
+                support_policy,
             )
         },
         AnyInterpolator::BSpline11(arc_interp) => {
@@ -253,6 +264,7 @@ where
                 &*arc_r_interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution,
                 array_out, array_out_shape, nodata_out, array_in_origin, array_in_mask, array_in_mask_safe_win,
                 grid_mask, grid_mask_valid_value, grid_nodata, array_out_mask, grid_win, out_win, check_boundaries,
+                support_policy,
             )
         },
         /*AnyInterpolator::Nearest(py_ref) => {
@@ -324,6 +336,9 @@ where
 ///   interpolation stencil inside `array_in`. This is not checked in release
 ///   builds: if it does not hold, the reads are out of bounds (undefined
 ///   behaviour). Debug builds stop on the first violation.
+/// - `support_policy`: Which taps of the interpolation stencil must lie inside
+///   `array_in` and be valid in `array_in_mask`: only those with a non-zero
+///   weight (`SupportPolicy::Effective`) or all of them (`SupportPolicy::Full`).
 ///
 /// # Type Parameters
 /// - `T`: Input array element type implementing Element + Copy + PartialEq + Default + Mul<f64, Output=f64> + Into<f64>
@@ -408,6 +423,7 @@ fn py_array1_grid_resampling_w_interp<T, V, W, I>(
     grid_win: Option<PyArrayWindow2>,
     out_win: Option<PyArrayWindow2>,
     check_boundaries: bool,
+    support_policy: SupportPolicy,
     ) -> Result<(), PyErr>
 where
     T: Element + Copy + PartialEq + Default + std::ops::Mul<f64, Output=f64> + Into<f64>,
@@ -532,6 +548,7 @@ where
                     origin_row_bias, // ima_in_origin_row
                     origin_col_bias, // ima_in_origin_col
                     check_boundaries, // check_boundaries
+                    support_policy, // support_policy
                 ) {
                 Ok(_) => Ok(()),
                 Err(e) => Err(PyValueError::new_err(e.to_string())),
@@ -563,6 +580,7 @@ where
                     origin_row_bias, // ima_in_origin_row
                     origin_col_bias, // ima_in_origin_col
                     check_boundaries, // check_boundaries
+                    support_policy, // support_policy
                 ) {
                 Ok(_) => Ok(()),
                 Err(e) => Err(PyValueError::new_err(e.to_string())),
@@ -593,6 +611,7 @@ where
                     origin_row_bias, // ima_in_origin_row
                     origin_col_bias, // ima_in_origin_col
                     check_boundaries, // check_boundaries
+                    support_policy, // support_policy
                 ) {
                 Ok(_) => Ok(()),
                 Err(e) => Err(PyValueError::new_err(e.to_string())),
@@ -603,8 +622,11 @@ where
 }
 
 /// This function calls the generic [`py_array1_grid_resampling`] with `T = f64`, `V = f64` and `W = f64`.
+///
+/// `support_policy` is given as a string, `"effective"` (default) or
+/// `"full"`; any other value raises a `ValueError`.
 #[pyfunction]
-#[pyo3(signature = (interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution, array_out, array_out_shape, nodata_out, array_in_origin=None, array_in_mask=None, array_in_mask_safe_win=None, grid_mask=None, grid_mask_valid_value=None, grid_nodata=None, array_out_mask=None, grid_win=None, out_win=None, check_boundaries=true))]
+#[pyo3(signature = (interp, array_in, array_in_shape, grid_row, grid_col, grid_shape, grid_resolution, array_out, array_out_shape, nodata_out, array_in_origin=None, array_in_mask=None, array_in_mask_safe_win=None, grid_mask=None, grid_mask_valid_value=None, grid_nodata=None, array_out_mask=None, grid_win=None, out_win=None, check_boundaries=true, support_policy="effective"))]
 #[allow(clippy::too_many_arguments)]
 pub fn py_array1_grid_resampling_f64(
     interp: AnyInterpolator,
@@ -630,8 +652,11 @@ pub fn py_array1_grid_resampling_f64(
     grid_win: Option<PyArrayWindow2>,
     out_win: Option<PyArrayWindow2>,
     check_boundaries: bool,
+    support_policy: &str,
     ) -> Result<(), PyErr>
 {
+    let support_policy: SupportPolicy = support_policy.parse()
+        .map_err(PyValueError::new_err)?;
     py_array1_grid_resampling::<f64, f64, f64>(
             interp, // AnyInterpolator
             array_in, //: &Bound<'_, PyArray1<f64>>,
@@ -656,5 +681,6 @@ pub fn py_array1_grid_resampling_f64(
             grid_win, // grid_win: Option<PyArrayWindow2>,
             out_win, // win_out: Option<PyArrayWindow2>,
             check_boundaries, //check_boundaries
+            support_policy, // support_policy
             )
 }

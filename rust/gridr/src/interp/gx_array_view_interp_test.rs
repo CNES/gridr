@@ -2789,6 +2789,110 @@ mod count_valid_window_rstest {
 }
 
 // =============================================================================
+// is_valid_window_dyn_unsafe: consistency with the const-size variant
+// =============================================================================
+
+#[cfg(test)]
+mod is_valid_window_dyn_rstest {
+    use rstest::rstest;
+    use crate::gx_array::GxArrayView;
+    use crate::interp::gx_array_view_interp::{
+        NoInputMask,
+        BinaryInputMask,
+        BinaryInputMaskWithSafeWindow,
+        GxArrayViewInterpolatorInputMaskStrategy,
+    };
+
+    const NROW: usize = 6;
+    const NCOL: usize = 7;
+
+    /// Mask of `NROW x NCOL` samples with a few scattered invalid samples.
+    fn mask_data(masked: &[usize]) -> Vec<u8> {
+        let mut data = vec![1u8; NROW * NCOL];
+        for &idx in masked {
+            data[idx] = 0;
+        }
+        data
+    }
+
+    /// Compares the run-time size variant with `is_valid_window_unsafe` on
+    /// every `H x W` window of the mask.
+    fn check<IM: GxArrayViewInterpolatorInputMaskStrategy, const H: usize, const W: usize>(
+        mask: &IM,
+    ) {
+        for r in 0..=NROW - H {
+            for c in 0..=NCOL - W {
+                let flat = r * NCOL + c;
+                // SAFETY: the window lies inside the mask.
+                let (fixed, dynamic) = unsafe {
+                    (
+                        mask.is_valid_window_unsafe::<H, W>(flat, r, c),
+                        mask.is_valid_window_dyn_unsafe(flat, r, c, H, W),
+                    )
+                };
+                assert_eq!(fixed, dynamic, "window {H}x{W} at ({r}, {c})");
+            }
+        }
+    }
+
+    /// Runs `check` on the window sizes used by the reduced windows.
+    fn check_sizes<IM: GxArrayViewInterpolatorInputMaskStrategy>(mask: &IM) {
+        check::<IM, 1, 1>(mask);
+        check::<IM, 1, 4>(mask);
+        check::<IM, 3, 1>(mask);
+        check::<IM, 2, 3>(mask);
+        check::<IM, 3, 3>(mask);
+        check::<IM, 4, 5>(mask);
+    }
+
+    #[test]
+    fn no_input_mask() {
+        check_sizes(&NoInputMask);
+    }
+
+    #[rstest]
+    #[case::all_valid(vec![])]
+    #[case::scattered(vec![3, 11, 20, 24, 37])]
+    #[case::all_masked((0..NROW * NCOL).collect())]
+    fn binary(#[case] masked: Vec<usize>) {
+        let data = mask_data(&masked);
+        let view = GxArrayView::new(&data, 1, NROW, NCOL);
+        check_sizes(&BinaryInputMask { mask: &view });
+    }
+
+    /// With a safe box consistent with the mask, the safe window variant
+    /// gives the same result as its inner mask on every window.
+    #[test]
+    fn safe_window_matches_inner() {
+        // Invalid samples outside the safe zone rows 1..=4, columns 1..=5.
+        let data = mask_data(&[0, 6, 14, 41]);
+        let view = GxArrayView::new(&data, 1, NROW, NCOL);
+        let inner = BinaryInputMask { mask: &view };
+        let safe = BinaryInputMaskWithSafeWindow {
+            inner: BinaryInputMask { mask: &view },
+            safe_min_row: 1, safe_max_row: 4, safe_min_col: 1, safe_max_col: 5,
+            conv_safe_min_row: 1, conv_safe_max_row: 2,
+            conv_safe_min_col: 1, conv_safe_max_col: 3,
+        };
+        for (h, w) in [(1, 1), (2, 3), (3, 3), (1, 5)] {
+            for r in 0..=NROW - h {
+                for c in 0..=NCOL - w {
+                    let flat = r * NCOL + c;
+                    // SAFETY: the window lies inside the mask.
+                    let (a, b) = unsafe {
+                        (
+                            safe.is_valid_window_dyn_unsafe(flat, r, c, h, w),
+                            inner.is_valid_window_dyn_unsafe(flat, r, c, h, w),
+                        )
+                    };
+                    assert_eq!(a, b, "window {h}x{w} at ({r}, {c})");
+                }
+            }
+        }
+    }
+}
+
+// =============================================================================
 // array1_interp2_separable_core: stencil anchoring (even and odd supports)
 // =============================================================================
 
@@ -2805,9 +2909,10 @@ mod separable_core_anchoring {
 
     use crate::gx_array::{GxArrayView, GxArrayViewMut};
     use crate::interp::gx_array_view_interp::{
-        support_left, BinaryOutputMask, BoundsCheck, DefaultCtx,
+        support_left, BinaryOutputMask, BoundsCheck, Effective, DefaultCtx,
         GxArrayViewInterpolationContext, GxArrayViewInterpolatorBoundsCheckStrategy,
-        GxArrayViewInterpolatorCore, NoBoundsCheck, NoInputMask,
+        GxArrayViewInterpolatorCore, GxArrayViewInterpolatorSupportPolicy, NoBoundsCheck,
+        NoInputMask, Full, ZeroPattern,
     };
 
     // ------------------------------------------------------------------
@@ -2859,6 +2964,39 @@ mod separable_core_anchoring {
         }
     }
 
+    /// [`Lagrange4`] declaring its zeros: at `t = 0` only the anchor
+    /// (offset 1) has a non-zero weight. Exercises the validity-first paths,
+    /// while [`Lagrange4`] keeps the default `FromWeights` paths.
+    struct Lagrange4Z;
+
+    impl GxArrayViewInterpolatorCore<4, 4> for Lagrange4Z {
+        const ZERO_PATTERN: ZeroPattern = ZeroPattern::AtPhase { phase: 0.0, start: 1, len: 1 };
+        fn compute_weights(&self, t: f64, w: &mut [f64]) {
+            Lagrange4.compute_weights(t, w);
+        }
+    }
+
+    /// [`Linear2`] declaring its zeros: at `t = 0` only the anchor (offset 0)
+    /// has a non-zero weight.
+    struct Linear2Z;
+
+    impl GxArrayViewInterpolatorCore<2, 2> for Linear2Z {
+        const ZERO_PATTERN: ZeroPattern = ZeroPattern::AtPhase { phase: 0.0, start: 0, len: 1 };
+        fn compute_weights(&self, t: f64, w: &mut [f64]) {
+            Linear2.compute_weights(t, w);
+        }
+    }
+
+    /// The test fixtures declare zero patterns that match their weights.
+    #[test]
+    fn fixtures_zero_pattern() {
+        use crate::interp::gx_kernel_test_utils::check_zero_pattern;
+        check_zero_pattern(|t, w| Lagrange4.compute_weights(t, w), 4,
+            <Lagrange4Z as GxArrayViewInterpolatorCore<4, 4>>::ZERO_PATTERN);
+        check_zero_pattern(|t, w| Linear2.compute_weights(t, w), 2,
+            <Linear2Z as GxArrayViewInterpolatorCore<2, 2>>::ZERO_PATTERN);
+    }
+
     fn grid(nrow: usize, ncol: usize, f: impl Fn(f64, f64) -> f64) -> Vec<f64> {
         (0..nrow * ncol)
             .map(|k| f((k / ncol) as f64, (k % ncol) as f64))
@@ -2880,12 +3018,13 @@ mod separable_core_anchoring {
     }
 
     /// Interpolates one point, returns `(value, output mask)`.
-    fn interp_one<I, BC, const K: usize>(
-        interp: &I, data: &[f64], nrow: usize, ncol: usize, y: f64, x: f64, bc: BC,
+    fn interp_one<I, BC, SP, const K: usize>(
+        interp: &I, data: &[f64], nrow: usize, ncol: usize, y: f64, x: f64, bc: BC, sp: SP,
     ) -> (f64, u8)
     where
         I: GxArrayViewInterpolatorCore<K, K>,
         BC: GxArrayViewInterpolatorBoundsCheckStrategy,
+        SP: GxArrayViewInterpolatorSupportPolicy,
     {
         let arr_in = GxArrayView::new(data, 1, nrow, ncol);
         let mut out = [f64::NAN; 1];
@@ -2893,8 +3032,8 @@ mod separable_core_anchoring {
         {
             let mut arr_out = GxArrayViewMut::new(&mut out, 1, 1, 1);
             let mut mask_view = GxArrayViewMut::new(&mut mask, 1, 1, 1);
-            let mut ctx = GxArrayViewInterpolationContext::new(
-                NoInputMask, BinaryOutputMask { mask: &mut mask_view }, bc,
+            let mut ctx = GxArrayViewInterpolationContext::with_policy(
+                NoInputMask, BinaryOutputMask { mask: &mut mask_view }, bc, sp,
             );
             let mut buf = vec![0.0; 2 * K];
             interp
@@ -3018,8 +3157,8 @@ mod separable_core_anchoring {
             for &x in &positions(1.0, ncol as f64 - 3.0) {
                 let expected = cubic(y, x);
                 for (v, m) in [
-                    interp_one::<_, _, 4>(&Lagrange4, &data, nrow, ncol, y, x, BoundsCheck),
-                    interp_one::<_, _, 4>(&Lagrange4, &data, nrow, ncol, y, x, NoBoundsCheck),
+                    interp_one::<_, _, _, 4>(&Lagrange4, &data, nrow, ncol, y, x, BoundsCheck, Effective),
+                    interp_one::<_, _, _, 4>(&Lagrange4, &data, nrow, ncol, y, x, NoBoundsCheck, Effective),
                 ] {
                     assert_eq!(m, 1, "({y}, {x}) flagged invalid");
                     assert!((v - expected).abs() <= 1e-10 * expected.abs().max(1.0),
@@ -3037,8 +3176,8 @@ mod separable_core_anchoring {
             for &x in &positions(0.0, ncol as f64 - 1.0) {
                 let expected = affine(y, x);
                 for (v, m) in [
-                    interp_one::<_, _, 2>(&Linear2, &data, nrow, ncol, y, x, BoundsCheck),
-                    interp_one::<_, _, 2>(&Linear2, &data, nrow, ncol, y, x, NoBoundsCheck),
+                    interp_one::<_, _, _, 2>(&Linear2, &data, nrow, ncol, y, x, BoundsCheck, Effective),
+                    interp_one::<_, _, _, 2>(&Linear2, &data, nrow, ncol, y, x, NoBoundsCheck, Effective),
                 ] {
                     assert_eq!(m, 1, "({y}, {x}) flagged invalid");
                     assert!((v - expected).abs() <= 1e-12 * expected.abs().max(1.0),
@@ -3059,65 +3198,348 @@ mod separable_core_anchoring {
     // first = anchor - left, anchor = floor(x) (even K),
     // left = (K - 1) / 2
     //
-    // and the output is valid if and only if every tap with a non-zero
-    // weight lies inside the array => conservative approach to ensure
-    // the interpolation property for t = 0 (the interpolation of an 
-    // input point gives the input point)
+    // Under the effective support policy, the output is valid if and only if every
+    // tap with a non-zero weight lies inside the array. Taps with a zero weight may
+    // lie outside the array: they contribute nothing and are never read.
     //
-    // Taps with a zero weight may lie outside the array: they contribute
-    // nothing and are never read. This happens at phase t = 0 for an
-    // interpolating kernel, where only the anchor tap carries a weight.
-    
-    /// `(col, valid)` cases on one row; the row position is an interior
-    /// integer so that only the column axis decides.
-    fn check_paths<I, const K: usize>(interp: &I, cases: &[(f64, bool)], value: fn(f64, f64) -> f64)
+    // Under the full support policy, every tap of the stencil must lie inside the
+    // array, whatever its weight: the border path never gives a valid output.
+    //
+    // Each fixture is run twice under the effective support policy: with the
+    // default `FromWeights` pattern (zeros read from the weights) and with a
+    // declared `AtPhase` pattern (validity decided first). Both must match.
+
+    /// `(col, valid under Effective, valid under Full)` cases on one
+    /// row; the row position is an interior integer so that only the column
+    /// axis decides.
+    fn check_paths<I, const K: usize>(
+        interp: &I, cases: &[(f64, bool, bool)], value: fn(f64, f64) -> f64,
+    )
     where
         I: GxArrayViewInterpolatorCore<K, K>,
     {
         let (nrow, ncol) = (9, 9);
         let data = grid(nrow, ncol, value);
         let y = 4.0;
-        for &(x, valid) in cases {
-            let (v, m) = interp_one::<_, _, K>(interp, &data, nrow, ncol, y, x, BoundsCheck);
-            if valid {
-                assert_eq!(m, 1, "K={K} x={x}: expected valid");
-                let expected = value(y, x);
-                assert!((v - expected).abs() <= 1e-10 * expected.abs().max(1.0),
-                    "K={K} x={x}: got {v}, expected {expected}");
-            } else {
-                assert_eq!((v, m), (-1.0, 0), "K={K} x={x}: expected nodata");
+        for &(x, valid_effective, valid_full) in cases {
+            for (policy, valid, (v, m)) in [
+                ("effective", valid_effective,
+                 interp_one::<_, _, _, K>(interp, &data, nrow, ncol, y, x, BoundsCheck, Effective)),
+                ("full", valid_full,
+                 interp_one::<_, _, _, K>(interp, &data, nrow, ncol, y, x, BoundsCheck, Full)),
+            ] {
+                if valid {
+                    assert_eq!(m, 1, "K={K} x={x} {policy}: expected valid");
+                    let expected = value(y, x);
+                    assert!((v - expected).abs() <= 1e-10 * expected.abs().max(1.0),
+                        "K={K} x={x} {policy}: got {v}, expected {expected}");
+                } else {
+                    assert_eq!((v, m), (-1.0, 0), "K={K} x={x} {policy}: expected nodata");
+                }
             }
         }
     }
 
+    /// ncol = 9. Taps are floor(x) - 1 ..= floor(x) + 2.
+    const PATHS_K4: [(f64, bool, bool); 11] = [
+        (1.0, true, true),     // first = 0: interior
+        (1.25, true, true),    // interior
+        (6.75, true, true),    // last interior anchor: taps 5..=8
+        (0.0, true, false),    // border: tap -1 has a zero weight at t = 0
+        (0.25, false, false),  // border: tap -1 has a non-zero weight
+        (7.0, true, false),    // border: tap 9 has a zero weight at t = 0
+        (7.5, false, false),   // border: tap 9 has a non-zero weight
+        (8.0, true, false),    // border: last column, taps 9 and 10 have zero weights
+        (8.5, false, false),   // border: taps 9 and 10 have non-zero weights
+        (-0.25, false, false), // outside: anchor -1
+        (9.0, false, false),   // outside: anchor 9
+    ];
+
+    /// ncol = 9. Taps are floor(x) ..= floor(x) + 1.
+    const PATHS_K2: [(f64, bool, bool); 6] = [
+        (0.0, true, true),     // interior, first = 0
+        (7.5, true, true),     // interior, taps 7 and 8
+        (8.0, true, false),    // border: tap 9 has a zero weight at t = 0
+        (8.25, false, false),  // border: tap 9 has a non-zero weight
+        (-0.0, true, true),    // negative zero is the anchor 0
+        (-0.5, false, false),  // outside: anchor -1
+    ];
+
     #[test]
     fn paths_even_k4() {
-        // ncol = 9. Taps are floor(x) - 1 ..= floor(x) + 2.
-        check_paths::<_, 4>(&Lagrange4, &[
-            (1.0, true),    // first = 0: interior
-            (1.25, true),   // interior
-            (6.75, true),   // last interior anchor: taps 5..=8
-            (0.0, true),    // border: tap -1 has a zero weight at t = 0
-            (0.25, false),  // border: tap -1 has a non-zero weight
-            (7.0, true),    // border: tap 9 has a zero weight at t = 0
-            (7.5, false),   // border: tap 9 has a non-zero weight
-            (8.0, true),    // border: last column, taps 9 and 10 have zero weights
-            (8.5, false),   // border: taps 9 and 10 have non-zero weights
-            (-0.25, false), // outside: anchor -1
-            (9.0, false),   // outside: anchor 9
-        ], cubic);
+        check_paths::<_, 4>(&Lagrange4, &PATHS_K4, cubic);
+        check_paths::<_, 4>(&Lagrange4Z, &PATHS_K4, cubic);
     }
 
     #[test]
     fn paths_even_k2() {
-        // ncol = 9. Taps are floor(x) ..= floor(x) + 1.
-        check_paths::<_, 2>(&Linear2, &[
-            (0.0, true),    // interior, first = 0
-            (7.5, true),    // interior, taps 7 and 8
-            (8.0, true),    // border: tap 9 has a zero weight at t = 0
-            (8.25, false),  // border: tap 9 has a non-zero weight
-            (-0.0, true),   // negative zero is the anchor 0
-            (-0.5, false),  // outside: anchor -1
-        ], affine);
+        check_paths::<_, 2>(&Linear2, &PATHS_K2, affine);
+        check_paths::<_, 2>(&Linear2Z, &PATHS_K2, affine);
+    }
+}
+
+#[cfg(test)]
+mod support_policy {
+    //! Tests of the support policies with an input mask.
+    //!
+    //! The effective support policy ignores masked samples whose weight is zero;
+    //! the full support policy requires every sample of the stencil to be valid.
+    //! Kernels declaring an `AtPhase` zero pattern decide the validity before
+    //! computing their weights: they must give exactly the same outputs and
+    //! output masks as the same kernels with the default `FromWeights`
+    //! pattern, which read the zeros from the weights.
+    use crate::gx_array::{GxArrayView, GxArrayViewMut};
+    use crate::interp::gx_array_view_interp::{
+        BinaryInputMask, BinaryInputMaskWithSafeWindow, BinaryOutputMask, BoundsCheck,
+        Effective, GxArrayViewInterpolationContext, GxArrayViewInterpolatorBoundsCheckStrategy,
+        GxArrayViewInterpolatorCore, GxArrayViewInterpolatorInputMaskStrategy,
+        GxArrayViewInterpolatorSupportPolicy, NoBoundsCheck, NoInputMask, Full, ZeroPattern,
+    };
+    use super::mock::{linear_weights_2, quadratic_bspline_weights_3};
+
+    // ------------------------------------------------------------------
+    // Fixtures: one kernel, two declared patterns
+    // ------------------------------------------------------------------
+
+    /// Native linear kernel, zeros read from the weights.
+    struct LinW;
+    impl GxArrayViewInterpolatorCore<2, 2> for LinW {
+        fn compute_weights(&self, t: f64, w: &mut [f64]) { linear_weights_2(t, w); }
+    }
+
+    /// Native linear kernel, zeros declared.
+    struct LinZ;
+    impl GxArrayViewInterpolatorCore<2, 2> for LinZ {
+        const ZERO_PATTERN: ZeroPattern = ZeroPattern::AtPhase { phase: 0.0, start: 0, len: 1 };
+        fn compute_weights(&self, t: f64, w: &mut [f64]) { linear_weights_2(t, w); }
+    }
+
+    /// Keys cubic kernel, zeros read from the weights.
+    struct KeysW;
+    impl GxArrayViewInterpolatorCore<4, 4> for KeysW {
+        fn compute_weights(&self, t: f64, w: &mut [f64]) {
+            crate::interp::gx_optimized_bicubic_kernel::bicubic_kernel_weights_native(t, w);
+        }
+    }
+
+    /// Keys cubic kernel, zeros declared.
+    struct KeysZ;
+    impl GxArrayViewInterpolatorCore<4, 4> for KeysZ {
+        const ZERO_PATTERN: ZeroPattern = ZeroPattern::AtPhase { phase: 0.0, start: 1, len: 1 };
+        fn compute_weights(&self, t: f64, w: &mut [f64]) {
+            crate::interp::gx_optimized_bicubic_kernel::bicubic_kernel_weights_native(t, w);
+        }
+    }
+
+    /// Quadratic B-spline (odd support, phase in `[-0.5, 0.5)`), zeros read
+    /// from the weights.
+    struct QuadW;
+    impl GxArrayViewInterpolatorCore<3, 3> for QuadW {
+        fn compute_weights(&self, t: f64, w: &mut [f64]) { quadratic_bspline_weights_3(t, w); }
+    }
+
+    /// Quadratic B-spline, zeros declared: at `t = -0.5` the last tap lies
+    /// on the edge of the support.
+    struct QuadZ;
+    impl GxArrayViewInterpolatorCore<3, 3> for QuadZ {
+        const ZERO_PATTERN: ZeroPattern = ZeroPattern::AtPhase { phase: -0.5, start: 0, len: 2 };
+        fn compute_weights(&self, t: f64, w: &mut [f64]) { quadratic_bspline_weights_3(t, w); }
+    }
+
+    /// The fixtures declare zero patterns that match their weights.
+    #[test]
+    fn fixtures_zero_pattern() {
+        use crate::interp::gx_kernel_test_utils::check_zero_pattern;
+        check_zero_pattern(linear_weights_2, 2,
+            <LinZ as GxArrayViewInterpolatorCore<2, 2>>::ZERO_PATTERN);
+        check_zero_pattern(
+            crate::interp::gx_optimized_bicubic_kernel::bicubic_kernel_weights_native, 4,
+            <KeysZ as GxArrayViewInterpolatorCore<4, 4>>::ZERO_PATTERN);
+        check_zero_pattern(quadratic_bspline_weights_3, 3,
+            <QuadZ as GxArrayViewInterpolatorCore<3, 3>>::ZERO_PATTERN);
+    }
+
+    // ------------------------------------------------------------------
+    // Runner
+    // ------------------------------------------------------------------
+
+    const NROW: usize = 11;
+    const NCOL: usize = 12;
+
+    fn data() -> Vec<f64> {
+        (0..2 * NROW * NCOL).map(|k| ((k * 7919) % 1013) as f64 - 500.0).collect()
+    }
+
+    /// About one invalid sample in five, deterministic.
+    fn mask() -> Vec<u8> {
+        (0..NROW * NCOL).map(|k| if (k * 2654435761usize) % 97 < 19 { 0 } else { 1 }).collect()
+    }
+
+    /// Positions covering random phases, integers, half-integers (rounding
+    /// tie of the odd support), borders and outside.
+    fn positions() -> Vec<(f64, f64)> {
+        let mut pts = Vec::new();
+        let frac = |i: usize, a: f64| (i as f64 * a).fract();
+        for i in 0..400 {
+            pts.push((-1.5 + (NROW as f64 + 2.0) * frac(i, 0.618_034),
+                      -1.5 + (NCOL as f64 + 2.0) * frac(i, 0.414_214)));
+        }
+        for r in -1..=(NROW as i64) {
+            for c in -1..=(NCOL as i64) {
+                pts.push((r as f64, c as f64));
+                pts.push((r as f64 + 0.5, c as f64));
+                pts.push((r as f64, c as f64 - 0.5));
+                pts.push((r as f64, c as f64 + 0.3));
+            }
+        }
+        pts
+    }
+
+    /// Runs every position, returns `(values, output mask)`.
+    fn run<I, IM, BC, SP, const K: usize>(
+        interp: &I, pts: &[(f64, f64)], input_mask: IM, bc: BC, sp: SP,
+    ) -> (Vec<f64>, Vec<u8>)
+    where
+        I: GxArrayViewInterpolatorCore<K, K>,
+        IM: GxArrayViewInterpolatorInputMaskStrategy,
+        BC: GxArrayViewInterpolatorBoundsCheckStrategy,
+        SP: GxArrayViewInterpolatorSupportPolicy,
+    {
+        let d = data();
+        let n = pts.len();
+        let mut out = vec![f64::NAN; 2 * n];
+        let mut mask_out = vec![77u8; n];
+        {
+            let arr_in = GxArrayView::new(&d, 2, NROW, NCOL);
+            let mut arr_out = GxArrayViewMut::new(&mut out, 2, 1, n);
+            let mut mask_view = GxArrayViewMut::new(&mut mask_out, 1, 1, n);
+            let mut ctx = GxArrayViewInterpolationContext::with_policy(
+                input_mask, BinaryOutputMask { mask: &mut mask_view }, bc, sp,
+            );
+            let mut buf = vec![0.0; 2 * K];
+            for (k, &(y, x)) in pts.iter().enumerate() {
+                interp
+                    .array1_interp2_separable_core(&mut buf, y, x, k, &arr_in, &mut arr_out, -1.0, &mut ctx)
+                    .unwrap();
+            }
+        }
+        (out, mask_out)
+    }
+
+    /// Bit-exact comparison of two runs.
+    fn assert_same(label: &str, pts: &[(f64, f64)], a: &(Vec<f64>, Vec<u8>), b: &(Vec<f64>, Vec<u8>)) {
+        let n = pts.len();
+        for (k, p) in pts.iter().enumerate() {
+            assert_eq!(a.1[k], b.1[k], "{label} {p:?}: output mask differs");
+            for v in 0..2 {
+                assert_eq!(a.0[v * n + k].to_bits(), b.0[v * n + k].to_bits(),
+                    "{label} {p:?} var {v}: {} vs {}", a.0[v * n + k], b.0[v * n + k]);
+            }
+        }
+    }
+
+    /// Runs one kernel with both declared patterns under one policy and
+    /// compares the results, with and without input mask.
+    fn check_same_policy<IW, IZ, SP, const K: usize>(label: &str, w: &IW, z: &IZ, sp: SP)
+    where
+        IW: GxArrayViewInterpolatorCore<K, K>,
+        IZ: GxArrayViewInterpolatorCore<K, K>,
+        SP: GxArrayViewInterpolatorSupportPolicy + Copy,
+    {
+        let pts = positions();
+        let m = mask();
+        let mv = GxArrayView::new(&m, 1, NROW, NCOL);
+        assert_same(&format!("{label} no mask"), &pts,
+            &run::<_, _, _, _, K>(w, &pts, NoInputMask, BoundsCheck, sp),
+            &run::<_, _, _, _, K>(z, &pts, NoInputMask, BoundsCheck, sp));
+        assert_same(&format!("{label} mask"), &pts,
+            &run::<_, _, _, _, K>(w, &pts, BinaryInputMask { mask: &mv }, BoundsCheck, sp),
+            &run::<_, _, _, _, K>(z, &pts, BinaryInputMask { mask: &mv }, BoundsCheck, sp));
+
+        // The safe zone must hold only valid samples: the mask strategy
+        // trusts it without reading the mask.
+        let mut ms = m.clone();
+        for r in 3..=7 {
+            for c in 3..=8 {
+                ms[r * NCOL + c] = 1;
+            }
+        }
+        let msv = GxArrayView::new(&ms, 1, NROW, NCOL);
+        let safe = || BinaryInputMaskWithSafeWindow {
+            inner: BinaryInputMask { mask: &msv },
+            safe_min_row: 3, safe_max_row: 7, safe_min_col: 3, safe_max_col: 8,
+            conv_safe_min_row: 3, conv_safe_max_row: 7 - K, conv_safe_min_col: 3,
+            conv_safe_max_col: 8 - K,
+        };
+        assert_same(&format!("{label} safe window"), &pts,
+            &run::<_, _, _, _, K>(w, &pts, safe(), BoundsCheck, sp),
+            &run::<_, _, _, _, K>(z, &pts, safe(), BoundsCheck, sp));
+        // Without bounds check: interior positions only.
+        let inner: Vec<(f64, f64)> = pts.iter().copied()
+            .filter(|&(y, x)| y >= K as f64 && y <= (NROW - K) as f64 - 1.0
+                && x >= K as f64 && x <= (NCOL - K) as f64 - 1.0)
+            .collect();
+        assert!(!inner.is_empty());
+        assert_same(&format!("{label} mask, no bounds check"), &inner,
+            &run::<_, _, _, _, K>(w, &inner, BinaryInputMask { mask: &mv }, NoBoundsCheck, sp),
+            &run::<_, _, _, _, K>(z, &inner, BinaryInputMask { mask: &mv }, NoBoundsCheck, sp));
+    }
+
+    /// Declaring the zeros does not change any result, under both policies.
+    #[test]
+    fn declared_pattern_matches_weights() {
+        check_same_policy::<_, _, _, 2>("linear effective", &LinW, &LinZ, Effective);
+        check_same_policy::<_, _, _, 2>("linear full", &LinW, &LinZ, Full);
+        check_same_policy::<_, _, _, 4>("keys effective", &KeysW, &KeysZ, Effective);
+        check_same_policy::<_, _, _, 4>("keys full", &KeysW, &KeysZ, Full);
+        check_same_policy::<_, _, _, 3>("quadratic effective", &QuadW, &QuadZ, Effective);
+        check_same_policy::<_, _, _, 3>("quadratic full", &QuadW, &QuadZ, Full);
+    }
+
+    // ------------------------------------------------------------------
+    // Policies on a hand-checked case
+    // ------------------------------------------------------------------
+
+    /// One masked sample next to the target, on a tap whose weight is zero
+    /// at `t = 0`.
+    fn one_masked(y: f64, x: f64, full_support: bool) -> (f64, u8) {
+        let d: Vec<f64> = (0..25).map(|k| k as f64).collect();
+        let mut m = vec![1u8; 25];
+        m[2 * 5 + 3] = 0; // sample (2, 3)
+        let mv = GxArrayView::new(&m, 1, 5, 5);
+        let arr_in = GxArrayView::new(&d, 1, 5, 5);
+        let mut out = [f64::NAN; 1];
+        let mut mo = [77u8; 1];
+        let mut arr_out = GxArrayViewMut::new(&mut out, 1, 1, 1);
+        let mut mask_view = GxArrayViewMut::new(&mut mo, 1, 1, 1);
+        let mut buf = [0.0; 4];
+        if full_support {
+            let mut ctx = GxArrayViewInterpolationContext::with_policy(
+                BinaryInputMask { mask: &mv }, BinaryOutputMask { mask: &mut mask_view },
+                BoundsCheck, Full);
+            LinZ.array1_interp2_separable_core(&mut buf, y, x, 0, &arr_in, &mut arr_out, -1.0, &mut ctx).unwrap();
+        } else {
+            let mut ctx = GxArrayViewInterpolationContext::with_policy(
+                BinaryInputMask { mask: &mv }, BinaryOutputMask { mask: &mut mask_view },
+                BoundsCheck, Effective);
+            LinZ.array1_interp2_separable_core(&mut buf, y, x, 0, &arr_in, &mut arr_out, -1.0, &mut ctx).unwrap();
+        }
+        (out[0], mo[0])
+    }
+
+    #[test]
+    fn masked_zero_weight_tap() {
+        // Target (2, 2): taps rows 2..=3, columns 2..=3; at t = 0 only (2, 2)
+        // has a weight. The masked sample (2, 3) is ignored by the
+        // effective support policy only.
+        assert_eq!(one_masked(2.0, 2.0, false), (12.0, 1));
+        assert_eq!(one_masked(2.0, 2.0, true), (-1.0, 0));
+        // Target (2, 2.5): the weight of column 3 is no longer zero.
+        assert_eq!(one_masked(2.0, 2.5, false), (-1.0, 0));
+        assert_eq!(one_masked(2.0, 2.5, true), (-1.0, 0));
+        // Target (2, 1.5): columns 1..=2, the masked sample is not in the
+        // stencil.
+        assert_eq!(one_masked(2.0, 1.5, false), (11.5, 1));
+        assert_eq!(one_masked(2.0, 1.5, true), (11.5, 1));
     }
 }

@@ -24,6 +24,7 @@ use super::gx_array_view_interp::{
     GxArrayViewInterpolatorArgs,
     GxArrayViewInterpolatorCore,
     GxArrayViewInterpolationContextTrait,
+    ZeroPattern,
 };
 
 /// Computes the linear kernel weights on a 2-tap support.
@@ -61,7 +62,10 @@ pub struct GxLinearInterpolator {
 // Use generic implementation from GxArrayViewInterpolatorCore for
 // KROWS = 2, NCOLS = 2 (native support)
 impl GxArrayViewInterpolatorCore<2, 2> for GxLinearInterpolator {
-    
+    /// Taps are limited to `anchor` and `anchor + 1`
+    /// At `t = 0` only the anchor (offset 0) has a non-zero weight.
+    const ZERO_PATTERN: ZeroPattern = ZeroPattern::AtPhase { phase: 0.0, start: 0, len: 1 };
+
     #[inline(always)]
     fn compute_weights(&self, t: f64, weights: &mut [f64])
     {
@@ -149,6 +153,16 @@ mod gx_linear_kernel_tests {
         a.iter()
             .zip(b.iter())
             .all(|(x, y)| (*x - *y).abs() <= tol)
+    }
+
+    /// The declared zero pattern matches the computed weights.
+    #[test]
+    fn test_linear_zero_pattern() {
+        use crate::interp::gx_kernel_test_utils::check_zero_pattern;
+        check_zero_pattern(
+            linear_kernel_weights, 2,
+            <GxLinearInterpolator as GxArrayViewInterpolatorCore<2, 2>>::ZERO_PATTERN,
+        );
     }
 
     /// native weights against the continuous linear kernel.

@@ -167,6 +167,7 @@ class TestGridResamplingChain:
         grid_shape,
         grid_shift,
         grid_resolution,
+        support_policy,
         boundary_condition,
         trust_padding,
         window,
@@ -296,6 +297,7 @@ class TestGridResamplingChain:
                     array_out_ds=array_out_ds,
                     interp=interp,
                     nodata_out=0,
+                    support_policy=support_policy,
                     boundary_condition=boundary_condition,
                     trust_padding=trust_padding,
                     win=window,
@@ -390,6 +392,7 @@ class TestGridResamplingChain:
                     grid_nodata=None,
                     array_out_mask=mask_out,
                     check_boundaries=True,
+                    support_policy=support_policy,
                     standalone=True,
                     boundary_condition=boundary_condition,
                     trust_padding=trust_padding,
@@ -503,6 +506,12 @@ class TestGridResamplingChain:
         ],
     )
     @pytest.mark.parametrize(
+        "support_policy",
+        [
+            "effective",
+        ],
+    )
+    @pytest.mark.parametrize(
         "boundary_condition",
         [
             None,
@@ -578,6 +587,7 @@ class TestGridResamplingChain:
         grid_shape,
         grid_shift,
         grid_resolution,
+        support_policy,
         boundary_condition,
         trust_padding,
         window,
@@ -611,6 +621,7 @@ class TestGridResamplingChain:
             grid_shape=grid_shape,
             grid_shift=grid_shift,
             grid_resolution=grid_resolution,
+            support_policy=support_policy,
             boundary_condition=boundary_condition,
             trust_padding=trust_padding,
             window=window,
@@ -750,6 +761,7 @@ class TestGridResamplingChain:
             grid_shape=grid_shape,
             grid_shift=grid_shift,
             grid_resolution=grid_resolution,
+            support_policy="effective",
             boundary_condition=None,
             trust_padding=False,
             window=window,
@@ -890,6 +902,7 @@ class TestGridResamplingChain:
             grid_shape=grid_shape,
             grid_shift=grid_shift,
             grid_resolution=grid_resolution,
+            support_policy="effective",
             boundary_condition=None,
             trust_padding=False,
             window=window,
@@ -1044,6 +1057,7 @@ class TestGridResamplingChain:
             grid_shape=grid_shape,
             grid_shift=grid_shift,
             grid_resolution=grid_resolution,
+            support_policy="effective",
             boundary_condition=boundary_condition,
             trust_padding=trust_padding,
             window=window,
@@ -1243,6 +1257,7 @@ class TestGridResamplingChain:
                     array_out_ds=array_out_ds,
                     interp=interp,
                     nodata_out=nodata_out,
+                    support_policy="effective",
                     boundary_condition=boundary_condition,
                     trust_padding=True,
                     win=window,
@@ -1274,6 +1289,7 @@ class TestGridResamplingChain:
                     array_out_ds=array_out_ds_bis,
                     interp=interp,
                     nodata_out=nodata_out,
+                    support_policy="effective",
                     boundary_condition=None,
                     trust_padding=True,
                     win=window,
@@ -1398,3 +1414,57 @@ class TestGridResamplingChain:
             io_strip_size_target=io_strip_size_target,
             tile_shape=tile_shape,
         )
+
+    def test_grid_resampling_chain_support_policy(self, tmp_path):
+        """The support policy reaches the core: on an identity grid without
+        boundary condition, every output is valid under the effective policy,
+        while the full policy invalidates the outputs whose cubic stencil
+        crosses the image border."""
+        nrow, ncol = 20, 24
+        array_in = np.arange(nrow * ncol, dtype=np.float64).reshape(nrow, ncol)
+        rows, cols = np.mgrid[0:nrow, 0:ncol].astype(np.float64)
+        grid_in_path = tmp_path / "grid_in.tif"
+        array_in_path = tmp_path / "array_in.tif"
+        write_array(np.stack((rows, cols)), np.float64, grid_in_path)
+        write_array(array_in, np.float64, array_in_path)
+
+        out_kwargs = {"driver": "GTiff", "height": nrow, "width": ncol, "count": 1}
+        masks = {}
+        for policy in ("effective", "full"):
+            array_out_path = tmp_path / f"array_out_{policy}.tif"
+            mask_out_path = tmp_path / f"mask_out_{policy}.tif"
+            with (
+                rasterio.open(grid_in_path, "r") as grid_in_ds,
+                rasterio.open(array_in_path, "r") as array_in_ds,
+                rasterio.open(
+                    array_out_path, "w", dtype=np.float64, **out_kwargs
+                ) as array_out_ds,
+                rasterio.open(
+                    mask_out_path, "w", dtype=np.uint8, **out_kwargs
+                ) as mask_out_ds,
+            ):
+                basic_grid_resampling_chain(
+                    grid_ds=grid_in_ds,
+                    grid_row_coords_band=1,
+                    grid_col_coords_band=2,
+                    grid_resolution=(1, 1),
+                    array_src_ds=array_in_ds,
+                    array_src_bands=1,
+                    array_out_ds=array_out_ds,
+                    interp="cubic",
+                    nodata_out=-1.0,
+                    mask_out_ds=mask_out_ds,
+                    support_policy=policy,
+                )
+            with rasterio.open(mask_out_path, "r") as mask_out_ds:
+                masks[policy] = mask_out_ds.read(1)
+
+        # Effective: at integer coordinates only the sample itself has a
+        # non-zero weight, so every output is valid.
+        assert np.all(masks["effective"] == UNMASKED_VALUE)
+
+        # Full: the cubic stencil covers floor(x) - 1 to floor(x) + 2, so the
+        # first row and column and the last two rows and columns are invalid.
+        expected = np.full((nrow, ncol), MASKED_VALUE, dtype=np.uint8)
+        expected[1 : nrow - 2, 1 : ncol - 2] = UNMASKED_VALUE
+        np.testing.assert_array_equal(masks["full"], expected)

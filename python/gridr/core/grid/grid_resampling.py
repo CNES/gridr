@@ -1403,6 +1403,7 @@ def array_grid_resampling(
     grid_nodata: float | None = None,
     array_out_mask: np.ndarray | bool | None = None,
     check_boundaries: bool = True,
+    support_policy: str = "effective",
     interp_kwargs: dict | None = None,
     standalone: bool | None = True,
     boundary_condition: str | None = None,
@@ -1496,7 +1497,8 @@ def array_grid_resampling(
 
     array_in : np.ndarray
         The input array to be resampled. It must be a contiguous 2D (nrow,
-        ncol) or 3D (nvar, nrow, ncol) array.
+        ncol) or 3D (nvar, nrow, ncol) array. Its values must be finite (no
+        NaN nor infinity), including in the areas masked by `array_in_mask`.
 
     grid_row : np.ndarray
         A 2D array representing the row coordinates of the target grid, with
@@ -1597,6 +1599,17 @@ def array_grid_resampling(
         builds of the Rust library stop on the first violation.
         This parameter adresses the core Rust function
 
+    support_policy : str, default "effective"
+        Which taps of the interpolation stencil must lie inside the source
+        array and be valid in ``array_in_mask`` for an output pixel to be
+        valid.
+        With ``"effective"``, only the taps with a non-zero weight count:
+        a sample outside the array or masked is ignored when its weight is
+        zero, for instance the neighbours of a target that falls exactly on
+        a source sample with an interpolating kernel.
+        With ``"full"``, every tap of the interpolation stencil counts,
+        whatever its weight. It is the cheapest policy to evaluate.
+
     interp_kwargs : Optional[dict], default=None
         Optional keyword parameters that will be passed to the `get_interpolator`
         function for interpolator creation. Used when `interp` is of type `str`
@@ -1693,6 +1706,9 @@ def array_grid_resampling(
         If input arrays are not C-contiguous.
 
     AssertionError
+        If `array_in` contains NaN or infinite values.
+
+    AssertionError
         If grid-related arrays have mismatched shapes.
 
     AssertionError
@@ -1785,6 +1801,14 @@ def array_grid_resampling(
     assert array_in.flags.c_contiguous is True
     assert grid_row.flags.c_contiguous is True
     assert grid_col.flags.c_contiguous is True
+
+    # The data must be finite, masked samples included: a masked sample can
+    # be read and multiplied by a zero weight, so a NaN or an infinity would
+    # leak into the result.
+    if np.issubdtype(array_in.dtype, np.floating):
+        assert np.isfinite(array_in).all(), (
+            "array_in must not contain NaN or infinite values, even in masked areas"
+        )
 
     # Get consistent 3d shape for input array
     array_in_shape = array_in.shape
@@ -1980,6 +2004,7 @@ def array_grid_resampling(
                 grid_win=py_grid_win,
                 out_win=py_array_out_win,
                 check_boundaries=check_boundaries,
+                support_policy=support_policy,
             )
         else:
             # Bypass the func call and set output to nodata - this is mainly to

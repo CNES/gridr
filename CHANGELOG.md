@@ -15,6 +15,16 @@
   `bspline{3,5,7,9,11}_all_centered` are replaced by `bicubic_kernel_weights_native` and
   `bspline{3,5,7,9,11}_weights_native`; `linear_kernel_weights` now writes 2 weights.
   No change to the Python API; `total_margins` is unchanged.
+- **Interpolation, support policy (Rust crate `gridr` only)**: `array1_grid_resampling` takes
+  a new `support_policy: SupportPolicy` argument after `check_boundaries`; pass
+  `SupportPolicy::Effective` to keep the current behaviour. External implementors of
+  `GxArrayViewInterpolationContextTrait` must define the new `SupportPolicy` associated type,
+  and those of `GxArrayViewInterpolatorInputMaskStrategy` the new `is_valid_window_dyn_unsafe`
+  method.
+- **Grid resampling, finite input values (Python)**: `array_grid_resampling` raises an
+  `AssertionError` when a floating-point `array_in` holds NaN or infinite values, masked areas
+  included. A masked sample can be read with a zero weight, so such values leaked into valid
+  outputs.
 
 ### Added
 
@@ -36,12 +46,45 @@ in `[0, 1)`.
 - Added `support_left` and `anchor_shift`, which define the stencil
 layout of a support of `K` taps.
 
+#### Interpolation: Support Policies
+
+*Module: `core::interp::gx_array_view_interp`*
+
+- Added the support policy, a fourth strategy of the interpolation context. It defines which
+taps of the stencil must lie inside the input array and be valid in the input mask:
+`Effective` (default) checks only the taps with a non-zero weight, as in previous versions;
+`Full` checks the whole stencil, whatever the weights.
+- Added the `SupportPolicy` enum, parsed from `"effective"` or `"full"`, and the
+`with_policy` context constructor. `new` is unchanged and builds an `Effective` context.
+- Added `ZeroPattern` and the `GxArrayViewInterpolatorCore::ZERO_PATTERN` constant, which
+declare where the weights of a kernel vanish: `None`, `AtPhase { phase, start, len }`, or
+`FromWeights` (default), where the zeros are read from the computed weights. The linear, cubic
+and B-spline kernels declare their `AtPhase` pattern.
+- Added `is_valid_window_dyn_unsafe` to the input mask strategies, for the reduced windows
+of the `Effective` policy.
+
+#### Grid Resampling: Support Policy
+
+*Module: `core::gx_grid_resampling`*
+
+- `array1_grid_resampling` dispatches the support policy to the context types
+(`dispatch_support_policy`).
+
+#### Python API: Support Policy
+
+*Modules: `core.grid.grid_resampling.py`, `chain.grid_resampling_chain.py`, `pyapi::py_grid_resampling`*
+
+- Added the `support_policy` argument (`"effective"` by default) to `array_grid_resampling`,
+`basic_grid_resampling_chain` and `py_array1_grid_resampling_f64`. An unknown value raises
+`ValueError`.
+
 #### Benchmarking: Rust Interpolators
 
 *File: `rust/gridr/benches/interp.rs`*
 
 - Added a criterion benchmark of `array1_interp2` for every interpolator.
-- Three scenarios: regular grid, random positions, regular grid with input mask.
+- Added multiple scenarii: regular grid, random positions, regular grid with input mask (2 %, 10 %, 30 %),
+grids with zero phases, border positions, and no bounds check.
 - Added `criterion` as a development dependency.
 
 #### Testing
@@ -57,8 +100,19 @@ reproduction, interior, border and outside paths.
 - Added integration tests in `rust/gridr/tests/interp/`. They compare
 `array1_interp2` with a direct evaluation of the continuous kernel, 
 for every interpolator, with and without input mask, safe window and 
-bounds check.
+bounds check. It runs under both support policies.
 - Added an integration test checking that `total_margins` covers the stencil.
+- Added `check_zero_pattern` and a zero pattern test for every separable kernel.
+- Added unit tests of both support policies on the interior, border and outside paths, and of
+the bit-exact equivalence between declared and weight-based zero patterns.
+- Added unit tests of `is_valid_window_dyn_unsafe` against `is_valid_window_unsafe`.
+- Added Python tests of `support_policy` for `array_grid_resampling` and
+`basic_grid_resampling_chain`.
+
+#### Documentation
+
+- Added the user guide notebook `grid_resampling_005_support_policy.ipynb`: both policies
+around masked samples and at the borders of the source array, and how to choose.
 
 ### Changed
 
@@ -72,6 +126,19 @@ bounds check.
 Breaking Changes).
 - The stencil is anchored on `floor(x)` for an even support, on the
 nearest integer for an odd one.
+
+#### Interpolation: Validity Before Weights
+
+*Module: `core::interp::gx_array_view_interp`*
+
+- The validity of a target is decided before its weights are computed, for every kernel with
+an `AtPhase` pattern and under the `Full` policy. Invalid targets no longer compute their
+weights, and valid targets are convolved without any mask test.
+- On the border path, a target is rejected without computing its weights, unless a phase is
+zero under the `Effective` policy. Under `Full`, it is rejected at once.
+- The full stencil test runs without bounds checks: `stencil_mask_valid` is `unsafe`, with a
+documented contract.
+- Default results are unchanged, bit for bit.
 
 #### Interpolation: bounds check contract
 
@@ -97,6 +164,10 @@ nearest integer for an odd one.
 #### Documentation
 
 - Updated `grid_resampling_007_standalone_mode.ipynb`: the cubic stencil is 4×4.
+- Reworked `grid_resampling_004_masking.ipynb`: the input mask is introduced with the support
+policy. The policy discussion moved to the new notebook, and the following notebooks are renumbered.
+- Documented `support_policy` and the finite input values in the `array_grid_resampling`
+docstring.
 
 #### Code Cleanup
 

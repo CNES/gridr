@@ -143,6 +143,7 @@ use super::gx_array_view_interp::{
     GxArrayViewInterpolatorArgs,
     GxArrayViewInterpolatorCore,
     GxArrayViewInterpolationContextTrait,
+    ZeroPattern,
 };
 use super::gx_bspline_prefiltering::{
     compute_2d_truncation_index,
@@ -821,6 +822,10 @@ impl<const N: usize> GxBSplineInterpolatorTrait<N> for GxBSplineInterpolator<N> 
 
 
 impl<const N: usize> GxArrayViewInterpolatorCore<4, 4> for GxBSplineInterpolator<N> {
+    /// At `t = 0` only the last tap, `anchor + K / 2` at the edge of the
+    /// support, has a zero weight.
+    const ZERO_PATTERN: ZeroPattern = ZeroPattern::AtPhase { phase: 0.0, start: 0, len: 3 };
+
     #[inline(always)]
     fn compute_weights(&self, t: f64, weights: &mut [f64])
     {
@@ -828,6 +833,9 @@ impl<const N: usize> GxArrayViewInterpolatorCore<4, 4> for GxBSplineInterpolator
     }
 }
 impl<const N: usize> GxArrayViewInterpolatorCore<6, 6> for GxBSplineInterpolator<N> {
+    /// See the `Core<4, 4>` implementation.
+    const ZERO_PATTERN: ZeroPattern = ZeroPattern::AtPhase { phase: 0.0, start: 0, len: 5 };
+
     #[inline(always)]
     fn compute_weights(&self, t: f64, weights: &mut [f64])
     {
@@ -835,6 +843,9 @@ impl<const N: usize> GxArrayViewInterpolatorCore<6, 6> for GxBSplineInterpolator
     }
 }
 impl<const N: usize> GxArrayViewInterpolatorCore<8, 8> for GxBSplineInterpolator<N> {
+    /// See the `Core<4, 4>` implementation.
+    const ZERO_PATTERN: ZeroPattern = ZeroPattern::AtPhase { phase: 0.0, start: 0, len: 7 };
+
     #[inline(always)]
     fn compute_weights(&self, t: f64, weights: &mut [f64])
     {
@@ -842,6 +853,9 @@ impl<const N: usize> GxArrayViewInterpolatorCore<8, 8> for GxBSplineInterpolator
     }
 }
 impl<const N: usize> GxArrayViewInterpolatorCore<10, 10> for GxBSplineInterpolator<N> {
+    /// See the `Core<4, 4>` implementation.
+    const ZERO_PATTERN: ZeroPattern = ZeroPattern::AtPhase { phase: 0.0, start: 0, len: 9 };
+
     #[inline(always)]
     fn compute_weights(&self, t: f64, weights: &mut [f64])
     {
@@ -849,6 +863,9 @@ impl<const N: usize> GxArrayViewInterpolatorCore<10, 10> for GxBSplineInterpolat
     }
 }
 impl<const N: usize> GxArrayViewInterpolatorCore<12, 12> for GxBSplineInterpolator<N> {
+    /// See the `Core<4, 4>` implementation.
+    const ZERO_PATTERN: ZeroPattern = ZeroPattern::AtPhase { phase: 0.0, start: 0, len: 11 };
+
     #[inline(always)]
     fn compute_weights(&self, t: f64, weights: &mut [f64])
     {
@@ -1030,6 +1047,22 @@ mod tests {
     //! Unit tests for the native B-spline weight functions.
     use super::*;
  
+    /// The declared zero patterns match the computed weights.
+    #[test]
+    fn test_bspline_zero_pattern() {
+        use crate::interp::gx_kernel_test_utils::check_zero_pattern;
+        check_zero_pattern(bspline3_weights_native, 4,
+            <GxBSplineInterpolator<3> as GxArrayViewInterpolatorCore<4, 4>>::ZERO_PATTERN);
+        check_zero_pattern(bspline5_weights_native, 6,
+            <GxBSplineInterpolator<5> as GxArrayViewInterpolatorCore<6, 6>>::ZERO_PATTERN);
+        check_zero_pattern(bspline7_weights_native, 8,
+            <GxBSplineInterpolator<7> as GxArrayViewInterpolatorCore<8, 8>>::ZERO_PATTERN);
+        check_zero_pattern(bspline9_weights_native, 10,
+            <GxBSplineInterpolator<9> as GxArrayViewInterpolatorCore<10, 10>>::ZERO_PATTERN);
+        check_zero_pattern(bspline11_weights_native, 12,
+            <GxBSplineInterpolator<11> as GxArrayViewInterpolatorCore<12, 12>>::ZERO_PATTERN);
+    }
+
     /// Check native weights against the scalar B-spline functions.
     /// GridR B-splines are scaled by `n!`, so the weights sum to `n!`.
     #[test]

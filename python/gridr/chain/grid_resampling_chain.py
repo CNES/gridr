@@ -318,6 +318,7 @@ def basic_grid_resampling_array(
     sma_out_buffer: SharedArray,
     out_win: np.ndarray,
     nodata_out: int | float | None,
+    support_policy: str,
     boundary_condition: str | None,
     trust_padding: bool,
     sma_out_mask_buffer: SharedArray | None,
@@ -441,6 +442,17 @@ def basic_grid_resampling_array(
     nodata_out : scalar or None
         NoData value to fill the output if the grid metrics are invalid
         or if no valid data points can be found.
+
+    support_policy : str
+        Which taps of the interpolation stencil must lie inside the source
+        array and be valid in the associated mask for an output pixel to
+        be valid.
+        With ``"effective"``, only the taps with a non-zero weight count:
+        a sample outside the array or masked is ignored when its weight is
+        zero, for instance the neighbours of a target that falls exactly on
+        a source sample with an interpolating kernel.
+        With ``"full"``, every tap of the interpolation stencil counts,
+        whatever its weight. It is the cheapest policy to evaluate.
 
     boundary_condition : str or None, default None
         Optional padding mode when required data for interpolation lies
@@ -932,6 +944,7 @@ def basic_grid_resampling_array(
             grid_nodata=None,  # TODO : manage grid_nodata input
             array_out_mask=array_out_mask,  # output mask buffer,
             check_boundaries=check_boundaries,
+            support_policy=support_policy,
             standalone=False,  # We are not in standalone mode
             trust_padding=trust_padding,  # should not be used with standalone = False
         )
@@ -960,6 +973,7 @@ def basic_grid_resampling_chain(
     nodata_out: int | float,
     grid_col_ds: rasterio.io.DatasetReader | None = None,
     interp_kwargs: dict | None = None,
+    support_policy: str = "effective",
     boundary_condition: str | None = None,
     trust_padding: bool | None = False,
     win: np.ndarray | None = None,
@@ -1039,6 +1053,17 @@ def basic_grid_resampling_chain(
         interpolator creation to the `get_interpolator` function. They
         will be used if the interpolator passed through the `interp` is
         either of type `str` or `PyInterpolatorType`.
+
+    support_policy : str, default "effective"
+        Which taps of the interpolation stencil must lie inside the source
+        array and be valid in the associated mask for an output pixel to
+        be valid.
+        With ``"effective"``, only the taps with a non-zero weight count:
+        a sample outside the array or masked is ignored when its weight is
+        zero, for instance the neighbours of a target that falls exactly on
+        a source sample with an interpolating kernel.
+        With ``"full"``, every tap of the interpolation stencil counts,
+        whatever its weight. It is the cheapest policy to evaluate.
 
     boundary_condition : str or None, default None
         Optional padding mode when required data for interpolation lies
@@ -1634,6 +1659,7 @@ def basic_grid_resampling_chain(
                         sma_out_buffer=sma_w_array_buffer,
                         out_win=ctile_win,
                         nodata_out=nodata_out,
+                        support_policy=support_policy,
                         boundary_condition=boundary_condition,
                         trust_padding=trust_padding,
                         sma_out_mask_buffer=sma_w_mask_buffer,
@@ -1665,6 +1691,7 @@ def basic_grid_resampling_chain(
                     sma_out_buffer=sma_w_array_buffer,
                     out_win=cslices_as_win,
                     nodata_out=nodata_out,
+                    support_policy=support_policy,
                     boundary_condition=boundary_condition,
                     trust_padding=trust_padding,
                     sma_out_mask_buffer=sma_w_mask_buffer,
