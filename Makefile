@@ -4,6 +4,7 @@
 # ============================================================================ 
 # NUMPY_VERSION : set to force numpy version
 # GRIDR_SPHINX_BUILD_PATH : set sphinx output path
+# GRIDR_DOC_FIGURES_MODE : mode of build-doc-figures (all, stale or check)
 # BUILD_DIST_OUTDIR
 # COVERAGE_REPORT_TAG
 # GRIDR_VENV
@@ -41,6 +42,8 @@ GRIDR_BENCHMARKS_PATH := $(ROOT_DIR)/benchmarks/
 GRIDR_RUST_BENCHMARKS_RESULTS_PATH := $(GRIDR_BENCHMARKS_PATH)/results/criterion
 
 GRIDR_DOCS_ROOT_PATH := $(ROOT_DIR)docs
+GRIDR_DOC_FIGURES_MODE ?= all
+
 ifdef GRIDR_SPHINX_BUILD_PATH
 	GRIDR_SPHINX_DOC_BUILD_PATH = "$(GRIDR_SPHINX_BUILD_PATH)"
 else
@@ -198,6 +201,12 @@ build-sphinx-doc: $(GRIDR_VENV_SENTINEL) $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET) clea
 	@echo "Building sphinx documentation..."
 	@echo "Sphinx documentation location : $(GRIDR_DOCS_ROOT_PATH)"
 	@source $(GRIDR_VENV)/bin/activate && sphinx-build -M html $(GRIDR_DOCS_ROOT_PATH)/source $(GRIDR_SPHINX_DOC_BUILD_PATH)
+
+
+.PHONY: build-doc-figures
+build-doc-figures: $(GRIDR_VENV_SENTINEL) $(GRIDR_LIBGRIDR_SO_PYTEST_TARGET) ## regenerate the figures of the sphinx documentation (GRIDR_DOC_FIGURES_MODE=all|stale|check)
+	@echo "Building documentation figures..."
+	@source $(GRIDR_VENV)/bin/activate && python $(GRIDR_DOCS_ROOT_PATH)/scripts/build_figures.py --mode $(GRIDR_DOC_FIGURES_MODE)
 
 
 .PHONY: test-python

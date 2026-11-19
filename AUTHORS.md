@@ -1,6 +1,6 @@
 # Credits
 
-Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
+Copyright (c) 2024-2026 Centre National d'Etudes Spatiales (CNES).
 
 GRIDR is licensed under permissive Apache 2 license (See LICENSE file).
 

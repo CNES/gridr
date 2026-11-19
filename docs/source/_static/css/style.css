@@ -8,3 +8,12 @@
     margin-right: auto;
     padding: 0 15px;
 }
+
+/* Green notes: ".. note::" with ":class: aa-green" (zone plate presentation of the antialiasing pages) */
+.rst-content .admonition.aa-green {
+    background: #dbfaf4;
+}
+
+.rst-content .admonition.aa-green .admonition-title {
+    background: #1abc9c;
+}

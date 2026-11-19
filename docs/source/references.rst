@@ -1,8 +1,8 @@
 References
 ==========
 
-Articles and Publications
--------------------------
+Publications
+------------
 
 .. bibliography::
    :all:

@@ -4,154 +4,171 @@
 
 ### ⚠️ Breaking Changes
 
-- **Interpolation, native kernel supports (Rust crate `gridr` only)**: separable interpolators
-  now use the native support of their kernel instead of a centered odd stencil: linear 2 taps
-  (was 3), cubic 4 (was 5), B-spline of order *n* `n + 1` (was `n + 2`). The stencil is anchored
-  on `floor(x)` for an even support and on the nearest integer for an odd one (`support_left`,
-  `anchor_shift`). `GxArrayViewInterpolatorCore::compute_weights` receives the phase
-  `t = x - anchor`, in `[0, 1)` for an even support, and the `interpolate_*` methods take the
-  index of the first stencil tap instead of the stencil center. The centered weight functions
-  `optimized_bicubic_kernel_weights`, `optimized_bicubic_kernel_weights_opt` and
-  `bspline{3,5,7,9,11}_all_centered` are replaced by `bicubic_kernel_weights_native` and
-  `bspline{3,5,7,9,11}_weights_native`; `linear_kernel_weights` now writes 2 weights.
-  No change to the Python API; `total_margins` is unchanged.
-- **Interpolation, support policy (Rust crate `gridr` only)**: `array1_grid_resampling` takes
-  a new `support_policy: SupportPolicy` argument after `check_boundaries`; pass
-  `SupportPolicy::Effective` to keep the current behaviour. External implementors of
-  `GxArrayViewInterpolationContextTrait` must define the new `SupportPolicy` associated type,
-  and those of `GxArrayViewInterpolatorInputMaskStrategy` the new `is_valid_window_dyn_unsafe`
-  method.
-- **Grid resampling, finite input values (Python)**: `array_grid_resampling` raises an
-  `AssertionError` when a floating-point `array_in` holds NaN or infinite values, masked areas
-  included. A masked sample can be read with a zero weight, so such values leaked into valid
-  outputs.
+- **Interpolation, native kernel supports (Rust crate `gridr` only)**: separable interpolators now use the native
+  support of their kernel instead of a centered odd stencil: linear 2 taps (was 3), cubic 4 (was 5), B-spline of order
+  *n* `n + 1` (was `n + 2`). The stencil is anchored on `floor(x)` for an even support and on the nearest integer for an
+  odd one (`support_left`, `anchor_shift`). `GxArrayViewInterpolatorCore::compute_weights` receives the phase
+  `t = x - anchor`, in `[0, 1)` for an even support, and the `interpolate_*` methods take the index of the first stencil
+  tap instead of the stencil center. The centered weight functions `optimized_bicubic_kernel_weights`,
+  `optimized_bicubic_kernel_weights_opt` and `bspline{3,5,7,9,11}_all_centered` are replaced by
+  `bicubic_kernel_weights_native` and `bspline{3,5,7,9,11}_weights_native`; `linear_kernel_weights` now writes 2
+  weights. No change to the Python API; `total_margins` is unchanged.
+- **Interpolation, support policy (Rust crate `gridr` only)**: `array1_grid_resampling` takes a new
+  `support_policy: SupportPolicy` argument after `check_boundaries`; pass `SupportPolicy::Effective` to keep the current
+  behavior. External implementors of `GxArrayViewInterpolationContextTrait` must define the new `SupportPolicy`
+  associated type, and those of `GxArrayViewInterpolatorInputMaskStrategy` the new `is_valid_window_dyn_unsafe` method.
+- **Grid resampling, finite input values (Python)**: `array_grid_resampling` raises an `AssertionError` when a
+  floating-point `array_in` holds NaN or infinite values, masked areas included. A masked sample can be read with a zero
+  weight, so such values leaked into valid outputs.
+- **Lattice (Python)**: `Lattice2d.voronoi_paving_cell` takes `rtol`, a relative tolerance on the scalar product of the
+  reduced basis, instead of `cosine_treshold`. Hexagonal cells are no longer mirrored.
+- **Antialiasing filter (Python)**: `compute_antialiasing_filter_from_grid` is deprecated and will be removed in 0.9.0.
+  It now wraps `resolve_antialiasing_filter` with a `ReciprocalCellFilter`, and its kernels change. `filter_nrow` and
+  `filter_ncol` must be equal and odd. A hard gate (`filter_cutoff_tanh_slope=None`) or a positive `filter_cutoff_shift`
+  raises `ValueError`.
 
 ### Added
 
+#### Antialiasing: Reciprocal Cell Filter
+
+*Modules: `core.filter.antialiasing`, `core.filter.antialiasing.reciprocal_cell`, `core.grid.grid_antialiasing`*
+
+- New package `core.filter.antialiasing`, with one module per method of construction. A method is described by a
+  specification class whose `design` method builds a `KernelFilter`, an odd 2D kernel, from the transition matrix `W` of
+  the grid.
+- `ReciprocalCellFilter` keeps the frequencies of a Voronoi cell of the reciprocal lattice, in the destination metric by
+  default (`isotropic_frame`). No filter is built when the source Nyquist square lies inside the cell. The template is a
+  product of tanh gates whose value on the cell boundary is `aliasing_tolerance`.
+- The kernel is cropped to the smallest odd size that meets `kernel_accuracy`, within a bound: twice the size estimate
+  by default, or `max_kernel_size`. Beyond the bound, the kernel is truncated, the template is kept and `design` issues
+  a `RuntimeWarning`. `ReciprocalCellDiagnostics` reports the cell, the sizes and the response error.
+- `resolve_antialiasing_filter` estimates `W` on a grid with `estimate_transition_matrix` (longest distance or
+  least-squares fit on the valid nodes) and calls `design`.
+- Added two experimental options, off by default. `experimental_nyquist_gates` adds gates on the source Nyquist square
+  where the template jumps on its border. `experimental_progressive_gates` relaxes the gate of a facet that folds
+  little, so that the template varies continuously with `W` near unit scale.
+
+#### Filter: Lattice Functions
+
+*Module: `core.filter.lattice`*
+
+- Added `gauss_reduce`, `relevant_vectors`, `voronoi_cell_facets` and `voronoi_cell_vertices`.
+
 #### Interpolation: Native Weight Functions
 
-*Modules: `core::interp::gx_optimized_bicubic_kernel`,
-`core::interp::gx_bspline_kernel`*
+*Modules: `core::interp::gx_optimized_bicubic_kernel`, `core::interp::gx_bspline_kernel`*
 
-- Added `bicubic_kernel_weights_native` and
-`bspline{3,5,7,9,11}_weights_native`.
-- They compute the kernel weights on the native support, from a phase
-in `[0, 1)`.
+- Added `bicubic_kernel_weights_native` and `bspline{3,5,7,9,11}_weights_native`.
+- They compute the kernel weights on the native support, from a phase in `[0, 1)`.
 - They contain no branch.
 
 #### Interpolation: Stencil Anchoring
 
 *Module: `core::interp::gx_array_view_interp`*
 
-- Added `support_left` and `anchor_shift`, which define the stencil
-layout of a support of `K` taps.
+- Added `support_left` and `anchor_shift`, which define the stencil layout of a support of `K` taps.
 
 #### Interpolation: Support Policies
 
 *Module: `core::interp::gx_array_view_interp`*
 
-- Added the support policy, a fourth strategy of the interpolation context. It defines which
-taps of the stencil must lie inside the input array and be valid in the input mask:
-`Effective` (default) checks only the taps with a non-zero weight, as in previous versions;
-`Full` checks the whole stencil, whatever the weights.
-- Added the `SupportPolicy` enum, parsed from `"effective"` or `"full"`, and the
-`with_policy` context constructor. `new` is unchanged and builds an `Effective` context.
-- Added `ZeroPattern` and the `GxArrayViewInterpolatorCore::ZERO_PATTERN` constant, which
-declare where the weights of a kernel vanish: `None`, `AtPhase { phase, start, len }`, or
-`FromWeights` (default), where the zeros are read from the computed weights. The linear, cubic
-and B-spline kernels declare their `AtPhase` pattern.
-- Added `is_valid_window_dyn_unsafe` to the input mask strategies, for the reduced windows
-of the `Effective` policy.
+- Added the support policy, a fourth strategy of the interpolation context. It defines which taps of the stencil must
+  lie inside the input array and be valid in the input mask: `Effective` (default) checks only the taps with a non-zero
+  weight, as in previous versions; `Full` checks the whole stencil, whatever the weights.
+- Added the `SupportPolicy` enum, parsed from `"effective"` or `"full"`, and the `with_policy` context constructor.
+  `new` is unchanged and builds an `Effective` context.
+- Added `ZeroPattern` and the `GxArrayViewInterpolatorCore::ZERO_PATTERN` constant, which declare where the weights of a
+  kernel vanish: `None`, `AtPhase { phase, start, len }`, or `FromWeights` (default), where the zeros are read from the
+  computed weights. The linear, cubic and B-spline kernels declare their `AtPhase` pattern.
+- Added `is_valid_window_dyn_unsafe` to the input mask strategies, for the reduced windows of the `Effective` policy.
 
 #### Grid Resampling: Support Policy
 
 *Module: `core::gx_grid_resampling`*
 
-- `array1_grid_resampling` dispatches the support policy to the context types
-(`dispatch_support_policy`).
+- `array1_grid_resampling` dispatches the support policy to the context types (`dispatch_support_policy`).
 
 #### Python API: Support Policy
 
 *Modules: `core.grid.grid_resampling.py`, `chain.grid_resampling_chain.py`, `pyapi::py_grid_resampling`*
 
 - Added the `support_policy` argument (`"effective"` by default) to `array_grid_resampling`,
-`basic_grid_resampling_chain` and `py_array1_grid_resampling_f64`. An unknown value raises
-`ValueError`.
+  `basic_grid_resampling_chain` and `py_array1_grid_resampling_f64`. An unknown value raises `ValueError`.
 
 #### Benchmarking: Rust Interpolators
 
 *File: `rust/gridr/benches/interp.rs`*
 
 - Added a criterion benchmark of `array1_interp2` for every interpolator.
-- Added multiple scenarii: regular grid, random positions, regular grid with input mask (2 %, 10 %, 30 %),
-grids with zero phases, border positions, and no bounds check.
+- Added multiple scenarii: regular grid, random positions, regular grid with input mask (2 %, 10 %, 30 %), grids with
+  zero phases, border positions, and no bounds check.
 - Added `criterion` as a development dependency.
 
 #### Testing
 
-- Added `check_native_weights` (`core::interp::gx_kernel_test_utils`).
-It checks a weight function against its continuous kernel: values, sum,
-zero pattern at phase 0, no zero inside the support.
-- Added unit tests of the weights of every separable kernel, based on
-`check_native_weights`.
-- Added unit tests of `array1_interp2_separable_core` with test-only
-kernels: anchoring and phase for supports of 1 to 6 taps, polynomial
-reproduction, interior, border and outside paths.
-- Added integration tests in `rust/gridr/tests/interp/`. They compare
-`array1_interp2` with a direct evaluation of the continuous kernel, 
-for every interpolator, with and without input mask, safe window and 
-bounds check. It runs under both support policies.
+- Added `check_native_weights` (`core::interp::gx_kernel_test_utils`). It checks a weight function against its
+  continuous kernel: values, sum, zero pattern at phase 0, no zero inside the support.
+- Added unit tests of the weights of every separable kernel, based on `check_native_weights`.
+- Added unit tests of `array1_interp2_separable_core` with test-only kernels: anchoring and phase for supports of 1 to 6
+  taps, polynomial reproduction, interior, border and outside paths.
+- Added integration tests in `rust/gridr/tests/interp/`. They compare `array1_interp2` with a direct evaluation of the
+  continuous kernel, for every interpolator, with and without input mask, safe window and bounds check. It runs under
+  both support policies.
 - Added an integration test checking that `total_margins` covers the stencil.
 - Added `check_zero_pattern` and a zero pattern test for every separable kernel.
-- Added unit tests of both support policies on the interior, border and outside paths, and of
-the bit-exact equivalence between declared and weight-based zero patterns.
+- Added unit tests of both support policies on the interior, border and outside paths, and of the bit-exact equivalence
+  between declared and weight-based zero patterns.
 - Added unit tests of `is_valid_window_dyn_unsafe` against `is_valid_window_unsafe`.
-- Added Python tests of `support_policy` for `array_grid_resampling` and
-`basic_grid_resampling_chain`.
+- Added Python tests of `support_policy` for `array_grid_resampling` and `basic_grid_resampling_chain`.
+- Added tests of `core.filter.lattice` (`test_lattice.py`): basis reduction, and Voronoi cells checked against a
+  brute-force nearest-point computation in several metrics.
+- Added tests of `core.filter.antialiasing.reciprocal_cell` (`test_reciprocal_cell.py`): cell and filter decision, gates
+  and template, kernel synthesis and accuracy, size bound and size search, warnings, and both experimental options.
+- Added tests of `core.grid.grid_antialiasing` (`test_grid_antialiasing.py`): transition matrix estimation in both
+  modes, selection of the valid grid nodes, and resolution of a filter on a grid.
 
 #### Documentation
 
-- Added the user guide notebook `grid_resampling_005_support_policy.ipynb`: both policies
-around masked samples and at the borders of the source array, and how to choose.
+- Added the user guide notebook `grid_resampling_005_support_policy.ipynb`: both policies around masked samples and at
+  the borders of the source array, and how to choose.
+- Added the theoretical foundations pages on antialiasing (`theoretical_foundations/antialiasing/`) and the API pages of
+  `core.filter.antialiasing`.
+
 
 ### Changed
 
 #### Interpolation: Native Kernel Supports
 
-*Modules: `core::interp::gx_array_view_interp`,
-`core::interp::gx_linear_kernel`,
+*Modules: `core::interp::gx_array_view_interp`, `core::interp::gx_linear_kernel`,
 `core::interp::gx_optimized_bicubic_kernel`, `core::interp::gx_bspline_kernel`*
 
-- Separable interpolators use the native support of their kernel (see
-Breaking Changes).
-- The stencil is anchored on `floor(x)` for an even support, on the
-nearest integer for an odd one.
+- Separable interpolators use the native support of their kernel (see Breaking Changes).
+- The stencil is anchored on `floor(x)` for an even support, on the nearest integer for an odd one.
 
 #### Interpolation: Validity Before Weights
 
 *Module: `core::interp::gx_array_view_interp`*
 
-- The validity of a target is decided before its weights are computed, for every kernel with
-an `AtPhase` pattern and under the `Full` policy. Invalid targets no longer compute their
-weights, and valid targets are convolved without any mask test.
-- On the border path, a target is rejected without computing its weights, unless a phase is
-zero under the `Effective` policy. Under `Full`, it is rejected at once.
-- The full stencil test runs without bounds checks: `stencil_mask_valid` is `unsafe`, with a
-documented contract.
+- The validity of a target is decided before its weights are computed, for every kernel with an `AtPhase` pattern and
+  under the `Full` policy. Invalid targets no longer compute their weights, and valid targets are convolved without any
+  mask test.
+- On the border path, a target is rejected without computing its weights, unless a phase is zero under the `Effective`
+  policy. Under `Full`, it is rejected at once.
+- The full stencil test runs without bounds checks: `stencil_mask_valid` is `unsafe`, with a documented contract.
 - Default results are unchanged, bit for bit.
 
 #### Interpolation: bounds check contract
 
 *Module: `core::interp::gx_array_view_interp`*
 
-- Without bounds check, the separable core asserts in debug builds that the full stencil
-  lies inside the input array. Release builds are unchanged.
+- Without bounds check, the separable core asserts in debug builds that the full stencil lies inside the input array.
+  Release builds are unchanged.
 - The SAFETY comments state who guarantees the indices in each path.
 
-*Modules: `core.grid.grid_resampling.py`, `pyapi::py_grid_resampling`
+*Modules: `core.grid.grid_resampling.py`, `pyapi::py_grid_resampling`*
 
-- The `check_boundaries` docstrings state the guarantee required when it is `False`, and
-  that the result is undefined otherwise.
+- The `check_boundaries` docstrings state the guarantee required when it is `False`, and that the result is undefined
+  otherwise.
 
 #### Testing
 
@@ -164,10 +181,9 @@ documented contract.
 #### Documentation
 
 - Updated `grid_resampling_007_standalone_mode.ipynb`: the cubic stencil is 4×4.
-- Reworked `grid_resampling_004_masking.ipynb`: the input mask is introduced with the support
-policy. The policy discussion moved to the new notebook, and the following notebooks are renumbered.
-- Documented `support_policy` and the finite input values in the `array_grid_resampling`
-docstring.
+- Reworked `grid_resampling_004_masking.ipynb`: the input mask is introduced with the support policy. The policy
+  discussion moved to the new notebook, and the following notebooks are renumbered.
+- Documented `support_policy` and the finite input values in the `array_grid_resampling` docstring.
 
 #### Code Cleanup
 
@@ -175,16 +191,24 @@ docstring.
 
 - Removed the empty `rust/gridr/src/interp/gx_interp.rs` module.
 
+
 ### Fixed
 
-#### Interpolation: nearest neighbour
+#### Interpolation: nearest neighbor
 
 *Module: `core::interp::gx_nearest_kernel`*
 
-- The flat input index was computed before the bounds check. A target with a negative
-  nearest center panicked with an arithmetic overflow in debug builds. Release builds were
-  not affected.
-- Without bounds check, the caller contract is asserted in debug builds. 
+- The flat input index was computed before the bounds check. A target with a negative nearest center panicked with an
+  arithmetic overflow in debug builds. Release builds were not affected.
+- Without bounds check, the caller contract is asserted in debug builds.
+
+#### Filter: Lattice Reduction and Voronoi Cell
+
+*Module: `core.filter.lattice`*
+
+- `Lattice2d.gaussian_lattice_reduction` rounds the projection ratio instead of truncating it. The returned basis could
+  stay unreduced.
+- `Lattice2d.voronoi_paving_cell` no longer mirrors hexagonal cells.
 
 ### Build & Tooling
 
@@ -194,10 +218,10 @@ docstring.
 - **Makefile**
   - Added the `bench-save` and `bench-compare` targets. `BENCH_BASELINE` sets the baseline name.
 - **Benchmark**
-  - Added the `benchmark/scripts/bench_rust.py` tool to run and save benchmark results and metadata.  
+  - Added the `benchmark/scripts/bench_rust.py` tool to run and save benchmark results and metadata.
 
 
-## [0.7.0] - 2026-09-30 
+## [0.7.0] - 2026-09-30
 
 ### ⚠️ Breaking Changes
 
@@ -205,37 +229,33 @@ docstring.
 
 *Module: `core.convolution.fft_filtering.py`*
 
-- At most one non-`NONE` policy per call: sides declare *whether* they are padded, not *how*.
-  Mixing two now raises `ValueError` instead of depending on set iteration order.
+- At most one non-`NONE` policy per call: sides declare *whether* they are padded, not *how*. Mixing two now raises
+  `ValueError` instead of depending on set iteration order.
 
 #### FFT Filtering — API
 
 *Module: `core.convolution.fft_filtering.py`*
 
-- **Options are plain strings, not enumerations.** `BoundaryPad` and `ConvolutionOutputMode` 
-  are removed. Boundary policies are now the `numpy.pad` mode strings — the ones 
-  `array_grid_resampling` already takes — and output modes those of
-  `scipy.signal.convolve`: `boundary="reflect"`, `out_mode="same"`. `None` is accepted for no
-  boundary synthesis.
-  The zero-padding policy is spelled `"constant"`, as in NumPy, not `ZERO`.
-- `fft_array_filter` and `fft_array_filter_output_shape`: `fil` renamed `kernel`, every option
-  beyond `arr`/`kernel`/`win` is keyword-only, and `fft_array_filter_output_shape` returns a
-  `tuple[int, ...]` instead of an `np.ndarray`.
-- `axes` is normalized as a set and returned sorted, consistent with `scipy.signal.oaconvolve`;
-  repeated axes are rejected.
+- **Options are plain strings, not enumerations.** `BoundaryPad` and `ConvolutionOutputMode` are removed. Boundary
+  policies are now the `numpy.pad` mode strings — the ones `array_grid_resampling` already takes — and output modes
+  those of `scipy.signal.convolve`: `boundary="reflect"`, `out_mode="same"`. `None` is accepted for no boundary
+  synthesis. The zero-padding policy is spelled `"constant"`, as in NumPy, not `ZERO`.
+- `fft_array_filter` and `fft_array_filter_output_shape`: `fil` renamed `kernel`, every option beyond
+  `arr`/`kernel`/`win` is keyword-only, and `fft_array_filter_output_shape` returns a `tuple[int, ...]` instead of an
+  `np.ndarray`.
+- `axes` is normalized as a set and returned sorted, consistent with `scipy.signal.oaconvolve`; repeated axes are
+  rejected.
 - `win` no longer accepts per-axis `None` bounds.
-- Renames: `fft_odd_filter` → `pad_kernel_to_odd`, `get_filter_margin` → `kernel_margin`.
- `fft_array_filter_check_data` and `pad_array` are superseded by `build_plan`.
+- Renames: `fft_odd_filter` → `pad_kernel_to_odd`, `get_filter_margin` → `kernel_margin`. `fft_array_filter_check_data`
+  and `pad_array` are superseded by `build_plan`.
 
 
 *Module: `chain.fft_filtering_chain.py`*
 
-- **Options are plain strings, not enumerations.** `BoundaryPad` and `ConvolutionOutputMode` 
-  are removed. Boundary policies are now the `numpy.pad` mode strings — the ones 
-  `array_grid_resampling` already takes — and output modes those of
-  `scipy.signal.convolve`: `boundary="reflect"`, `out_mode="same"`. `None` is accepted for no
-  boundary synthesis.
-  The zero-padding policy is spelled `"constant"`, as in NumPy, not `ZERO`.
+- **Options are plain strings, not enumerations.** `BoundaryPad` and `ConvolutionOutputMode` are removed. Boundary
+  policies are now the `numpy.pad` mode strings — the ones `array_grid_resampling` already takes — and output modes
+  those of `scipy.signal.convolve`: `boundary="reflect"`, `out_mode="same"`. `None` is accepted for no boundary
+  synthesis. The zero-padding policy is spelled `"constant"`, as in NumPy, not `ZERO`.
 - `fft_filtering_oa_strip_chain`: `fil` renamed `kernel`
 - `check_oa_strip_size` takes the number of produced rows (`nrow`) instead of the input array.
 
@@ -247,43 +267,40 @@ docstring.
 
 *Module: `core.convolution.fft_filtering.py`*
 
-- Implemented rational decimation `zoom = (1, Q)`, previously guarded by `assert zoom == 1`.
-  Subsampling is fused into the output slicing, so no full-resolution intermediate is
-  materialised. `decimation` selects which sample of each block of `Q` is kept (`"centered"` or
-  `"leading"`), with the `decimation_offset` and `decimated_size` helpers.
+- Implemented rational decimation `zoom = (1, Q)`, previously guarded by `assert zoom == 1`. Subsampling is fused into
+  the output slicing, so no full-resolution intermediate is materialized. `decimation` selects which sample of each
+  block of `Q` is kept (`"centered"` or `"leading"`), with the `decimation_offset` and `decimated_size` helpers.
 
 *Module: `chain.fft_filtering_chain.py`*
 
-- **Chain:** the overlap-add reconstruction stays at full resolution and only the writes are
-  decimated, from the *global* index of each block.
+- **Chain:** the overlap-add reconstruction stays at full resolution and only the writes are decimated, from the
+  *global* index of each block.
 
 ##### FFT Filtering — Production Window in the Chain
 
 *Module: `chain.fft_filtering_chain.py`*
 
-- `fft_filtering_oa_strip_chain` accepts `win`. Strips are cut over the window, not the raster
-  height, and each read is restricted to the window extended by the kernel margins on both axes.
+- `fft_filtering_oa_strip_chain` accepts `win`. Strips are cut over the window, not the raster height, and each read is
+  restricted to the window extended by the kernel margins on both axes.
 
 ##### FFT Filtering — Filter Plan
 
 *Module: `core.convolution.fft_filtering.py`*
 
-- `build_plan` derives the whole geometry — source slices, padding widths, output slices, output
-  shape and production window — from the input *shape* alone, without allocating data, and
-  returns an immutable `FilterPlan`. `fft_array_filter` accepts a `plan=` argument so that one
-  plan can be applied to many tiles.
+- `build_plan` derives the whole geometry — source slices, padding widths, output slices, output shape and production
+  window — from the input *shape* alone, without allocating data, and returns an immutable `FilterPlan`.
+  `fft_array_filter` accepts a `plan=` argument so that one plan can be applied to many tiles.
 
 ##### FFT Filtering — Boundary, Output Mode and Backend Options
 
 *Modules: `core.convolution.fft_filtering.py`, `chain.fft_filtering_chain.py`*
 
-- Added the `"symmetric"`, `"edge"`, `"wrap"` and `"constant"` boundary policies alongside
-  `"reflect"`.
-- `"wrap"` needs the production window to span the axis it wraps:  a window stopping short of an
-  edge has no periodic neighbour to bring in and raises rather than wrapping around itself.
+- Added the `"symmetric"`, `"edge"`, `"wrap"` and `"constant"` boundary policies alongside `"reflect"`.
+- `"wrap"` needs the production window to span the axis it wraps:  a window stopping short of an edge has no periodic
+  neighbor to bring in and raises rather than wrapping around itself.
 - The `"valid"` output mode is now implemented; it previously raised `NotImplementedError`.
-- Added `dtype`, so a `float32` raster convolved with a `float64` kernel can be pinned to
-  `float32` instead of silently doubling its memory footprint
+- Added `dtype`, so a `float32` raster convolved with a `float64` kernel can be pinned to `float32` instead of silently
+  doubling its memory footprint
 - Added `method` to pick the backend convolution method.
 
 ##### FFT Filtering — In-place Boundary Padding
@@ -293,29 +310,31 @@ docstring.
 #### Documentation
 
 - Added a new `Standards` section in the HTML documentation
-- Added two user's guides for FFT Filtering, *Core* and *Chain*, as series of executable
-  notebook tutorials covering boundary conditions, output modes, production window and
-  decimation, then the raster chain with its output dataset geometry and its strip loop
+- Added two user's guides for FFT Filtering, *Core* and *Chain*, as series of executable notebook tutorials covering
+  boundary conditions, output modes, production window and decimation, then the raster chain with its output dataset
+  geometry and its strip loop
 
 ### Changed
 
 #### FFT Filtering — Module Restructuring
 
-- The core module is reorganised into pure integer helpers, plan construction and execution.
-  `fft_array_filter` and `fft_array_filter_output_shape` are thin consumers of the same plan, so
-  the predicted and produced shapes have one implementation instead of two kept in agreement by
-  a test. Validation happens once, in `build_plan`, instead of across multiple helpers.
-- One vocabulary for boundary handling across GridR: the strings accepted here are those
-  `array_grid_resampling` already takes.
+- The core module is reorganized into pure integer helpers, plan construction and execution. `fft_array_filter` and
+  `fft_array_filter_output_shape` are thin consumers of the same plan, so the predicted and produced shapes have one
+  implementation instead of two kept in agreement by a test. Validation happens once, in `build_plan`, instead of across
+  multiple helpers.
+- One vocabulary for boundary handling across GridR: the strings accepted here are those `array_grid_resampling` already
+  takes.
 - The test suites have been refactored (and created for the *chain* module).
 
 #### Workspace Architecture — Cargo Workspace Split
 - Refactored the codebase to split the single Rust crate into a two-member Cargo workspace:
-  - `rust/gridr`: Pure-Rust core engine without `pyo3` or `numpy` dependencies, allowing it to be consumed as a standalone external Cargo dependency.
+  - `rust/gridr`: Pure-Rust core engine without `pyo3` or `numpy` dependencies, allowing it to be consumed as a
+    standalone external Cargo dependency.
   - `rust/gridr-py`: PyO3 bindings (`cdylib` crate type only) interfacing the pure-Rust engine with Python.
 - Updated internal `use` statements across both crates to align with the workspace boundaries.
 - Updated the project `Makefile` to accommodate the workspace directory structure.
-- **Python Parity:** Preserved exact public Python API and runtime behavior with zero breaking changes on the Python side.
+- **Python Parity:** Preserved exact public Python API and runtime behavior with zero breaking changes on the Python
+  side.
 
 #### Documentation
 - Updated pixel center terminology to align with OGC standard
@@ -327,13 +346,13 @@ docstring.
 
 #### FFT Filtering
 
-- **Crash on `win=None` with an `axes` subset** — non-target axes were filled with `(None, None)`,
-  producing an object-dtype window that failed later with a `TypeError`.
-- **Cross-enumeration equality** — `BoundaryPad.REFLECT == ConvolutionOutputMode.FULL` evaluated
-  to `True`, both being `IntEnum` members of value 2. The enumerations are gone.
-- **Strip shorter than the kernel** — `check_oa_strip_size` did not force the monolithic path,
-  leaving the overlap-add buffer under-sized. Strip margins now derive from the odd-padded
-  kernel, not the raw filter, which was off by one row for an even-sized filter.
+- **Crash on `win=None` with an `axes` subset** — non-target axes were filled with `(None, None)`, producing an
+  object-dtype window that failed later with a `TypeError`.
+- **Cross-enumeration equality** — `BoundaryPad.REFLECT == ConvolutionOutputMode.FULL` evaluated to `True`, both being
+  `IntEnum` members of value 2. The enumerations are gone.
+- **Strip shorter than the kernel** — `check_oa_strip_size` did not force the monolithic path, leaving the overlap-add
+  buffer under-sized. Strip margins now derive from the odd-padded kernel, not the raw filter, which was off by one row
+  for an even-sized filter.
 
 #### Documentation
 
@@ -351,13 +370,12 @@ docstring.
 ### Build & Tooling
 
 - **GitHub Actions** — added `release-python.yml`.
-  - `release-python.yml`: builds wheels for manylinux_2_28/x86_64, macOS (Intel and Apple Silicon),
-    and Windows x86_64 via `cibuildwheel`, on a `v*` tag push (auto-publish) or manual dispatch
-    (build-only by default). A single `cp310-abi3` wheel per platform/arch covers Python 3.10-3.14+
-    (`py_limited_api=cp310`), so no per-Python-version matrix is needed. AVX2/FMA `RUSTFLAGS` applied
-    on every x86_64 target; automatically verified present in the compiled binary via `objdump` on
-    Linux. Publishes to PyPI (or TestPyPI, for manual test runs) via Trusted Publishing (OIDC) — no
-    stored token.
+  - `release-python.yml`: builds wheels for manylinux_2_28/x86_64, macOS (Intel and Apple Silicon), and Windows x86_64
+    via `cibuildwheel`, on a `v*` tag push (auto-publish) or manual dispatch (build-only by default). A single
+    `cp310-abi3` wheel per platform/arch covers Python 3.10-3.14+ (`py_limited_api=cp310`), so no per-Python-version
+    matrix is needed. AVX2/FMA `RUSTFLAGS` applied on every x86_64 target; automatically verified present in the
+    compiled binary via `objdump` on Linux. Publishes to PyPI (or TestPyPI, for manual test runs) via Trusted Publishing
+    (OIDC) — no stored token.
 
 - **CNES Gitlab-CI** - rust/python version's upgrades
   - Bumped default Rust version to 1.97.1
@@ -368,23 +386,21 @@ docstring.
 
 ### ⚠️ Breaking Changes
 
-- **`GridMeshValidator` trait (Rust)** — The `validate` method has been renamed to `validate_mesh`
-  to disambiguate from the newly introduced `validate_point` method. All implementors must update
-  their method name accordingly.
+- **`GridMeshValidator` trait (Rust)** — The `validate` method has been renamed to `validate_mesh` to disambiguate from
+  the newly introduced `validate_point` method. All implementors must update their method name accordingly.
 - **`GxArrayViewInterpolatorInputMaskStrategy` trait (Rust)** — The signatures of `is_valid_window`,
   `is_valid_weighted_window` have changed:
   - The `cache` parameter has been removed from `is_valid_weighted_window`.
-  - New `start_row_idx` and `start_col_idx` parameters have been added alongside the existing
-    `start_idx` (flat index). Implementors may use whichever representation is most efficient for
-    their implementation.
-- **`array_grid_resampling` (Python)** — Two new parameters `trust_padding` and
-  `array_in_mask_safe_win` have been added. `trust_padding` **must be explicitly set** when
-  `boundary_condition` is not `None` ; an exception will be raised otherwise.
-- **`basic_grid_resampling_array` / `basic_grid_resampling_chain` (Python)** — Same `trust_padding`
-  requirement as above when a boundary condition is specified.
-- **`shmutils.SharedMemoryArray` (Python)** — The `gridr.scaling.shmutils` module is now flagged as
-  deprecated and replaced by `gridr.scaling.shared_array`, which exposes a unified facade over three
-  interchangeable shared-memory backends (`shm`, `mmap`, `memfd`).
+  - New `start_row_idx` and `start_col_idx` parameters have been added alongside the existing `start_idx` (flat index).
+    Implementors may use whichever representation is most efficient for their implementation.
+- **`array_grid_resampling` (Python)** — Two new parameters `trust_padding` and `array_in_mask_safe_win` have been
+  added. `trust_padding` **must be explicitly set** when `boundary_condition` is not `None` ; an exception will be
+  raised otherwise.
+- **`basic_grid_resampling_array` / `basic_grid_resampling_chain` (Python)** — Same `trust_padding` requirement as above
+  when a boundary condition is specified.
+- **`shmutils.SharedMemoryArray` (Python)** — The `gridr.scaling.shmutils` module is now flagged as deprecated and
+  replaced by `gridr.scaling.shared_array`, which exposes a unified facade over three interchangeable shared-memory
+  backends (`shm`, `mmap`, `memfd`).
 
 ### Added
 
@@ -392,196 +408,176 @@ docstring.
 
 *Module: `core::gx_resampling_grid`*
 
-- Introduced the `GridPointMesh` structure, a degenerate single-node `GridMesh` optimized for the
-  identity-resolution case (oversampling factor of 1 on both dimensions). This avoids the cost of
-  full mesh interpolation when no resampling is actually needed.
-- Added the `validate_point` method to the `GridMeshValidator` trait for validating individual grid
-  points when operating on a `GridPointMesh`.
-- Added a conditional dispatch in the resampling entry point that selects the fast `GridPointMesh`
-  path when both oversampling factors equal 1, falling back to the regular `GridMesh` interpolation
-  path otherwise.
-- Added the `test_array1_grid_resampling_gridmesh_vs_gridpointmesh_identity` integration test, which
-  verifies bit-exact equivalence between the two paths at identity resolution.
+- Introduced the `GridPointMesh` structure, a degenerate single-node `GridMesh` optimized for the identity-resolution
+  case (oversampling factor of 1 on both dimensions). This avoids the cost of full mesh interpolation when no resampling
+  is actually needed.
+- Added the `validate_point` method to the `GridMeshValidator` trait for validating individual grid points when
+  operating on a `GridPointMesh`.
+- Added a conditional dispatch in the resampling entry point that selects the fast `GridPointMesh` path when both
+  oversampling factors equal 1, falling back to the regular `GridMesh` interpolation path otherwise.
+- Added the `test_array1_grid_resampling_gridmesh_vs_gridpointmesh_identity` integration test, which verifies bit-exact
+  equivalence between the two paths at identity resolution.
 
 #### B-Spline Interpolators — Weight Factorization
 
 *Module: `core::interp::gx_bspline_kernel`*
 
-- Added `bspline{3,5,7,9,11}_all_centered` functions that compute all kernel weights for a centered
-  fractional offset in a single call, factorizing intermediate computations that were previously
-  repeated across per-tap evaluations.
-- Eliminated bounds checks in these functions via a single `get_unchecked_mut` per call. The size
-  contract (output buffer length matches kernel order) is documented in a `# Safety` section on each
-  function.
+- Added `bspline{3,5,7,9,11}_all_centered` functions that compute all kernel weights for a centered fractional offset in
+  a single call, factorizing intermediate computations that were previously repeated across per-tap evaluations.
+- Eliminated bounds checks in these functions via a single `get_unchecked_mut` per call. The size contract (output
+  buffer length matches kernel order) is documented in a `# Safety` section on each function.
 
 #### Safe-Window Masking
 
 *Modules:*
 
 - *Rust:* `core::interp::gx_array_view_interp`, `core::interp::gx_bspline_prefiltering`,
-  `core::interp::gx_bspline_kernels`, `pyapi::interp::py_bspline_prefiltering`,
-  `pyapi::interp::py_bspline_kernel`, `pyapi::py_bindings`
+  `core::interp::gx_bspline_kernels`, `pyapi::interp::py_bspline_prefiltering`, `pyapi::interp::py_bspline_kernel`,
+  `pyapi::py_bindings`
 - *Python:* `bspline_prefiltering.py`, `grid_resampling.py`, `grid_resampling_chain.py`
 
-- Added `BinaryInputMaskWithSafeWindow` (`core::interp::gx_array_view_interp`), a new input mask
-  strategy that allows the caller to declare a *safe window* — a rectangular sub-region of the input
-  where the mask is known to be all-valid. Interpolation kernels falling entirely inside the safe
-  window skip per-sample mask checks entirely.
-- Added Rust
-  (`core::interp::gx_bspline_prefiltering::array1_bspline_prefiltering_ext_gene_mask_safe_win`
+- Added `BinaryInputMaskWithSafeWindow` (`core::interp::gx_array_view_interp`), a new input mask strategy that allows
+  the caller to declare a *safe window* — a rectangular sub-region of the input where the mask is known to be all-valid.
+  Interpolation kernels falling entirely inside the safe window skip per-sample mask checks entirely.
+- Added Rust (`core::interp::gx_bspline_prefiltering::array1_bspline_prefiltering_ext_gene_mask_safe_win`
   `core::interp::gx_bspline_kernels::array1_bspline_prefiltering_ext_mask_safe_win`,
   `pyapi::interp::py_bspline_prefiltering::py_array1_bspline_prefiltering_mask_safe_win_f64`,
-  `pyapi::interp::py_bspline_kernel::PyBSpline*Interpolator::array1_bspline_prefiltering_ext_mask_safe_win`),
-  and Python (`array_bspline_prefiltering_mask_safe_win`) prefiltering companion methods that update
-  the safe window after B-spline prefiltering, eroding it by the kernel's influence radius.
-- Wired the safe-window update into both the Python core (`grid_resampling.py`) and chain
-  (`grid_resampling_chain.py`) resampling paths.
+  `pyapi::interp::py_bspline_kernel::PyBSpline*Interpolator::array1_bspline_prefiltering_ext_mask_safe_win`), and Python
+  (`array_bspline_prefiltering_mask_safe_win`) prefiltering companion methods that update the safe window after B-spline
+  prefiltering, eroding it by the kernel's influence radius.
+- Wired the safe-window update into both the Python core (`grid_resampling.py`) and chain (`grid_resampling_chain.py`)
+  resampling paths.
 - Safe-Window is available for all convolution-based implemented kernels, i.e. all except `nearest`.
 
 #### Exceptions
 
 *Module: `grid_resampling.py`*
 
-- Added the `GridMetricsError` exception, raised internally when the grid metrics required for
-  source-extent computation cannot be derived from the provided grid (mainly due to invalid data).
+- Added the `GridMetricsError` exception, raised internally when the grid metrics required for source-extent computation
+  cannot be derived from the provided grid (mainly due to invalid data).
 
 
 #### Python Mask Strategy — Unified Resolution
 
 *Module: `grid_resampling.py`*
 
-- Added the `ResamplingMaskStrategy` named tuple, which encapsulates all mask-preparation decisions
-  (padding policy, safe window, mask buffer source, etc.).
-- Added `resolve_mask_strategy`, which derives the optimal `ResamplingMaskStrategy` from the input
-  configuration. This function is shared between the standalone and chain code paths, guaranteeing
-  that identical inputs produce identical mask decisions across both entry points.
-- Added `check_mask_strategy`, a defensive validator that verifies the internal consistency of a
-  resolved `ResamplingMaskStrategy` before execution.
+- Added the `ResamplingMaskStrategy` named tuple, which encapsulates all mask-preparation decisions (padding policy,
+  safe window, mask buffer source, etc.).
+- Added `resolve_mask_strategy`, which derives the optimal `ResamplingMaskStrategy` from the input configuration. This
+  function is shared between the standalone and chain code paths, guaranteeing that identical inputs produce identical
+  mask decisions across both entry points.
+- Added `check_mask_strategy`, a defensive validator that verifies the internal consistency of a resolved
+  `ResamplingMaskStrategy` before execution.
 - Added `apply_mask_strategy`, which materializes the final mask buffer from the resolved strategy.
-- Added the `trust_padding` and `array_in_mask_safe_win` parameters to `array_grid_resampling` (see
-  Breaking Changes).
-- Extracted `standalone_preprocessing` from `array_grid_resampling`. This function now isolates
-  source extent computation, data padding, mask preparation, and B-spline prefiltering as a single
-  composable, standalone-testable unit.
+- Added the `trust_padding` and `array_in_mask_safe_win` parameters to `array_grid_resampling` (see Breaking Changes).
+- Extracted `standalone_preprocessing` from `array_grid_resampling`. This function now isolates source extent
+  computation, data padding, mask preparation, and B-spline prefiltering as a single composable, standalone-testable
+  unit.
 
 #### Chain Mask Strategy — Unified Resolution
 
 *Module: `grid_resampling_chain.py`*
 
-- Added `apply_mask_strategy_chain`, the chain-specific counterpart of `apply_mask_strategy`. Unlike
-  the standalone version, it operates on the pre-allocated merged buffer rather than allocating a
-  new padded one, avoiding redundant memory allocations in the chain path.
-- The chain path now consumes `resolve_mask_strategy` from the standalone module, guaranteeing
-  behavioural parity with the standalone path for identical inputs.
-- Added the `trust_padding` parameter to `basic_grid_resampling_array` and
-  `basic_grid_resampling_chain` (see Breaking Changes).
+- Added `apply_mask_strategy_chain`, the chain-specific counterpart of `apply_mask_strategy`. Unlike the standalone
+  version, it operates on the pre-allocated merged buffer rather than allocating a new padded one, avoiding redundant
+  memory allocations in the chain path.
+- The chain path now consumes `resolve_mask_strategy` from the standalone module, guaranteeing behavioral parity with
+  the standalone path for identical inputs.
+- Added the `trust_padding` parameter to `basic_grid_resampling_array` and `basic_grid_resampling_chain` (see Breaking
+  Changes).
 
 #### Array Window Utilities
 
 *Module: `array_window.py`*
 
-- Added `complementary_window_indices`, which computes the list of index tuples covering the
-  complement of a window within an array shape — i.e. the padded border zone excluding the data
-  zone. Used by `apply_mask_strategy_chain` to fill the padded zone of a pre-allocated mask buffer
-  without reallocation.
-- Added unit tests covering nominal cases, edge windows, full-array windows, and axis-restricted
-  variants.
+- Added `complementary_window_indices`, which computes the list of index tuples covering the complement of a window
+  within an array shape — i.e. the padded border zone excluding the data zone. Used by `apply_mask_strategy_chain` to
+  fill the padded zone of a pre-allocated mask buffer without reallocation.
+- Added unit tests covering nominal cases, edge windows, full-array windows, and axis-restricted variants.
 
 #### Shared Memory — Pluggable Backends
 
 *Module: `gridr.scaling.shared_array` (Python)*
 
-- Introduced the `SharedArray` class, a unified facade for sharing `numpy.ndarray` buffers across
-  processes. The class delegates to one of three interchangeable OS-level backends selected at
-  runtime:
-  * `shm` — based on `multiprocessing.shared_memory.SharedMemory` (named POSIX shared memory, stored
-    under `/dev/shm`). Preserved as the historical default for compatibility.
-  * `mmap` — anonymous `mmap(MAP_SHARED)` mapping. No `/dev/shm` footprint, inherited by forked
-    workers via the kernel's address-space duplication. Targets memory-constrained Linux deployments
-    such as Docker containers running with the default 64 MB `/dev/shm` cap.
-  * `memfd` — Linux `memfd_create(2)` plus `mmap`. Anonymous, accessed through a file descriptor
-    that can be transmitted to children via `SCM_RIGHTS` or `multiprocessing.reduction.send_handle`.
-    Compatible with both `fork` and `spawn` start methods, in preparation for the `spawn` default
-    change in Python 3.14.
-- Added the `GRIDR_SHARED_MEMORY_BACKEND` environment variable for deployment-time backend selection
-  without code changes. Accepted values: `shm`, `mmap`, `memfd`, `auto`. Takes precedence over any
-  in-code call to `set_backend`.
-- Added the `GRIDR_SHM_MIN_FREE` environment variable to tune the `/dev/shm` free-space threshold
-  used by the auto-detection selector (default: 67108864 bytes / 64 MiB).
-- Added a backend auto-detection routine that runs when neither `GRIDR_SHARED_MEMORY_BACKEND` nor
-  `set_backend()` has fixed an explicit choice.
+- Introduced the `SharedArray` class, a unified facade for sharing `numpy.ndarray` buffers across processes. The class
+  delegates to one of three interchangeable OS-level backends selected at runtime:
+  * `shm` — based on `multiprocessing.shared_memory.SharedMemory` (named POSIX shared memory, stored under `/dev/shm`).
+    Preserved as the historical default for compatibility.
+  * `mmap` — anonymous `mmap(MAP_SHARED)` mapping. No `/dev/shm` footprint, inherited by forked workers via the kernel's
+    address-space duplication. Targets memory-constrained Linux deployments such as Docker containers running with the
+    default 64 MB `/dev/shm` cap.
+  * `memfd` — Linux `memfd_create(2)` plus `mmap`. Anonymous, accessed through a file descriptor that can be transmitted
+    to children via `SCM_RIGHTS` or `multiprocessing.reduction.send_handle`. Compatible with both `fork` and `spawn`
+    start methods, in preparation for the `spawn` default change in Python 3.14.
+- Added the `GRIDR_SHARED_MEMORY_BACKEND` environment variable for deployment-time backend selection without code
+  changes. Accepted values: `shm`, `mmap`, `memfd`, `auto`. Takes precedence over any in-code call to `set_backend`.
+- Added the `GRIDR_SHM_MIN_FREE` environment variable to tune the `/dev/shm` free-space threshold used by the
+  auto-detection selector (default: 67108864 bytes / 64 MiB).
+- Added a backend auto-detection routine that runs when neither `GRIDR_SHARED_MEMORY_BACKEND` nor `set_backend()` has
+  fixed an explicit choice.
 - Documented the full design and platform compatibility matrix.
 
 
 #### Benchmarking Framework
 
 - Introduced a `pytest-benchmark`-based framework for CPU time benchmarking.
-- Machine configuration information is automatically collected and stored in benchmark reports for
-  reproducibility tracking.
+- Machine configuration information is automatically collected and stored in benchmark reports for reproducibility
+  tracking.
 
 New benchmark suites:
 
 - `tests/python/benchmarks/time/test_time_core_array_grid_resampling.py` — benchmarks
-  `gridr.core.grid.grid_resampling.array_grid_resampling` across grid sizes and interpolation
-  methods, with a comparison against `scipy.ndimage.map_coordinates` configured equivalently.
+  `gridr.core.grid.grid_resampling.array_grid_resampling` across grid sizes and interpolation methods, with a comparison
+  against `scipy.ndimage.map_coordinates` configured equivalently.
 - `tests/python/benchmarks/time/test_time_chain_array_grid_resampling.py` — benchmarks
-  `gridr.chain.grid_resampling_chain.basic_grid_resampling_chain` on a reduced parameter set
-  (resolution, interpolation methods, multi-channel mode), with an optional comparison against the
-  CNES proprietary ORION software (requires the `ORION_BIN_PATH` environment variable).
+  `gridr.chain.grid_resampling_chain.basic_grid_resampling_chain` on a reduced parameter set (resolution, interpolation
+  methods, multi-channel mode), with an optional comparison against the CNES proprietary ORION software (requires the
+  `ORION_BIN_PATH` environment variable).
 
 #### Documentation
 
-- Added the `grid_resampling_core_standalone.ipynb` notebook, a deep-dive into the standalone
-  preprocessing pipeline.
-- Added the `grid_resampling_plot_utils.py` helper module supporting the notebook with adaptive
-  matplotlib rendering.
+- Added the `grid_resampling_core_standalone.ipynb` notebook, a deep-dive into the standalone preprocessing pipeline.
+- Added the `grid_resampling_plot_utils.py` helper module supporting the notebook with adaptive matplotlib rendering.
 
 #### Testing
 
 - Added `pytest-regressions[num]` as a development dependency.
-- Added regression tests for `gridr.chain.grid_resampling_chain.basic_grid_resampling_chain`
-  covering: interpolation methods, multi-channel data, input mask, input grid mask, output mask
-  production, resolution factors, and boundary conditions.
+- Added regression tests for `gridr.chain.grid_resampling_chain.basic_grid_resampling_chain` covering: interpolation
+  methods, multi-channel data, input mask, input grid mask, output mask production, resolution factors, and boundary
+  conditions.
 - Added the `test-python-regression` target to the project `Makefile`.
-- Reference regression data must be generated by running `pytest tests/python/regression` on a
-  reference branch. Data is stored in `tests/python/regression/_regression_data`.
+- Reference regression data must be generated by running `pytest tests/python/regression` on a reference branch. Data is
+  stored in `tests/python/regression/_regression_data`.
 - Extended `test_grid_resampling.py` with two new test classes covering the new code paths:
-  - **`TestGridResamplingMonoPointGrid`** — exercises the `GridPointMesh` fast path (mono-point
-    grid, identity resolution) across all four interpolators (`nearest`, `linear`, `cubic`,
-    `bspline3`). This tests aim to validate the numerical results. Coverage includes:
-    - Identity at the array centre and at the upper-left / bottom-right corners under all
-      combinations of `boundary_condition` ∈ {`"reflect"`, `"constant"`, `None`} × `trust_padding` ∈
-      {`True`, `False`}, with explicit documentation of B-spline-specific behaviour.
-    - Sub-pixel column and row shifts, with the stencil position classified as *inside* vs *outside*
-      the source domain.
-    - Input mask invalidation patterns (invalid at `(0, 0)` and `(17, 27)`) combined with targets on
-      the invalid point itself, on neighbouring valid points, and at interpolation-required
-      positions.
-    - Effect of the B-spline `mask_influence_threshold` parameter — comparing the default (no mask
-      dilation during prefiltering) against an active-dilation configuration that propagates
-      invalidity through the prefilter stencil.
-    - `test_mono_point_grid__invalid_resolution` — verifies that any resolution other than `(1, 1)`
-      raises a `ValueError`, with distinct error messages for the zero-resolution case
-      (`"Resolution must be non zero"`) and the insufficient-grid-coverage case
-      (`"InsufficientGridCoverage"`).
-  - **`TestGridResamplingMultiPointGrid`** — exercises the regular `GridMesh` path with multi-point
-    grids:
-    - Uniformity preservation on constant input data across multiple resampling resolutions
-      (including the large `(200, 300)` case).
+  - **`TestGridResamplingMonoPointGrid`** — exercises the `GridPointMesh` fast path (mono-point grid, identity
+    resolution) across all four interpolators (`nearest`, `linear`, `cubic`, `bspline3`). This tests aim to validate the
+    numerical results. Coverage includes:
+    - Identity at the array center and at the upper-left / bottom-right corners under all combinations of
+      `boundary_condition` ∈ {`"reflect"`, `"constant"`, `None`} × `trust_padding` ∈ {`True`, `False`}, with explicit
+      documentation of B-spline-specific behavior.
+    - Sub-pixel column and row shifts, with the stencil position classified as *inside* vs *outside* the source domain.
+    - Input mask invalidation patterns (invalid at `(0, 0)` and `(17, 27)`) combined with targets on the invalid point
+      itself, on neighboring valid points, and at interpolation-required positions.
+    - Effect of the B-spline `mask_influence_threshold` parameter — comparing the default (no mask dilation during
+      prefiltering) against an active-dilation configuration that propagates invalidity through the prefilter stencil.
+    - `test_mono_point_grid__invalid_resolution` — verifies that any resolution other than `(1, 1)` raises a
+      `ValueError`, with distinct error messages for the zero-resolution case (`"Resolution must be non zero"`) and the
+      insufficient-grid-coverage case (`"InsufficientGridCoverage"`).
+  - **`TestGridResamplingMultiPointGrid`** — exercises the regular `GridMesh` path with multi-point grids:
+    - Uniformity preservation on constant input data across multiple resampling resolutions (including the large
+      `(200, 300)` case).
     - Row and column sub-pixel shifts with linear interpolation.
-    - Cross-product of `grid_mask` invalidation patterns (full invalid, four corners, centre) ×
-      output `win` selections at resolutions `(1, 1)` and `(2, 3)`. Each parametrised case is run
-      twice — once without `win`, once with — and the windowed result is cross-checked against the
-      full result sliced by `window_indices(win)`.
+    - Cross-product of `grid_mask` invalidation patterns (full invalid, four corners, center) × output `win` selections
+      at resolutions `(1, 1)` and `(2, 3)`. Each parametrized case is run twice — once without `win`, once with — and
+      the windowed result is cross-checked against the full result sliced by `window_indices(win)`.
     - **`test_multi_point_grid__safe_window__nominal_case`** — a three-way comparison verifying the
-      `array_in_mask_safe_win` contract: a *correctly declared* safe window must produce results
-      identical to the no-safe-window reference, while an *incorrectly declared* safe window
-      (claiming validity over a region that contains invalid samples) must produce different results
-      — except for `nearest`, which performs no convolution and therefore ignores the safe window.
-      Parameterised across all interpolators, all four `boundary_condition` values, both
-      `trust_padding` values, and both `use_standalone` values.
-- Added a pytest suite of 115 tests covering the three shared memory backends with parametrized fork
-  and spawn execution.
+      `array_in_mask_safe_win` contract: a *correctly declared* safe window must produce results identical to the
+      no-safe-window reference, while an *incorrectly declared* safe window (claiming validity over a region that
+      contains invalid samples) must produce different results — except for `nearest`, which performs no convolution and
+      therefore ignores the safe window. Parameterized across all interpolators, all four `boundary_condition` values,
+      both `trust_padding` values, and both `use_standalone` values.
+- Added a pytest suite of 115 tests covering the three shared memory backends with parametrized fork and spawn
+  execution.
 
 ### Changed
 
@@ -589,115 +585,106 @@ New benchmark suites:
 
 *Module: `core::interp::gx_array_view_interp`*
 
-This is a substantial internal restructuring of the separable convolution machinery. While the
-public `GxArrayViewInterpolator` API is preserved, implementors of custom interpolators or mask
-strategies will be affected (see Breaking Changes).
+This is a substantial internal restructuring of the separable convolution machinery. While the public
+`GxArrayViewInterpolator` API is preserved, implementors of custom interpolators or mask strategies will be affected
+(see Breaking Changes).
 
-- Refactored the module around the const generic parameters `KROWS` and `KCOLS`, which fix the
-  kernel dimensions at compile time. This enables zero-cost generic implementations of the four
-  separable convolution variants: masked / unmasked × bounds-checked / unchecked.
+- Refactored the module around the const generic parameters `KROWS` and `KCOLS`, which fix the kernel dimensions at
+  compile time. This enables zero-cost generic implementations of the four separable convolution variants: masked /
+  unmasked × bounds-checked / unchecked.
 - Each variant now ships two implementations:
-  - A **safe** version that uses pre-slicing and iterators to eliminate inner-loop bounds checks
-    while remaining fully safe.
-  - An **unsafe** version that uses `get_unchecked` throughout, under the precondition — enforced by
-    the bounds classification performed in `array1_interp2_separable_core` — that the caller has
-    already validated index ranges.
-- Introduced a clean separation between the public API (`GxArrayViewInterpolator`) and the new
-  internal computation trait (`GxArrayViewInterpolatorCore<KROWS, KCOLS>`).
+  - A **safe** version that uses pre-slicing and iterators to eliminate inner-loop bounds checks while remaining fully
+    safe.
+  - An **unsafe** version that uses `get_unchecked` throughout, under the precondition — enforced by the bounds
+    classification performed in `array1_interp2_separable_core` — that the caller has already validated index ranges.
+- Introduced a clean separation between the public API (`GxArrayViewInterpolator`) and the new internal computation
+  trait (`GxArrayViewInterpolatorCore<KROWS, KCOLS>`).
 
 **`GxArrayViewInterpolatorCore` trait**
 
-- Provides default implementations for all four separable convolution variants and the unified
-  dispatcher `array1_interp2_separable_core`.
-- Concrete interpolators now only need to implement `compute_weights`; the kernel application logic
-  is inherited automatically.
+- Provides default implementations for all four separable convolution variants and the unified dispatcher
+  `array1_interp2_separable_core`.
+- Concrete interpolators now only need to implement `compute_weights`; the kernel application logic is inherited
+  automatically.
 - B-spline, bicubic, and linear interpolators delegate their `array1_interp2` implementation to
   `array1_interp2_separable_core`, eliminating significant duplication.
-- The nearest-neighbour interpolator retains its direct implementation, as its kernel is not
-  separable in the same sense.
-- `array1_interp2_separable_core` calls the unsafe variants internally — its bounds classification
-  is the safety boundary that justifies this.
+- The nearest-neighbor interpolator retains its direct implementation, as its kernel is not separable in the same sense.
+- `array1_interp2_separable_core` calls the unsafe variants internally — its bounds classification is the safety
+  boundary that justifies this.
 
 **Tests**
 
-- Added a comprehensive unit-test module `core::interp::gx_array_view_interp_core_tests` covering
-  all five trait methods across nominal, identity, multi-variable, boundary, out-of-bounds,
-  masked-input, and output-mask scenarios.
+- Added a comprehensive unit-test module `core::interp::gx_array_view_interp_core_tests` covering all five trait methods
+  across nominal, identity, multi-variable, boundary, out-of-bounds, masked-input, and output-mask scenarios.
 
 #### Mask Validation — Branchless Checks and Short-Circuit Dispatch
 
 *Module: `core::interp::gx_array_view_interp`*
 
-- Added `is_valid_window<H, W>` to `GxArrayViewInterpolatorInputMaskStrategy`: a branchless
-  AND-accumulated check returning `1` iff all samples in the `H × W` window are valid. Implemented
-  for both `NoInputMask` and `BinaryInputMask`.
-- Added `count_valid_window<H, W>` to the same trait: returns the number of valid samples in the
-  `H × W` window. Implemented for `NoInputMask` and `BinaryInputMask`.
-- Refactored `interpolate_masked_unchecked` to use a two-stage short-circuit mask validation,
-  ordered by decreasing probability of the fast-exit case. This avoids the systematic call to
-  `is_valid_weighted_window` and is the primary perf win on typical inputs.
-- Each mask-strategy method (`is_valid`, `is_valid_window`, `count_valid_window`,
-  `is_valid_weighted_window`) now provides a safe and an unsafe variant:
+- Added `is_valid_window<H, W>` to `GxArrayViewInterpolatorInputMaskStrategy`: a branchless AND-accumulated check
+  returning `1` iff all samples in the `H × W` window are valid. Implemented for both `NoInputMask` and
+  `BinaryInputMask`.
+- Added `count_valid_window<H, W>` to the same trait: returns the number of valid samples in the `H × W` window.
+  Implemented for `NoInputMask` and `BinaryInputMask`.
+- Refactored `interpolate_masked_unchecked` to use a two-stage short-circuit mask validation, ordered by decreasing
+  probability of the fast-exit case. This avoids the systematic call to `is_valid_weighted_window` and is the primary
+  perf win on typical inputs.
+- Each mask-strategy method (`is_valid`, `is_valid_window`, `count_valid_window`, `is_valid_weighted_window`) now
+  provides a safe and an unsafe variant:
   - **Safe**: pre-sliced rows + iterators to eliminate inner-loop bounds checks.
   - **Unsafe**: `get_unchecked` on both mask data and weights.
-- This change only meaningfully affects `BinaryInputMask`; `NoInputMask` is unchanged, as all its
-  methods are compile-time constants with no data access.
+- This change only meaningfully affects `BinaryInputMask`; `NoInputMask` is unchanged, as all its methods are
+  compile-time constants with no data access.
 
 #### Grid Resampling — Internal Restructuring
 
 *Module: `core::gx_grid_resampling`*
 
 - Renamed `validate` to `validate_mesh` in the `GridMeshValidator` trait (see Breaking Changes).
-- Split the monolithic `match (ima_mask_in, ima_mask_out, check_boundaries)` block into a chain of
-  three small generic helper functions, each resolving one interpolation-context component
-  independently. This makes the dispatch logic substantially easier to follow and extend.
+- Split the monolithic `match (ima_mask_in, ima_mask_out, check_boundaries)` block into a chain of three small generic
+  helper functions, each resolving one interpolation-context component independently. This makes the dispatch logic
+  substantially easier to follow and extend.
 
 #### Grid Resampling — Handling of Unresolvable Grid Metrics
 
 *Module: `grid_resampling.py`*
 
-`array_grid_resampling` now degrades gracefully when grid metrics cannot be computed during
-standalone preprocessing (e.g. malformed or degenerate input grid). This aligns the behaviour of the
-standalone entry point with the chain entry point, which already exhibited this contract.
+`array_grid_resampling` now degrades gracefully when grid metrics cannot be computed during standalone preprocessing
+(e.g. malformed or degenerate input grid). This aligns the behavior of the standalone entry point with the chain entry
+point, which already exhibited this contract.
 
-- **Previous behaviour:** an Exception raised by `standalone_preprocessing` propagated unhandled to
-  the caller.
-- **New behaviour:** the exception is caught internally and the following steps are executed in
-  order:
-  1. A `UserWarning` is emitted with the message
-     `"Grid metrics cannot be computed. Check your input grid data"`.
+- **Previous behavior:** an Exception raised by `standalone_preprocessing` propagated unhandled to the caller.
+- **New behavior:** the exception is caught internally and the following steps are executed in order:
+  1. A `UserWarning` is emitted with the message `"Grid metrics cannot be computed. Check your input grid data"`.
   2. The interpolation core is bypassed entirely (no Rust call).
-  3. The output array is filled with `nodata_out` and, if `array_out_mask` is provided, the
-     corresponding region of the mask is set to `Validity.INVALID`.
+  3. The output array is filled with `nodata_out` and, if `array_out_mask` is provided, the corresponding region of the
+     mask is set to `Validity.INVALID`.
   4. When `array_out_win` is provided, both substitutions are scoped to that window
-     (`view[(..., *window_indices(array_out_win))] = nodata_out`); the rest of the output buffer and
-     mask remain untouched.
+     (`view[(..., *window_indices(array_out_win))] = nodata_out`); the rest of the output buffer and mask remain
+     untouched.
 
 #### Chain Subsystem — Shared Memory Plumbing
 
 *Modules: `gridr.chain.grid_resampling_chain`, `gridr.chain.grid_mask_chain` (Python)*
 
-- The chain subsystem now allocates its inter-process buffers through the new `SharedArray` facade
-  rather than directly through `multiprocessing.shared_memory.SharedMemory`. Single-process / core
-  API paths are unaffected.
+- The chain subsystem now allocates its inter-process buffers through the new `SharedArray` facade rather than directly
+  through `multiprocessing.shared_memory.SharedMemory`. Single-process / core API paths are unaffected.
 - `gridr.scaling.shmutils` has been flagged as deprecated.
-- `create_and_register_sma` has been renamed as `create_and_register`. It now appends `SharedArray`
-  instances to the tracking list rather than name strings (see Breaking Changes).
-  `SharedArray.clear_buffers` detects which form the list contains and dispatches accordingly.
+- `create_and_register_sma` has been renamed as `create_and_register`. It now appends `SharedArray` instances to the
+  tracking list rather than name strings (see Breaking Changes). `SharedArray.clear_buffers` detects which form the list
+  contains and dispatches accordingly.
 
 #### Documentation
 
-- Restructured the tutorial notebooks into focused, single-topic series for easier navigation and
-  selective reading.
-- The monolithic core resampling tutorial is now split into 8 notebooks
-  (`grid_resampling_001_getting_started` through `grid_resampling_008_pipeline_mode`).
+- Restructured the tutorial notebooks into focused, single-topic series for easier navigation and selective reading.
+- The monolithic core resampling tutorial is now split into 8 notebooks (`grid_resampling_001_getting_started` through
+  `grid_resampling_008_pipeline_mode`).
 - The monolithic `grid_resampling_chain_001` notebook is now split into 8 notebooks
-  (`grid_resampling_chain_000_overview` through `grid_resampling_chain_007_io_memory`), with a new
-  overview page mapping every core API argument to its chain counterpart.
-- The monolithic `grid_masking_001` notebook is now split into 5 notebooks
-  (`core_masking_001_conventions` through `core_masking_005_combined`).
-- Each series has its own Sphinx index page (`*_index.rst`) with a recommended reading order and
-  per-page prerequisites.
+  (`grid_resampling_chain_000_overview` through `grid_resampling_chain_007_io_memory`), with a new overview page mapping
+  every core API argument to its chain counterpart.
+- The monolithic `grid_masking_001` notebook is now split into 5 notebooks (`core_masking_001_conventions` through
+  `core_masking_005_combined`).
+- Each series has its own Sphinx index page (`*_index.rst`) with a recommended reading order and per-page prerequisites.
 - Deleted `doc` folder and moved logo images to `docs/source/_static/images`.
 
 ### Fixed
@@ -706,19 +693,17 @@ standalone entry point with the chain entry point, which already exhibited this 
 
 *Module: `grid_resampling_chain.py`*
 
-- `basic_grid_resampling_chain` now validates that the input mask, when provided, shares the same
-  width and height as the input source array. Previously, mismatched dimensions could surface as
-  opaque indexing errors deep in the Rust call stack; the check now raises a clear, early error.
+- `basic_grid_resampling_chain` now validates that the input mask, when provided, shares the same width and height as
+  the input source array. Previously, mismatched dimensions could surface as opaque indexing errors deep in the Rust
+  call stack; the check now raises a clear, early error.
 
 ### Build & Tooling
 
 - **Makefile**
-  - Rust build steps are now limited to the necessary cases (source changes or missing compiled
-    library), eliminating spurious rebuilds.
-  - The `test-python` rule now excludes benchmark tests, which are run separately via dedicated
-    targets.
-  - Added `RUSTFLAGS` environment variable with value `-C target-feature=+avx2,+fma`. This can be
-    overriden by caller.
+  - Rust build steps are now limited to the necessary cases (source changes or missing compiled library), eliminating
+    spurious rebuilds.
+  - The `test-python` rule now excludes benchmark tests, which are run separately via dedicated targets.
+  - Added `RUSTFLAGS` environment variable with value `-C target-feature=+avx2,+fma`. This can be overriden by caller.
 
 ## [0.5.2] - 2026-03-13
 
@@ -727,10 +712,10 @@ standalone entry point with the chain entry point, which already exhibited this 
 #### Grid Resampling
 
 - **Core Grid Resampling (`grid_resampling.py`)**
-  - Fixed an UnboundLocalError in `calculate_source_extent()` when grid metrics could not be
-    computed - the variable was referenced before assignment in that code path.
-  - Added the `test_grid_resampling_standalone_no_idendity_1_1_full_invalid_grid()` in
-    `test_grid_resampling.py` to cover the previous mentioned path.
+  - Fixed an UnboundLocalError in `calculate_source_extent()` when grid metrics could not be computed - the variable was
+    referenced before assignment in that code path.
+  - Added the `test_grid_resampling_standalone_no_idendity_1_1_full_invalid_grid()` in `test_grid_resampling.py` to
+    cover the previous mentioned path.
 
 ## [0.5.1] - 2026-01-29
 
@@ -753,23 +738,20 @@ standalone entry point with the chain entry point, which already exhibited this 
 
 - **B-Spline Interpolation Implementation**
   - Added B-Spline interpolation support for orders 3, 5, 7, 9, and 11
-  - Added Rust module `core/interp/gx_bspline_prefiltering` implementing B-Spline prefiltering
-    methods and mask handling
-  - Added Rust module `core/interp/gx_bspline_kernel` implementing `GxArrayViewInterpolator` trait
-    for B-Spline
-  - Implemented `GxBSplineInterpolatorTrait<const N: usize>` trait using monomorphic approach for
-    compile-time B-Spline order specification
+  - Added Rust module `core/interp/gx_bspline_prefiltering` implementing B-Spline prefiltering methods and mask handling
+  - Added Rust module `core/interp/gx_bspline_kernel` implementing `GxArrayViewInterpolator` trait for B-Spline
+  - Implemented `GxBSplineInterpolatorTrait<const N: usize>` trait using monomorphic approach for compile-time B-Spline
+    order specification
   - Created Python bindings for `BSpline<N>Interpolator` classes for all supported orders
   - Added Rust test suite for B-Spline interpolation
   - Created API documentation
 
 - **Interpolator Margins**
-  - Added `total_margins()` method to `GxArrayViewInterpolator` trait to compute required margins on
-    each side for interpolation
-  - For B-Spline interpolators, `total_margins()` includes pre-filtering domain extension for
-    controlled precision in infinite sum approximations
-  - Note: `initialize()` method must be called before `total_margins()` on B-Spline interpolator
-    objects
+  - Added `total_margins()` method to `GxArrayViewInterpolator` trait to compute required margins on each side for
+    interpolation
+  - For B-Spline interpolators, `total_margins()` includes pre-filtering domain extension for controlled precision in
+    infinite sum approximations
+  - Note: `initialize()` method must be called before `total_margins()` on B-Spline interpolator objects
   - Created Python bindings for `total_margins()` method
   - Added Python test suite for margin computation
 
@@ -782,33 +764,30 @@ standalone entry point with the chain entry point, which already exhibited this 
   - Implemented `array_add` method in `gridr.core.array_utils` with comprehensive tests
 
 - **Grid Coordinate Operations**
-  - Added `array_shift_grid_coordinates` method to `core.grid.grid_utils` for in-place grid
-    coordinate shifting
+  - Added `array_shift_grid_coordinates` method to `core.grid.grid_utils` for in-place grid coordinate shifting
 
 - **Source Boundary Computation**
-  - Added `array1_compute_resampling_grid_src_boundaries` Rust function in `gx_grid_geometry.rs`
-    module
+  - Added `array1_compute_resampling_grid_src_boundaries` Rust function in `gx_grid_geometry.rs` module
   - Created Python bindings for `array1_compute_resampling_grid_src_boundaries` function
-  - Implemented `array_compute_resampling_grid_src_boundaries` method in
-    `gridr.core.grid.grid_utils` with comprehensive tests
+  - Implemented `array_compute_resampling_grid_src_boundaries` method in `gridr.core.grid.grid_utils` with comprehensive
+    tests
 
 #### Grid Resampling
 
 - **Core Grid Resampling (`array_grid_resampling`)**
-  - Added `check_boundaries` boolean parameter to activate safe grid boundaries computation (see
-    Source Boundary Computation)
+  - Added `check_boundaries` boolean parameter to activate safe grid boundaries computation (see Source Boundary
+    Computation)
   - Added `boundary_condition` parameter accepting values: 'edge', 'reflect', 'symmetric', 'wrap'
   - Added `standalone` parameters to `gridr.core.grid.grid_resampling.array_grid_resampling`
-  - Standalone mode performs: automatic grid metrics computation, source image required region
-    computation (considering interpolation margins), optional padding operation, and B-Spline
-    prefiltering
+  - Standalone mode performs: automatic grid metrics computation, source image required region computation (considering
+    interpolation margins), optional padding operation, and B-Spline prefiltering
   - Updated test suite to include standalone mode validation
 
 - **Grid Resampling Chain (`basic_grid_resampling_chain`)**
   - Added `grid_shift` parameter to apply global bias to grid coordinates
   - Added `boundary_condition` parameter accepting values: 'edge', 'reflect', 'symmetric', 'wrap'
-  - Added `SAFECHECK_SOURCE_BOUNDARIES` constant (default: True) to determine read window using all
-    valid coordinates within working grid subset (see Source Boundary Computation)
+  - Added `SAFECHECK_SOURCE_BOUNDARIES` constant (default: True) to determine read window using all valid coordinates
+    within working grid subset (see Source Boundary Computation)
   - Method now creates and initialize interpolator objects internally
 
 #### Boundary Handling
@@ -856,10 +835,9 @@ standalone entry point with the chain entry point, which already exhibited this 
   - Moved `PyInterpolatorType` to dedicated Rust module `pyapi/interp/py_interp.rs`
   - Added `AnyInterpolator` enum to replace `PyInterpolatorType` in `py_grid_resampling`
   - Changed interpolator passing mechanism: now passed as Python object instead of string literal
-  - Implemented `FromPyObject` trait for `AnyInterpolator` to retrieve Rust object from Python
-    object
-  - `AnyInterpolator` enum variants wrap interpolator implementations using `Arc` (Atomic Reference
-    Counting) and `RwLock` for thread-safe shared ownership
+  - Implemented `FromPyObject` trait for `AnyInterpolator` to retrieve Rust object from Python object
+  - `AnyInterpolator` enum variants wrap interpolator implementations using `Arc` (Atomic Reference Counting) and
+    `RwLock` for thread-safe shared ownership
   - Note: This change requires interpolator creation on Python side before passing to Rust functions
 
 #### Code Organization
@@ -871,18 +849,17 @@ standalone entry point with the chain entry point, which already exhibited this 
 #### Numerical Precision
 
 - **Grid Coordinate Calculations**
-  - Implemented controlled rounding to 12 decimal digits for internal full-resolution grid
-    calculations in `gx_grid_resampling.rs`
+  - Implemented controlled rounding to 12 decimal digits for internal full-resolution grid calculations in
+    `gx_grid_resampling.rs`
 
 #### Documentation Infrastructure
 
 - **Sphinx Configuration**
   - Updated MathJax from version 2 to version 3
-  - Changed MathJax CDN URL from
-    `https://cdn.jsdelivr.net/npm/mathjax@2/MathJax.js?config=TeX-AMS-MML_HTMLorMML` to
+  - Changed MathJax CDN URL from `https://cdn.jsdelivr.net/npm/mathjax@2/MathJax.js?config=TeX-AMS-MML_HTMLorMML` to
     `https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js`
-  - Added `mathjax3_config` with inline math delimiters: `[['$', '$'], ['\\(', '\\)']]` and display
-    math delimiters: `[['$$', '$$'], ['\\[', '\\]']]`
+  - Added `mathjax3_config` with inline math delimiters: `[['$', '$'], ['\\(', '\\)']]` and display math delimiters:
+    `[['$$', '$$'], ['\\[', '\\]']]`
   - Added `sphinxcontrib.bibtex` extension
   - Configured `bibtex_bibfiles` to `['references.bib']`
   - Set `bibtex_default_style` to `'plain'`
@@ -890,16 +867,15 @@ standalone entry point with the chain entry point, which already exhibited this 
   - Set `myst_dmath_double_inline` to `True`
 
 - **Documentation Structure**
-  - Changed page title from "API Documentation" to "API Reference" in
-    `docs/source/api_python/modules.rst`
+  - Changed page title from "API Documentation" to "API Reference" in `docs/source/api_python/modules.rst`
   - Reorganized Sphinx main menu structure
   - Removed `docs/source/developer_guide/index.rst` section heading
   - Removed `docs/source/api_python/misc/index.rst` module documentation
   - Removed `docs/source/api_python/misc/mandrill.rst` documentation page
 
 - **Notebook References**
-  - Updated notebook reference from `grid_resampling_001_work.ipynb` to `grid_resampling_001.ipynb`
-    in `docs/source/_notebooks/index.rst`
+  - Updated notebook reference from `grid_resampling_001_work.ipynb` to `grid_resampling_001.ipynb` in
+    `docs/source/_notebooks/index.rst`
 
 - **Images**
   - Added new SVG file `docs/source/images/numeric_image.svg`
@@ -923,8 +899,7 @@ standalone entry point with the chain entry point, which already exhibited this 
 #### Numerical Stability
 
 - **Floating-Point Precision**
-  - Resolved floating-point precision issues in grid coordinate calculations in
-    `gx_grid_resampling.rs`
+  - Resolved floating-point precision issues in grid coordinate calculations in `gx_grid_resampling.rs`
   - Fixed nearest neighbor interpolation bug caused by precision limitations
   - Addressed discrepancies between chain method and monolithic core method
 
@@ -936,8 +911,7 @@ standalone entry point with the chain entry point, which already exhibited this 
 #### Documentation
 
 - **Styling**
-  - Improved CSS styling of log extracts in `grid_resampling_chain` notebook for proper line
-    breaking
+  - Improved CSS styling of log extracts in `grid_resampling_chain` notebook for proper line breaking
 
 
 ## [0.4.3] - 2025-10-21
@@ -955,8 +929,7 @@ standalone entry point with the chain entry point, which already exhibited this 
 ### Changed
 - **CI/CD**: Release jobs now trigger **only** on semantic version tags (e.g., `vX.Y.Z`).
 - **Dependencies**: Upgraded `pyo3` to **v0.26.0** to address security vulnerability .
-- **Documentation**: Changed the contributing part in order to adhere the strict linear trunk-based
-  branching strategy.
+- **Documentation**: Changed the contributing part in order to adhere the strict linear trunk-based branching strategy.
 
 ### Fixed
 - **Build**: Generate ABI3-compatible wheels for Python 3.10+.
@@ -970,8 +943,8 @@ standalone entry point with the chain entry point, which already exhibited this 
 
 ### Added
 - Added usage of pre-commit with flake8, isort and black
-- Added license and opensource related files : LICENSE, NOTICE, AUTHORS.md, CONTRIBUTING.md, Clause
-  of License Aggreements files
+- Added license and opensource related files : LICENSE, NOTICE, AUTHORS.md, CONTRIBUTING.md, Clause of License
+  Aggreements files
 - Added Developer_Guide (WIP) and License sections in sphinx documentation
 - scripts:
     - Added scripts directory in project tree
@@ -980,31 +953,26 @@ standalone entry point with the chain entry point, which already exhibited this 
     - Added templates directory in project tree
     - Added templates to generate main NOTICE and Python/Rust 3rd party notices sections.
 - Added Rust tests for `GxNearestInterpolator` and `GxLinearInterpolator` to verify mask usage
-- Added Python test for the core `grid.grid_resampling.py` module. The test currently covers only
-  identity grid transforms at full resolution.
+- Added Python test for the core `grid.grid_resampling.py` module. The test currently covers only identity grid
+  transforms at full resolution.
 - Added `array_convert`, `is_clip_required` and `is_clip_to_dtype_limits_safe` Python methods in the
-  `gridr.core.utils.array_utils.py` module as well as corresponding tests. These methods are used by
-  the `grid_resampling_chain` to convert data type before writing to disk in order to match the
-  output dataset type.
+  `gridr.core.utils.array_utils.py` module as well as corresponding tests. These methods are used by the
+  `grid_resampling_chain` to convert data type before writing to disk in order to match the output dataset type.
 
 ### Changed
 - Added license related header in Python and Rust source files
-- Apply pre-commit hooks (flake8, isort, black) to existing Python source files in Python/gridr and
-  tests
+- Apply pre-commit hooks (flake8, isort, black) to existing Python source files in Python/gridr and tests
 - Documentation
 - Added a temporary change in `grid_resampling_chain` to adapt margin to the interpolation function.
-- Tests for `grid_resampling_chain` have been enhanced to include interpolators other than `cubic`
-  and output types different from `np.float64`. The `linear` interpolator is now tested, while the
-  `nearest` interpolator is not due to an identified bug.
-- Tests for `grid_resampling_chain` now use the newly local implemented utility method
-  `assert_all_close_with_details`, which provides detailed information about differences when they
-  occur.
+- Tests for `grid_resampling_chain` have been enhanced to include interpolators other than `cubic` and output types
+  different from `np.float64`. The `linear` interpolator is now tested, while the `nearest` interpolator is not due to
+  an identified bug.
+- Tests for `grid_resampling_chain` now use the newly local implemented utility method `assert_all_close_with_details`,
+  which provides detailed information about differences when they occur.
 
 ### Fixed
-- Fixed the `array1_interp2` for `GxNearestInterpolator` to properly set the nodata value for masked
-  output pixels.
-- Fixed the `grid_resampling_chain` method to work with output datasets whose types are different
-  from float64.
+- Fixed the `array1_interp2` for `GxNearestInterpolator` to properly set the nodata value for masked output pixels.
+- Fixed the `grid_resampling_chain` method to work with output datasets whose types are different from float64.
 - Fixed the test class name in `test_array_utils` from TestArrayWindow to TestArrayUtils.
 
 
@@ -1013,8 +981,7 @@ standalone entry point with the chain entry point, which already exhibited this 
 ### Added
 
 - Grid Masks:
-    - (Rust Core) GridNodeValidator trait and implementation supporting No Mask, Raster mask and
-      Sentinel value options.
+    - (Rust Core) GridNodeValidator trait and implementation supporting No Mask, Raster mask and Sentinel value options.
     - Configurable valid cell value in grid masks (replaces hardcoded value of 1)
     - Configurable sentinel value within grid coordinates to identify invalid cells
     - Using grid masks or a sentinel value are optional and mutually exclusive
@@ -1023,8 +990,7 @@ standalone entry point with the chain entry point, which already exhibited this 
     - New data structure to hold grid geometric metrics
     - Computation of grid geometric metrics for in-memory grids
 - Grid Resampling
-    - (Rust Core) Introduced trait strategies design concept for Input data masks, Output data masks
-      and Bound checks
+    - (Rust Core) Introduced trait strategies design concept for Input data masks, Output data masks and Bound checks
     - (Rust Core) Implemented strategies traits to cover both with and without options
     - (Rust Core) Added GxArrayViewInterpolationContextTrait trait to wrap the strategies traits
     - Nearest neighbor and linear interpolation methods
@@ -1032,12 +998,11 @@ standalone entry point with the chain entry point, which already exhibited this 
     - Configurable indexing shift for input array coordinates
     - Configurable target window for output buffer
     - Safe method `grid_resolution_window_safe` for handling edge cases in grid definitions
-    - Chain module for managing I/O (input/output image, grids and input/output masks) and memory
-      with tiling capabilities
+    - Chain module for managing I/O (input/output image, grids and input/output masks) and memory with tiling
+      capabilities
 - Antialiasing
     - Added reciprocal cell frequential filter functionality
-    - Implemented core method to compute antialiasing filter from a grid using reciprocal cell
-      frequential filter
+    - Implemented core method to compute antialiasing filter from a grid using reciprocal cell frequential filter
 - Documentation
     - Add documentation notebooks for the grid mask and grid resampling chains
 - Branding

@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Centre National d'Etudes Spatiales (CNES).
+# Copyright (c) 2024-2026 Centre National d'Etudes Spatiales (CNES).
 #
 # This file is part of GRIDR
 # (see https://github.com/CNES/gridr).
@@ -17,7 +17,7 @@
 # limitations under the License.
 #
 """
-Lattice
+Two-dimensional lattices and their Voronoi cells.
 """
 
 from enum import Enum
@@ -164,94 +164,48 @@ class Lattice2d:
     def voronoi_paving_cell(
         cls,
         lattice2d: "Lattice2d",
-        cosine_treshold: float = 0.01,
+        rtol: float = 1e-9,
         reduction_itermax: int = 100,
-    ):
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
         """
-        Compute the normalized normal vectors of the edges of a minimal Voronoi
-        paving cell.
+        Compute the facet vectors of the Voronoi cell of a lattice.
 
-        Given a lattice in two-dimensional space, the minimal Voronoi paving
-        cell is defined as follows:
+        The Voronoi cell of the origin is the set of points closer to the
+        origin than to any other lattice point, in the Euclidean metric. Its
+        translates by the lattice vectors pave the plane. In two dimensions the
+        cell has two or three pairs of opposite edges, defined by the
+        perpendicular bisectors of the segments joining the origin to its
+        relevant vectors ``v``. Each pair is described by the facet vector
+        ``a = v / |v|^2``: the cell is ``{x : |x . a| <= 1/2}`` over the facets.
 
-        -   For every point within the cell, the closest point in the lattice is
-            the cell's centroid
-        -   The collection of all such cells, each centered on a different lattice
-            point, completely covers the plane without overlaps
-
-        This implementation calculates the unit-length normal vectors for each
-        edge of the Voronoi cell. These vectors:
-
-        -   Are perpendicular to their corresponding edges
-        -   Have unit length (normalized)
-
-        The six nearest neighbor point in the lattice to any given cell centroid
-        are determined by all possible integer linear combinations of the basis
-        vectors where the coefficients are restricted to the set {-1, 0, 1}.
+        The relevant vectors are obtained from an obtuse superbase of the
+        reduced basis (see :func:`relevant_vectors`).
 
         Parameters
         ----------
-        lattice2d: Lattice2d
-            The input 2D lattice for which we want to compute the paving cell.
+        lattice2d : Lattice2d
+            The input 2D lattice.
 
-        cosine_treshold: float, optional
-            The angular threshold parameter that determines the orthogonality
-            condition between the two basis vectors of the reduced lattice. When
-            the cosine of the angle between these vectors falls below this
-            threshold, the algorithm considers them sufficiently orthogonal to
-            produce a quadrilateral Voronoi cell rather than a hexagonal one.
+        rtol : float, optional
+            Relative tolerance on the scalar product of the reduced basis
+            vectors below which the basis is considered orthogonal and the
+            cell is a rectangle instead of a hexagon.
 
         reduction_itermax : int, optional
-            Maximum number of iterations for the lattice reduction
-            preprocessing.
+            Maximum number of iterations of the lattice reduction.
 
         Returns
         -------
-        Tuple[np.ndarray, np.ndarray, Union[np.ndarray, NoReturn]]
-            A tuple containing the three basis vectors (w1, w2, w3) for the
-            Voronoi cell. w3 will be None if the cell is quadrilateral (cosine
-            below threshold).
+        tuple[np.ndarray, np.ndarray, np.ndarray | None]
+            The facet vectors ``(a1, a2, a3)``. ``a3`` is None when the cell is
+            a rectangle.
         """
         lattice2d.check_singularity()
-
-        # Step 1: Lattice reduction to obtain a reduced basis
-        w_geometry = cls.gaussian_lattice_reduction(lattice2d, reduction_itermax)
-
-        # Step 2: Extract the reduced basis vectors
-        # - v1 is orthogonal to the perpendicular bisector edge between the
-        # centroid and neighbors at ±v1 (with v2=0)
-        # - v2 is orthogonal to the perpendicular bisector edge between the
-        # centroid and neighbors at ±v2 (with v1=0)
-        w1 = w_geometry.v1  # First basis vector
-        w2 = w_geometry.v2  # Second basis vector
-
-        # Step 3: Compute the cosine of the angle between w1 and w2
-        # This determines whether we'll have a hexagonal or quadrilateral cell
-        cos_w1_w2 = np.dot(w1, w2) / (np.dot(w1, w1) * np.dot(w2, w2)) ** 0.5
-
-        # Step 4: Determine cell geometry based on angle cosine
-        if np.abs(cos_w1_w2) > cosine_treshold:
-            # Hexagonal cell case - compute the third basis vector
-            # Candidates are w1 + w2 and w1 - w2
-            w3_a = w1 + w2
-            w3_b = w1 - w2
-
-            # Select the candidate with the smallest norm
-            w3 = w3_b if np.dot(w3_b, w3_b) < np.dot(w3_a, w3_a) else w3_a
-
-            # Normalize and adjust sign for consistent orientation
-            w3 = w3 / np.dot(w3, w3)
-            w3[1] = -w3[1]  # Flip y-component for standard orientation
-        else:
-            w3 = None  # Quadrilateral cell case
-
-        # Step 5: Normalize and standardize orientation for all basis vectors
-        w1 = w1 / np.dot(w1, w1)
-        w1[1] = -w1[1]
-        w2 = w2 / np.dot(w2, w2)
-        w2[1] = -w2[1]
-
-        return w1, w2, w3
+        facets = voronoi_cell_facets(
+            lattice2d.as_matrix(), rtol=rtol, reduction_itermax=reduction_itermax
+        )
+        a3 = facets[2] if len(facets) == 3 else None
+        return facets[0], facets[1], a3
 
     @classmethod
     def gaussian_lattice_reduction(
@@ -261,7 +215,8 @@ class Lattice2d:
     ) -> "Lattice2d":
         r"""A Gaussian Lattice Reduction algorithm implementation.
 
-        This method reduces a 2D lattice basis to find the smallest vectors.
+        This method reduces a 2D lattice basis to find the smallest vectors. (see
+        :func:`gauss_reduce`).
 
         Parameters
         ----------
@@ -275,56 +230,166 @@ class Lattice2d:
         -------
         Lattice2d
             A new Lattice2d object whose vectors are the smallest one.
-
-        Notes
-        -----
-        The algorithm works as follows:
-
-        1.  If :math:`\|\mathbf{v}_2\| < \|\mathbf{v}_1\|`, swap
-            :math:`\mathbf{v}_1` and :math:`\mathbf{v}_2`.
-
-        2.  Compute the projection scalar :math:`m` :
-
-            .. math::
-
-              m = \left\lfloor
-                  \frac{\mathbf{v}_1 \cdot \mathbf{v}_2}
-                       {\mathbf{v}_1 \cdot \mathbf{v}_1}
-                  \right\rceil
-
-        3.  If :math:`m = 0`, return the original basis vectors
-            :math:`\mathbf{v}_1` and :math:`\mathbf{v}_2`.
-
-        4.  Replace :math:`\mathbf{v}_2` with
-            :math:`\mathbf{v}_2 - m \mathbf{v}_1`
-
-        5.  Repeat the process until convergence or until the vectors
-            are orthogonal or ``itermax`` is reached
-
         """
-        u1 = lattice2d.v1.copy()
-        u2 = lattice2d.v2.copy()
-        counter = 0
-
-        while counter < itermax:
-            # Calculate norms
-            norm_u1_sq = np.dot(u1, u1)
-            norm_u2_sq = np.dot(u2, u2)
-
-            # Swap if necessary
-            if norm_u2_sq < norm_u1_sq:
-                # swap u1 and u2
-                u1, u2 = u2, u1
-                norm_u1_sq, norm_u2_sq = norm_u2_sq, norm_u1_sq
-
-            # Calculate projection
-            m = int(np.dot(u1, u2) / norm_u1_sq)
-
-            if m == 0:
-                break
-
-            # Update u2
-            u2 = u2 - m * u1
-            counter += 1
-
+        u1, u2 = gauss_reduce(lattice2d.v1, lattice2d.v2, itermax)
         return cls(v1=u1, v2=u2, domain=lattice2d.domain)
+
+
+def gauss_reduce(
+    b1: np.ndarray, b2: np.ndarray, itermax: int = 100
+) -> tuple[np.ndarray, np.ndarray]:
+    r"""
+    Lagrange-Gauss reduction of a 2D lattice basis.
+
+    The algorithm orders the basis so that ``|u1| <= |u2|``, replaces ``u2``
+    by ``u2 - m u1`` with ``m`` the integer nearest to ``u1 . u2 / |u1|^2``,
+    and repeats until ``m = 0``. The basis is ordered once more at the end.
+
+    Parameters
+    ----------
+    b1, b2 : np.ndarray
+        Basis vectors.
+
+    itermax : int, optional
+        Safety bound on the number of iterations.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        Reduced basis ``(u1, u2)`` with ``|u1| <= |u2|`` and
+        ``|u1 . u2| <= |u1|^2 / 2``.
+    """
+    u1 = np.asarray(b1, dtype=np.float64).copy()
+    u2 = np.asarray(b2, dtype=np.float64).copy()
+    for _ in range(itermax):
+        if u2 @ u2 < u1 @ u1:
+            u1, u2 = u2, u1
+        m = int(np.rint((u1 @ u2) / (u1 @ u1)))
+        if m == 0:
+            break
+        u2 = u2 - m * u1
+    if u2 @ u2 < u1 @ u1:
+        u1, u2 = u2, u1
+    return u1, u2
+
+
+def relevant_vectors(
+    b1: np.ndarray, b2: np.ndarray, rtol: float = 1e-9, itermax: int = 100
+) -> list[np.ndarray]:
+    """
+    Voronoi-relevant vectors of a 2D lattice, from an obtuse superbase.
+
+    After reduction, the sign of ``u2`` is chosen so that ``u1 . u2 <= 0``;
+    ``u1``, ``u2`` and ``-(u1 + u2)`` then form an obtuse superbase
+    :cite:`kurlin2024mathematics`. The relevant vectors are ``u1``, ``u2``
+    and, unless the reduced basis is orthogonal, ``u1 + u2``.
+    The Voronoi cell of the origin is ``{x : |x . v| <= |v|^2 / 2}`` over
+    these vectors: a hexagon, or a rectangle in the orthogonal case.
+
+    Parameters
+    ----------
+    b1, b2 : np.ndarray
+        Lattice basis.
+
+    rtol : float, optional
+        Relative tolerance on ``u1 . u2`` below which the reduced basis is
+        considered orthogonal.
+
+    itermax : int, optional
+        Maximum number of iterations of the reduction.
+
+    Returns
+    -------
+    list[np.ndarray]
+        Two or three relevant vectors.
+    """
+    u1, u2 = gauss_reduce(b1, b2, itermax)
+    if u1 @ u2 > 0:
+        u2 = -u2
+    vectors = [u1, u2]
+    if abs(u1 @ u2) > rtol * np.sqrt((u1 @ u1) * (u2 @ u2)):
+        vectors.append(u1 + u2)
+    return vectors
+
+
+def voronoi_cell_facets(
+    basis: np.ndarray,
+    metric: np.ndarray | None = None,
+    rtol: float = 1e-9,
+    reduction_itermax: int = 100,
+) -> list[np.ndarray]:
+    """
+    Facet vectors of the Voronoi cell of a lattice in a given metric.
+
+    The metric ``G`` is symmetric positive definite; distances are measured
+    as ``|x|_G^2 = x^T G x``. With the Cholesky factorisation ``G = L L^T``,
+    the change of variables ``y = L^T x`` makes the metric Euclidean. The
+    relevant vectors ``v`` of the mapped lattice ``L^T B Z^2`` give the facet
+    vectors ``a = L v / |v|^2``, and the cell is ``{x : |x . a| <= 1/2}``.
+
+    Parameters
+    ----------
+    basis : np.ndarray
+        Lattice basis ``B``, one vector per column, shape ``(2, 2)``.
+
+    metric : np.ndarray or None, optional
+        Metric ``G``, shape ``(2, 2)``. None means the Euclidean metric.
+
+    rtol : float, optional
+        Relative tolerance of the orthogonality test (see
+        :func:`relevant_vectors`).
+
+    reduction_itermax : int, optional
+        Maximum number of iterations of the reduction.
+
+    Returns
+    -------
+    list[np.ndarray]
+        Two or three facet vectors.
+    """
+    basis = np.asarray(basis, dtype=np.float64)
+    if metric is None:
+        chol = np.eye(2)
+    else:
+        chol = np.linalg.cholesky(np.asarray(metric, dtype=np.float64))
+    # y = L^T x makes the metric Euclidean
+    mapped = chol.T @ basis
+    vectors = relevant_vectors(mapped[:, 0], mapped[:, 1], rtol, reduction_itermax)
+    # back to the metric G
+    return [chol @ v / (v @ v) for v in vectors]
+
+
+def voronoi_cell_vertices(facets: list[np.ndarray]) -> np.ndarray:
+    """
+    Ordered vertices of the convex cell ``{x : |x . a| <= 1/2}``.
+
+    Parameters
+    ----------
+    facets : list[np.ndarray]
+        Facet vectors.
+
+    Returns
+    -------
+    np.ndarray
+        Vertices, shape ``(k, 2)``, ordered counter-clockwise.
+    """
+    # Each facet gives 2 boundary lines, x . a = 1/2 and x . (-a) = 1/2.
+    lines = [sign * np.asarray(a, dtype=np.float64) for a in facets for sign in (1, -1)]
+    points = []
+    for i in range(len(lines)):
+        for j in range(i + 1, len(lines)):
+            system = np.array([lines[i], lines[j]])
+            # Parallel lines (opposite edges) have no intersection
+            if abs(np.linalg.det(system)) < 1e-12:
+                continue
+            p = np.linalg.solve(system, [0.5, 0.5])
+            # keep the intersection only if it lies in the cell
+            if all(abs(p @ a) <= 0.5 + 1e-9 for a in facets):
+                points.append(p)
+    # rounding can make duplicates around zero
+    points = np.unique(np.round(np.array(points), 12), axis=0)
+    # Sorting : the cell is convex by definition and centrally symmetric : the
+    # mean is inside the cell => angular sort around it.
+    center = points.mean(axis=0)
+    angles = np.arctan2(points[:, 1] - center[1], points[:, 0] - center[0])
+    return points[np.argsort(angles)]

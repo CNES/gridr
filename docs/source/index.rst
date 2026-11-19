@@ -28,6 +28,7 @@ This is the main page of GridR's documentation.
    
    theoretical_foundations/image_geometry.rst
    theoretical_foundations/resampling.rst
+   theoretical_foundations/antialiasing/index.rst
 
 .. toctree::
    :caption: Tutorials

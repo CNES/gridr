@@ -13,6 +13,7 @@ also provided.
 .. toctree::
    :maxdepth: 1
 
+   antialiasing_index
    core_masking_index
    fft_filtering_index
    grid_resampling_index

@@ -5,6 +5,7 @@
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
+import importlib.util
 import inspect
 import json
 import os
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 project = "GridR"
 copyright = "2026, Cnes"
 author = "CNES"
-release = "0.7.0"
+release = "0.8.0.dev"
 contact_email = "gridr-cnes@cnes.fr"
 
 rst_prolog = """
@@ -177,6 +178,42 @@ def copy_notebook_images(app, exception):
                 logger.warning(f"Could not copy notebook images: {e}")
 
 
+# Figures management
+# -------------------------------------------------------------------------------
+# The figures of some pages are produced by the scripts listed in
+# figures_list.json (see docs/scripts/build_figures.py). They are committed and
+# regenerated only on request, with the configuration value gridr_build_figures
+# (sphinx-build -D gridr_build_figures=stale) or, when it is not set, with the
+# environment variable GRIDR_DOC_BUILD_FIGURES:
+#   check (default, or 0): nothing is run, out of date figures are reported;
+#   stale: only the missing or out of date figures are regenerated;
+#   all (or 1): every figure script is run in full.
+figures_tool_path = Path(sphinx_source_path).parent / "scripts" / "build_figures.py"
+
+
+def run_figure_builds(app):
+    if not figures_tool_path.is_file():
+        logger.warning(f"[figures] {figures_tool_path} not found: figures not checked.")
+        return
+    spec = importlib.util.spec_from_file_location(
+        "gridr_doc_build_figures", figures_tool_path
+    )
+    build_figures = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build_figures)
+
+    mode = build_figures.resolve_mode(
+        app.config.gridr_build_figures, os.environ.get("GRIDR_DOC_BUILD_FIGURES")
+    )
+    build_figures.build(
+        mode,
+        figures_list=Path(sphinx_source_path) / "figures_list.json",
+        log=logger.info,
+        warn=logger.warning,
+    )
+
+
 def setup(app):
+    app.add_config_value("gridr_build_figures", "", "", types=[str, bool])
+    app.connect("builder-inited", run_figure_builds)
     app.connect("builder-inited", lambda app: run_notebook_builds())
     app.connect("build-finished", copy_notebook_images)

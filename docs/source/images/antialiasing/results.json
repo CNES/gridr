@@ -1,0 +1,878 @@
+{
+ "format": 3,
+ "all_steps": [
+  "fig_problem",
+  "fig_lattice",
+  "fig_periodisation",
+  "fig_aliasing_cell",
+  "fig_tilings",
+  "fig_metric",
+  "fig_reduction",
+  "fig_decision",
+  "fig_gate_shape",
+  "fig_gate",
+  "fig_synthesis_steps",
+  "fig_synthesis",
+  "fig_moire",
+  "size_table",
+  "fig_periodic",
+  "fig_cells_nyquist",
+  "fig_nyquist",
+  "fig_blur",
+  "fig_ramp_region",
+  "fig_estimation"
+ ],
+ "steps": {
+  "fig_problem": {
+   "outputs": [
+    "fig_zp_source.png",
+    "fig_zp_spectrum.png",
+    "fig_problem.png"
+   ],
+   "display_widths": {
+    "fig_zp_source": 560,
+    "fig_zp_spectrum": 606,
+    "fig_problem": 744
+   },
+   "results": [
+    "problem"
+   ],
+   "date": "2026-11-19",
+   "elapsed_s": 1.6,
+   "provenance": {
+    "docs/scripts/aa_figures/aliasing.py": "5375918ba498ffb9022c551e8147e03e9dd01fe747243fed7bf103f1a9cd607f",
+    "docs/scripts/aa_figures/__init__.py": "71f1d173be4df2932f2c2c02e5d7da494b661f34b346cb6fbd281293eb937495",
+    "docs/scripts/aa_figures/common.py": "56b04efe9d168dddf1017a91d41327ea3570eb668d3105e12adbec015e01926a",
+    "docs/scripts/aa_figures/plot.py": "63aeddb599608a2dedeab9655d5f0afb87b04703749702094246adadf6bc3813",
+    "python/gridr/core/filter/lattice.py": "9f58f8d10224db7c23c70c78ce41b724adc6a7487906bd0a0d408c2901dcad6d",
+    "python/gridr/core/filter/antialiasing/__init__.py": "9e01d9b37228be443f647f3bca0b9d87f2d22539ae3999b35fdacca77bbeb140",
+    "python/gridr/core/filter/antialiasing/reciprocal_cell.py": "c3f48b1524ab16f556051e31504cf287298381562eed3d604eef3ea0851f1fa0",
+    "python/gridr/core/grid/grid_antialiasing.py": "5bcecda7a2bac2742f1d2e56f43aca9750700acb6d36882e01fe0292c5043cd4"
+   },
+   "environment": {
+    "python": "3.12.3",
+    "numpy": "2.5.4",
+    "matplotlib": "3.10.7"
+   }
+  },
+  "fig_lattice": {
+   "outputs": [
+    "fig_lattice.png"
+   ],
+   "display_widths": {
+    "fig_lattice": 638
+   },
+   "results": [],
+   "date": "2026-11-19",
+   "elapsed_s": 0.2,
+   "provenance": {
+    "docs/scripts/aa_figures/aliasing.py": "5375918ba498ffb9022c551e8147e03e9dd01fe747243fed7bf103f1a9cd607f",
+    "docs/scripts/aa_figures/__init__.py": "71f1d173be4df2932f2c2c02e5d7da494b661f34b346cb6fbd281293eb937495",
+    "docs/scripts/aa_figures/common.py": "56b04efe9d168dddf1017a91d41327ea3570eb668d3105e12adbec015e01926a",
+    "docs/scripts/aa_figures/plot.py": "63aeddb599608a2dedeab9655d5f0afb87b04703749702094246adadf6bc3813",
+    "python/gridr/core/filter/lattice.py": "9f58f8d10224db7c23c70c78ce41b724adc6a7487906bd0a0d408c2901dcad6d",
+    "python/gridr/core/filter/antialiasing/__init__.py": "9e01d9b37228be443f647f3bca0b9d87f2d22539ae3999b35fdacca77bbeb140",
+    "python/gridr/core/filter/antialiasing/reciprocal_cell.py": "c3f48b1524ab16f556051e31504cf287298381562eed3d604eef3ea0851f1fa0",
+    "python/gridr/core/grid/grid_antialiasing.py": "5bcecda7a2bac2742f1d2e56f43aca9750700acb6d36882e01fe0292c5043cd4"
+   },
+   "environment": {
+    "python": "3.12.3",
+    "numpy": "2.5.4",
+    "matplotlib": "3.10.7"
+   }
+  },
+  "fig_periodisation": {
+   "outputs": [
+    "fig_periodisation.png"
+   ],
+   "display_widths": {
+    "fig_periodisation": 783
+   },
+   "results": [],
+   "date": "2026-11-19",
+   "elapsed_s": 0.6,
+   "provenance": {
+    "docs/scripts/aa_figures/aliasing.py": "5375918ba498ffb9022c551e8147e03e9dd01fe747243fed7bf103f1a9cd607f",
+    "docs/scripts/aa_figures/__init__.py": "71f1d173be4df2932f2c2c02e5d7da494b661f34b346cb6fbd281293eb937495",
+    "docs/scripts/aa_figures/common.py": "56b04efe9d168dddf1017a91d41327ea3570eb668d3105e12adbec015e01926a",
+    "docs/scripts/aa_figures/plot.py": "63aeddb599608a2dedeab9655d5f0afb87b04703749702094246adadf6bc3813",
+    "python/gridr/core/filter/lattice.py": "9f58f8d10224db7c23c70c78ce41b724adc6a7487906bd0a0d408c2901dcad6d",
+    "python/gridr/core/filter/antialiasing/__init__.py": "9e01d9b37228be443f647f3bca0b9d87f2d22539ae3999b35fdacca77bbeb140",
+    "python/gridr/core/filter/antialiasing/reciprocal_cell.py": "c3f48b1524ab16f556051e31504cf287298381562eed3d604eef3ea0851f1fa0",
+    "python/gridr/core/grid/grid_antialiasing.py": "5bcecda7a2bac2742f1d2e56f43aca9750700acb6d36882e01fe0292c5043cd4"
+   },
+   "environment": {
+    "python": "3.12.3",
+    "numpy": "2.5.4",
+    "matplotlib": "3.10.7"
+   }
+  },
+  "fig_aliasing_cell": {
+   "outputs": [
+    "fig_aliasing_spectrum.png",
+    "fig_aliasing_source.png",
+    "fig_aliasing_cell.png"
+   ],
+   "display_widths": {
+    "fig_aliasing_spectrum": 606,
+    "fig_aliasing_source": 560,
+    "fig_aliasing_cell": 496
+   },
+   "results": [
+    "aliasing_cell"
+   ],
+   "date": "2026-11-19",
+   "elapsed_s": 0.8,
+   "provenance": {
+    "docs/scripts/aa_figures/aliasing.py": "5375918ba498ffb9022c551e8147e03e9dd01fe747243fed7bf103f1a9cd607f",
+    "docs/scripts/aa_figures/__init__.py": "71f1d173be4df2932f2c2c02e5d7da494b661f34b346cb6fbd281293eb937495",
+    "docs/scripts/aa_figures/common.py": "56b04efe9d168dddf1017a91d41327ea3570eb668d3105e12adbec015e01926a",
+    "docs/scripts/aa_figures/plot.py": "63aeddb599608a2dedeab9655d5f0afb87b04703749702094246adadf6bc3813",
+    "python/gridr/core/filter/lattice.py": "9f58f8d10224db7c23c70c78ce41b724adc6a7487906bd0a0d408c2901dcad6d",
+    "python/gridr/core/filter/antialiasing/__init__.py": "9e01d9b37228be443f647f3bca0b9d87f2d22539ae3999b35fdacca77bbeb140",
+    "python/gridr/core/filter/antialiasing/reciprocal_cell.py": "c3f48b1524ab16f556051e31504cf287298381562eed3d604eef3ea0851f1fa0",
+    "python/gridr/core/grid/grid_antialiasing.py": "5bcecda7a2bac2742f1d2e56f43aca9750700acb6d36882e01fe0292c5043cd4"
+   },
+   "environment": {
+    "python": "3.12.3",
+    "numpy": "2.5.4",
+    "matplotlib": "3.10.7"
+   }
+  },
+  "fig_tilings": {
+   "outputs": [
+    "fig_tilings.png",
+    "fig_tilings_source.png"
+   ],
+   "display_widths": {
+    "fig_tilings": 794,
+    "fig_tilings_source": 560
+   },
+   "results": [
+    "tilings"
+   ],
+   "date": "2026-11-19",
+   "elapsed_s": 0.7,
+   "provenance": {
+    "docs/scripts/aa_figures/prefiltering.py": "f1fc34c72d78146c891ff294d8e6a5df2c237a1bb63e98173113db289d88c00e",
+    "docs/scripts/aa_figures/__init__.py": "71f1d173be4df2932f2c2c02e5d7da494b661f34b346cb6fbd281293eb937495",
+    "docs/scripts/aa_figures/common.py": "56b04efe9d168dddf1017a91d41327ea3570eb668d3105e12adbec015e01926a",
+    "docs/scripts/aa_figures/plot.py": "63aeddb599608a2dedeab9655d5f0afb87b04703749702094246adadf6bc3813",
+    "python/gridr/core/filter/lattice.py": "9f58f8d10224db7c23c70c78ce41b724adc6a7487906bd0a0d408c2901dcad6d",
+    "python/gridr/core/filter/antialiasing/__init__.py": "9e01d9b37228be443f647f3bca0b9d87f2d22539ae3999b35fdacca77bbeb140",
+    "python/gridr/core/filter/antialiasing/reciprocal_cell.py": "c3f48b1524ab16f556051e31504cf287298381562eed3d604eef3ea0851f1fa0",
+    "python/gridr/core/grid/grid_antialiasing.py": "5bcecda7a2bac2742f1d2e56f43aca9750700acb6d36882e01fe0292c5043cd4",
+    "docs/scripts/aa_figures/aliasing.py": "5375918ba498ffb9022c551e8147e03e9dd01fe747243fed7bf103f1a9cd607f"
+   },
+   "environment": {
+    "python": "3.12.3",
+    "numpy": "2.5.4",
+    "matplotlib": "3.10.7"
+   }
+  },
+  "fig_metric": {
+   "outputs": [
+    "fig_metric.png"
+   ],
+   "display_widths": {
+    "fig_metric": 794
+   },
+   "results": [],
+   "date": "2026-11-19",
+   "elapsed_s": 0.2,
+   "provenance": {
+    "docs/scripts/aa_figures/prefiltering.py": "f1fc34c72d78146c891ff294d8e6a5df2c237a1bb63e98173113db289d88c00e",
+    "docs/scripts/aa_figures/__init__.py": "71f1d173be4df2932f2c2c02e5d7da494b661f34b346cb6fbd281293eb937495",
+    "docs/scripts/aa_figures/common.py": "56b04efe9d168dddf1017a91d41327ea3570eb668d3105e12adbec015e01926a",
+    "docs/scripts/aa_figures/plot.py": "63aeddb599608a2dedeab9655d5f0afb87b04703749702094246adadf6bc3813",
+    "python/gridr/core/filter/lattice.py": "9f58f8d10224db7c23c70c78ce41b724adc6a7487906bd0a0d408c2901dcad6d",
+    "python/gridr/core/filter/antialiasing/__init__.py": "9e01d9b37228be443f647f3bca0b9d87f2d22539ae3999b35fdacca77bbeb140",
+    "python/gridr/core/filter/antialiasing/reciprocal_cell.py": "c3f48b1524ab16f556051e31504cf287298381562eed3d604eef3ea0851f1fa0",
+    "python/gridr/core/grid/grid_antialiasing.py": "5bcecda7a2bac2742f1d2e56f43aca9750700acb6d36882e01fe0292c5043cd4",
+    "docs/scripts/aa_figures/aliasing.py": "5375918ba498ffb9022c551e8147e03e9dd01fe747243fed7bf103f1a9cd607f"
+   },
+   "environment": {
+    "python": "3.12.3",
+    "numpy": "2.5.4",
+    "matplotlib": "3.10.7"
+   }
+  },
+  "fig_reduction": {
+   "outputs": [
+    "fig_reduction.png"
+   ],
+   "display_widths": {
+    "fig_reduction": 789
+   },
+   "results": [],
+   "date": "2026-11-19",
+   "elapsed_s": 0.4,
+   "provenance": {
+    "docs/scripts/aa_figures/prefiltering.py": "f1fc34c72d78146c891ff294d8e6a5df2c237a1bb63e98173113db289d88c00e",
+    "docs/scripts/aa_figures/__init__.py": "71f1d173be4df2932f2c2c02e5d7da494b661f34b346cb6fbd281293eb937495",
+    "docs/scripts/aa_figures/common.py": "56b04efe9d168dddf1017a91d41327ea3570eb668d3105e12adbec015e01926a",
+    "docs/scripts/aa_figures/plot.py": "63aeddb599608a2dedeab9655d5f0afb87b04703749702094246adadf6bc3813",
+    "python/gridr/core/filter/lattice.py": "9f58f8d10224db7c23c70c78ce41b724adc6a7487906bd0a0d408c2901dcad6d",
+    "python/gridr/core/filter/antialiasing/__init__.py": "9e01d9b37228be443f647f3bca0b9d87f2d22539ae3999b35fdacca77bbeb140",
+    "python/gridr/core/filter/antialiasing/reciprocal_cell.py": "c3f48b1524ab16f556051e31504cf287298381562eed3d604eef3ea0851f1fa0",
+    "python/gridr/core/grid/grid_antialiasing.py": "5bcecda7a2bac2742f1d2e56f43aca9750700acb6d36882e01fe0292c5043cd4",
+    "docs/scripts/aa_figures/aliasing.py": "5375918ba498ffb9022c551e8147e03e9dd01fe747243fed7bf103f1a9cd607f"
+   },
+   "environment": {
+    "python": "3.12.3",
+    "numpy": "2.5.4",
+    "matplotlib": "3.10.7"
+   }
+  },
+  "fig_decision": {
+   "outputs": [
+    "fig_decision.png"
+   ],
+   "display_widths": {
+    "fig_decision": 770
+   },
+   "results": [],
+   "date": "2026-11-19",
+   "elapsed_s": 0.2,
+   "provenance": {
+    "docs/scripts/aa_figures/prefiltering.py": "f1fc34c72d78146c891ff294d8e6a5df2c237a1bb63e98173113db289d88c00e",
+    "docs/scripts/aa_figures/__init__.py": "71f1d173be4df2932f2c2c02e5d7da494b661f34b346cb6fbd281293eb937495",
+    "docs/scripts/aa_figures/common.py": "56b04efe9d168dddf1017a91d41327ea3570eb668d3105e12adbec015e01926a",
+    "docs/scripts/aa_figures/plot.py": "63aeddb599608a2dedeab9655d5f0afb87b04703749702094246adadf6bc3813",
+    "python/gridr/core/filter/lattice.py": "9f58f8d10224db7c23c70c78ce41b724adc6a7487906bd0a0d408c2901dcad6d",
+    "python/gridr/core/filter/antialiasing/__init__.py": "9e01d9b37228be443f647f3bca0b9d87f2d22539ae3999b35fdacca77bbeb140",
+    "python/gridr/core/filter/antialiasing/reciprocal_cell.py": "c3f48b1524ab16f556051e31504cf287298381562eed3d604eef3ea0851f1fa0",
+    "python/gridr/core/grid/grid_antialiasing.py": "5bcecda7a2bac2742f1d2e56f43aca9750700acb6d36882e01fe0292c5043cd4",
+    "docs/scripts/aa_figures/aliasing.py": "5375918ba498ffb9022c551e8147e03e9dd01fe747243fed7bf103f1a9cd607f"
+   },
+   "environment": {
+    "python": "3.12.3",
+    "numpy": "2.5.4",
+    "matplotlib": "3.10.7"
+   }
+  },
+  "fig_gate_shape": {
+   "outputs": [
+    "fig_gate_shape.png"
+   ],
+   "display_widths": {
+    "fig_gate_shape": 768
+   },
+   "results": [],
+   "date": "2026-11-19",
+   "elapsed_s": 0.2,
+   "provenance": {
+    "docs/scripts/aa_figures/prefiltering.py": "f1fc34c72d78146c891ff294d8e6a5df2c237a1bb63e98173113db289d88c00e",
+    "docs/scripts/aa_figures/__init__.py": "71f1d173be4df2932f2c2c02e5d7da494b661f34b346cb6fbd281293eb937495",
+    "docs/scripts/aa_figures/common.py": "56b04efe9d168dddf1017a91d41327ea3570eb668d3105e12adbec015e01926a",
+    "docs/scripts/aa_figures/plot.py": "63aeddb599608a2dedeab9655d5f0afb87b04703749702094246adadf6bc3813",
+    "python/gridr/core/filter/lattice.py": "9f58f8d10224db7c23c70c78ce41b724adc6a7487906bd0a0d408c2901dcad6d",
+    "python/gridr/core/filter/antialiasing/__init__.py": "9e01d9b37228be443f647f3bca0b9d87f2d22539ae3999b35fdacca77bbeb140",
+    "python/gridr/core/filter/antialiasing/reciprocal_cell.py": "c3f48b1524ab16f556051e31504cf287298381562eed3d604eef3ea0851f1fa0",
+    "python/gridr/core/grid/grid_antialiasing.py": "5bcecda7a2bac2742f1d2e56f43aca9750700acb6d36882e01fe0292c5043cd4",
+    "docs/scripts/aa_figures/aliasing.py": "5375918ba498ffb9022c551e8147e03e9dd01fe747243fed7bf103f1a9cd607f"
+   },
+   "environment": {
+    "python": "3.12.3",
+    "numpy": "2.5.4",
+    "matplotlib": "3.10.7"
+   }
+  },
+  "fig_gate": {
+   "outputs": [
+    "fig_gate.png",
+    "fig_template_plate.png"
+   ],
+   "display_widths": {
+    "fig_gate": 768,
+    "fig_template_plate": 768
+   },
+   "results": [
+    "gate"
+   ],
+   "date": "2026-11-19",
+   "elapsed_s": 0.7,
+   "provenance": {
+    "docs/scripts/aa_figures/prefiltering.py": "f1fc34c72d78146c891ff294d8e6a5df2c237a1bb63e98173113db289d88c00e",
+    "docs/scripts/aa_figures/__init__.py": "71f1d173be4df2932f2c2c02e5d7da494b661f34b346cb6fbd281293eb937495",
+    "docs/scripts/aa_figures/common.py": "56b04efe9d168dddf1017a91d41327ea3570eb668d3105e12adbec015e01926a",
+    "docs/scripts/aa_figures/plot.py": "63aeddb599608a2dedeab9655d5f0afb87b04703749702094246adadf6bc3813",
+    "python/gridr/core/filter/lattice.py": "9f58f8d10224db7c23c70c78ce41b724adc6a7487906bd0a0d408c2901dcad6d",
+    "python/gridr/core/filter/antialiasing/__init__.py": "9e01d9b37228be443f647f3bca0b9d87f2d22539ae3999b35fdacca77bbeb140",
+    "python/gridr/core/filter/antialiasing/reciprocal_cell.py": "c3f48b1524ab16f556051e31504cf287298381562eed3d604eef3ea0851f1fa0",
+    "python/gridr/core/grid/grid_antialiasing.py": "5bcecda7a2bac2742f1d2e56f43aca9750700acb6d36882e01fe0292c5043cd4",
+    "docs/scripts/aa_figures/aliasing.py": "5375918ba498ffb9022c551e8147e03e9dd01fe747243fed7bf103f1a9cd607f"
+   },
+   "environment": {
+    "python": "3.12.3",
+    "numpy": "2.5.4",
+    "matplotlib": "3.10.7"
+   }
+  },
+  "fig_synthesis_steps": {
+   "outputs": [
+    "fig_synthesis_steps.png"
+   ],
+   "display_widths": {
+    "fig_synthesis_steps": 698
+   },
+   "results": [
+    "synthesis_steps"
+   ],
+   "date": "2026-11-19",
+   "elapsed_s": 0.7,
+   "provenance": {
+    "docs/scripts/aa_figures/prefiltering.py": "f1fc34c72d78146c891ff294d8e6a5df2c237a1bb63e98173113db289d88c00e",
+    "docs/scripts/aa_figures/__init__.py": "71f1d173be4df2932f2c2c02e5d7da494b661f34b346cb6fbd281293eb937495",
+    "docs/scripts/aa_figures/common.py": "56b04efe9d168dddf1017a91d41327ea3570eb668d3105e12adbec015e01926a",
+    "docs/scripts/aa_figures/plot.py": "63aeddb599608a2dedeab9655d5f0afb87b04703749702094246adadf6bc3813",
+    "python/gridr/core/filter/lattice.py": "9f58f8d10224db7c23c70c78ce41b724adc6a7487906bd0a0d408c2901dcad6d",
+    "python/gridr/core/filter/antialiasing/__init__.py": "9e01d9b37228be443f647f3bca0b9d87f2d22539ae3999b35fdacca77bbeb140",
+    "python/gridr/core/filter/antialiasing/reciprocal_cell.py": "c3f48b1524ab16f556051e31504cf287298381562eed3d604eef3ea0851f1fa0",
+    "python/gridr/core/grid/grid_antialiasing.py": "5bcecda7a2bac2742f1d2e56f43aca9750700acb6d36882e01fe0292c5043cd4",
+    "docs/scripts/aa_figures/aliasing.py": "5375918ba498ffb9022c551e8147e03e9dd01fe747243fed7bf103f1a9cd607f"
+   },
+   "environment": {
+    "python": "3.12.3",
+    "numpy": "2.5.4",
+    "matplotlib": "3.10.7"
+   }
+  },
+  "fig_synthesis": {
+   "outputs": [
+    "fig_synthesis.png"
+   ],
+   "display_widths": {
+    "fig_synthesis": 409
+   },
+   "results": [
+    "synthesis"
+   ],
+   "date": "2026-11-19",
+   "elapsed_s": 3.0,
+   "provenance": {
+    "docs/scripts/aa_figures/prefiltering.py": "f1fc34c72d78146c891ff294d8e6a5df2c237a1bb63e98173113db289d88c00e",
+    "docs/scripts/aa_figures/__init__.py": "71f1d173be4df2932f2c2c02e5d7da494b661f34b346cb6fbd281293eb937495",
+    "docs/scripts/aa_figures/common.py": "56b04efe9d168dddf1017a91d41327ea3570eb668d3105e12adbec015e01926a",
+    "docs/scripts/aa_figures/plot.py": "63aeddb599608a2dedeab9655d5f0afb87b04703749702094246adadf6bc3813",
+    "python/gridr/core/filter/lattice.py": "9f58f8d10224db7c23c70c78ce41b724adc6a7487906bd0a0d408c2901dcad6d",
+    "python/gridr/core/filter/antialiasing/__init__.py": "9e01d9b37228be443f647f3bca0b9d87f2d22539ae3999b35fdacca77bbeb140",
+    "python/gridr/core/filter/antialiasing/reciprocal_cell.py": "c3f48b1524ab16f556051e31504cf287298381562eed3d604eef3ea0851f1fa0",
+    "python/gridr/core/grid/grid_antialiasing.py": "5bcecda7a2bac2742f1d2e56f43aca9750700acb6d36882e01fe0292c5043cd4",
+    "docs/scripts/aa_figures/aliasing.py": "5375918ba498ffb9022c551e8147e03e9dd01fe747243fed7bf103f1a9cd607f"
+   },
+   "environment": {
+    "python": "3.12.3",
+    "numpy": "2.5.4",
+    "matplotlib": "3.10.7"
+   }
+  },
+  "fig_moire": {
+   "outputs": [
+    "fig_moire.png",
+    "fig_moire_spectra.png"
+   ],
+   "display_widths": {
+    "fig_moire": 744,
+    "fig_moire_spectra": 606
+   },
+   "results": [
+    "moire"
+   ],
+   "date": "2026-11-19",
+   "elapsed_s": 4.6,
+   "provenance": {
+    "docs/scripts/aa_figures/prefiltering.py": "f1fc34c72d78146c891ff294d8e6a5df2c237a1bb63e98173113db289d88c00e",
+    "docs/scripts/aa_figures/__init__.py": "71f1d173be4df2932f2c2c02e5d7da494b661f34b346cb6fbd281293eb937495",
+    "docs/scripts/aa_figures/common.py": "56b04efe9d168dddf1017a91d41327ea3570eb668d3105e12adbec015e01926a",
+    "docs/scripts/aa_figures/plot.py": "63aeddb599608a2dedeab9655d5f0afb87b04703749702094246adadf6bc3813",
+    "python/gridr/core/filter/lattice.py": "9f58f8d10224db7c23c70c78ce41b724adc6a7487906bd0a0d408c2901dcad6d",
+    "python/gridr/core/filter/antialiasing/__init__.py": "9e01d9b37228be443f647f3bca0b9d87f2d22539ae3999b35fdacca77bbeb140",
+    "python/gridr/core/filter/antialiasing/reciprocal_cell.py": "c3f48b1524ab16f556051e31504cf287298381562eed3d604eef3ea0851f1fa0",
+    "python/gridr/core/grid/grid_antialiasing.py": "5bcecda7a2bac2742f1d2e56f43aca9750700acb6d36882e01fe0292c5043cd4",
+    "docs/scripts/aa_figures/aliasing.py": "5375918ba498ffb9022c551e8147e03e9dd01fe747243fed7bf103f1a9cd607f"
+   },
+   "environment": {
+    "python": "3.12.3",
+    "numpy": "2.5.4",
+    "matplotlib": "3.10.7"
+   }
+  },
+  "size_table": {
+   "outputs": [],
+   "display_widths": {},
+   "results": [
+    "size_table"
+   ],
+   "date": "2026-11-19",
+   "elapsed_s": 4.1,
+   "provenance": {
+    "docs/scripts/aa_figures/prefiltering.py": "f1fc34c72d78146c891ff294d8e6a5df2c237a1bb63e98173113db289d88c00e",
+    "docs/scripts/aa_figures/__init__.py": "71f1d173be4df2932f2c2c02e5d7da494b661f34b346cb6fbd281293eb937495",
+    "docs/scripts/aa_figures/common.py": "56b04efe9d168dddf1017a91d41327ea3570eb668d3105e12adbec015e01926a",
+    "docs/scripts/aa_figures/plot.py": "63aeddb599608a2dedeab9655d5f0afb87b04703749702094246adadf6bc3813",
+    "python/gridr/core/filter/lattice.py": "9f58f8d10224db7c23c70c78ce41b724adc6a7487906bd0a0d408c2901dcad6d",
+    "python/gridr/core/filter/antialiasing/__init__.py": "9e01d9b37228be443f647f3bca0b9d87f2d22539ae3999b35fdacca77bbeb140",
+    "python/gridr/core/filter/antialiasing/reciprocal_cell.py": "c3f48b1524ab16f556051e31504cf287298381562eed3d604eef3ea0851f1fa0",
+    "python/gridr/core/grid/grid_antialiasing.py": "5bcecda7a2bac2742f1d2e56f43aca9750700acb6d36882e01fe0292c5043cd4",
+    "docs/scripts/aa_figures/aliasing.py": "5375918ba498ffb9022c551e8147e03e9dd01fe747243fed7bf103f1a9cd607f"
+   },
+   "environment": {
+    "python": "3.12.3",
+    "numpy": "2.5.4",
+    "matplotlib": "3.10.7"
+   }
+  },
+  "fig_periodic": {
+   "outputs": [
+    "fig_periodic.png",
+    "fig_periodic_nyquist.png"
+   ],
+   "display_widths": {
+    "fig_periodic": 766,
+    "fig_periodic_nyquist": 508
+   },
+   "results": [
+    "periodic"
+   ],
+   "date": "2026-11-19",
+   "elapsed_s": 0.7,
+   "provenance": {
+    "docs/scripts/aa_figures/options.py": "68c48e9dbafb67212d78b22c33ae2301c36efcda54316f720f2e95335a0bd505",
+    "docs/scripts/aa_figures/__init__.py": "71f1d173be4df2932f2c2c02e5d7da494b661f34b346cb6fbd281293eb937495",
+    "docs/scripts/aa_figures/common.py": "56b04efe9d168dddf1017a91d41327ea3570eb668d3105e12adbec015e01926a",
+    "docs/scripts/aa_figures/plot.py": "63aeddb599608a2dedeab9655d5f0afb87b04703749702094246adadf6bc3813",
+    "python/gridr/core/filter/lattice.py": "9f58f8d10224db7c23c70c78ce41b724adc6a7487906bd0a0d408c2901dcad6d",
+    "python/gridr/core/filter/antialiasing/__init__.py": "9e01d9b37228be443f647f3bca0b9d87f2d22539ae3999b35fdacca77bbeb140",
+    "python/gridr/core/filter/antialiasing/reciprocal_cell.py": "c3f48b1524ab16f556051e31504cf287298381562eed3d604eef3ea0851f1fa0",
+    "python/gridr/core/grid/grid_antialiasing.py": "5bcecda7a2bac2742f1d2e56f43aca9750700acb6d36882e01fe0292c5043cd4"
+   },
+   "environment": {
+    "python": "3.12.3",
+    "numpy": "2.5.4",
+    "matplotlib": "3.10.7"
+   }
+  },
+  "fig_cells_nyquist": {
+   "outputs": [
+    "fig_cells_nyquist.png"
+   ],
+   "display_widths": {
+    "fig_cells_nyquist": 566
+   },
+   "results": [
+    "cells_nyquist"
+   ],
+   "date": "2026-11-19",
+   "elapsed_s": 0.1,
+   "provenance": {
+    "docs/scripts/aa_figures/options.py": "68c48e9dbafb67212d78b22c33ae2301c36efcda54316f720f2e95335a0bd505",
+    "docs/scripts/aa_figures/__init__.py": "71f1d173be4df2932f2c2c02e5d7da494b661f34b346cb6fbd281293eb937495",
+    "docs/scripts/aa_figures/common.py": "56b04efe9d168dddf1017a91d41327ea3570eb668d3105e12adbec015e01926a",
+    "docs/scripts/aa_figures/plot.py": "63aeddb599608a2dedeab9655d5f0afb87b04703749702094246adadf6bc3813",
+    "python/gridr/core/filter/lattice.py": "9f58f8d10224db7c23c70c78ce41b724adc6a7487906bd0a0d408c2901dcad6d",
+    "python/gridr/core/filter/antialiasing/__init__.py": "9e01d9b37228be443f647f3bca0b9d87f2d22539ae3999b35fdacca77bbeb140",
+    "python/gridr/core/filter/antialiasing/reciprocal_cell.py": "c3f48b1524ab16f556051e31504cf287298381562eed3d604eef3ea0851f1fa0",
+    "python/gridr/core/grid/grid_antialiasing.py": "5bcecda7a2bac2742f1d2e56f43aca9750700acb6d36882e01fe0292c5043cd4"
+   },
+   "environment": {
+    "python": "3.12.3",
+    "numpy": "2.5.4",
+    "matplotlib": "3.10.7"
+   }
+  },
+  "fig_nyquist": {
+   "outputs": [
+    "fig_nyquist.png"
+   ],
+   "display_widths": {
+    "fig_nyquist": 545
+   },
+   "results": [
+    "nyquist"
+   ],
+   "date": "2026-11-19",
+   "elapsed_s": 2.1,
+   "provenance": {
+    "docs/scripts/aa_figures/options.py": "68c48e9dbafb67212d78b22c33ae2301c36efcda54316f720f2e95335a0bd505",
+    "docs/scripts/aa_figures/__init__.py": "71f1d173be4df2932f2c2c02e5d7da494b661f34b346cb6fbd281293eb937495",
+    "docs/scripts/aa_figures/common.py": "56b04efe9d168dddf1017a91d41327ea3570eb668d3105e12adbec015e01926a",
+    "docs/scripts/aa_figures/plot.py": "63aeddb599608a2dedeab9655d5f0afb87b04703749702094246adadf6bc3813",
+    "python/gridr/core/filter/lattice.py": "9f58f8d10224db7c23c70c78ce41b724adc6a7487906bd0a0d408c2901dcad6d",
+    "python/gridr/core/filter/antialiasing/__init__.py": "9e01d9b37228be443f647f3bca0b9d87f2d22539ae3999b35fdacca77bbeb140",
+    "python/gridr/core/filter/antialiasing/reciprocal_cell.py": "c3f48b1524ab16f556051e31504cf287298381562eed3d604eef3ea0851f1fa0",
+    "python/gridr/core/grid/grid_antialiasing.py": "5bcecda7a2bac2742f1d2e56f43aca9750700acb6d36882e01fe0292c5043cd4"
+   },
+   "environment": {
+    "python": "3.12.3",
+    "numpy": "2.5.4",
+    "matplotlib": "3.10.7"
+   }
+  },
+  "fig_blur": {
+   "outputs": [
+    "fig_blur.png"
+   ],
+   "display_widths": {
+    "fig_blur": 790
+   },
+   "results": [
+    "blur"
+   ],
+   "date": "2026-11-19",
+   "elapsed_s": 0.3,
+   "provenance": {
+    "docs/scripts/aa_figures/options.py": "68c48e9dbafb67212d78b22c33ae2301c36efcda54316f720f2e95335a0bd505",
+    "docs/scripts/aa_figures/__init__.py": "71f1d173be4df2932f2c2c02e5d7da494b661f34b346cb6fbd281293eb937495",
+    "docs/scripts/aa_figures/common.py": "56b04efe9d168dddf1017a91d41327ea3570eb668d3105e12adbec015e01926a",
+    "docs/scripts/aa_figures/plot.py": "63aeddb599608a2dedeab9655d5f0afb87b04703749702094246adadf6bc3813",
+    "python/gridr/core/filter/lattice.py": "9f58f8d10224db7c23c70c78ce41b724adc6a7487906bd0a0d408c2901dcad6d",
+    "python/gridr/core/filter/antialiasing/__init__.py": "9e01d9b37228be443f647f3bca0b9d87f2d22539ae3999b35fdacca77bbeb140",
+    "python/gridr/core/filter/antialiasing/reciprocal_cell.py": "c3f48b1524ab16f556051e31504cf287298381562eed3d604eef3ea0851f1fa0",
+    "python/gridr/core/grid/grid_antialiasing.py": "5bcecda7a2bac2742f1d2e56f43aca9750700acb6d36882e01fe0292c5043cd4"
+   },
+   "environment": {
+    "python": "3.12.3",
+    "numpy": "2.5.4",
+    "matplotlib": "3.10.7"
+   }
+  },
+  "fig_ramp_region": {
+   "outputs": [
+    "fig_ramp_region.png"
+   ],
+   "display_widths": {
+    "fig_ramp_region": 521
+   },
+   "results": [
+    "ramp_region"
+   ],
+   "date": "2026-11-19",
+   "elapsed_s": 2.6,
+   "provenance": {
+    "docs/scripts/aa_figures/options.py": "68c48e9dbafb67212d78b22c33ae2301c36efcda54316f720f2e95335a0bd505",
+    "docs/scripts/aa_figures/__init__.py": "71f1d173be4df2932f2c2c02e5d7da494b661f34b346cb6fbd281293eb937495",
+    "docs/scripts/aa_figures/common.py": "56b04efe9d168dddf1017a91d41327ea3570eb668d3105e12adbec015e01926a",
+    "docs/scripts/aa_figures/plot.py": "63aeddb599608a2dedeab9655d5f0afb87b04703749702094246adadf6bc3813",
+    "python/gridr/core/filter/lattice.py": "9f58f8d10224db7c23c70c78ce41b724adc6a7487906bd0a0d408c2901dcad6d",
+    "python/gridr/core/filter/antialiasing/__init__.py": "9e01d9b37228be443f647f3bca0b9d87f2d22539ae3999b35fdacca77bbeb140",
+    "python/gridr/core/filter/antialiasing/reciprocal_cell.py": "c3f48b1524ab16f556051e31504cf287298381562eed3d604eef3ea0851f1fa0",
+    "python/gridr/core/grid/grid_antialiasing.py": "5bcecda7a2bac2742f1d2e56f43aca9750700acb6d36882e01fe0292c5043cd4"
+   },
+   "environment": {
+    "python": "3.12.3",
+    "numpy": "2.5.4",
+    "matplotlib": "3.10.7"
+   }
+  },
+  "fig_estimation": {
+   "outputs": [
+    "fig_estimation.png"
+   ],
+   "display_widths": {
+    "fig_estimation": 552
+   },
+   "results": [
+    "estimation"
+   ],
+   "date": "2026-11-19",
+   "elapsed_s": 0.2,
+   "provenance": {
+    "docs/scripts/aa_figures/estimation.py": "c35b84ccba2c47e31e1de66dbe01794b1e786c99d2f33b8c21050cf656c2cc51",
+    "docs/scripts/aa_figures/__init__.py": "71f1d173be4df2932f2c2c02e5d7da494b661f34b346cb6fbd281293eb937495",
+    "docs/scripts/aa_figures/common.py": "56b04efe9d168dddf1017a91d41327ea3570eb668d3105e12adbec015e01926a",
+    "docs/scripts/aa_figures/plot.py": "63aeddb599608a2dedeab9655d5f0afb87b04703749702094246adadf6bc3813",
+    "python/gridr/core/filter/lattice.py": "9f58f8d10224db7c23c70c78ce41b724adc6a7487906bd0a0d408c2901dcad6d",
+    "python/gridr/core/filter/antialiasing/__init__.py": "9e01d9b37228be443f647f3bca0b9d87f2d22539ae3999b35fdacca77bbeb140",
+    "python/gridr/core/filter/antialiasing/reciprocal_cell.py": "c3f48b1524ab16f556051e31504cf287298381562eed3d604eef3ea0851f1fa0",
+    "python/gridr/core/grid/grid_antialiasing.py": "5bcecda7a2bac2742f1d2e56f43aca9750700acb6d36882e01fe0292c5043cd4"
+   },
+   "environment": {
+    "python": "3.12.3",
+    "numpy": "2.5.4",
+    "matplotlib": "3.10.7"
+   }
+  }
+ },
+ "results": {
+  "problem": {
+   "rms_signal": 0.19215479622853246,
+   "rms_error": 0.28467406960136454,
+   "max_error": 0.6044724655092787,
+   "rms_alias": 0.2856934481548434,
+   "rms_interp": 0.0034641587265206364
+  },
+  "aliasing_cell": {
+   "rms_error_inside": 0.08648902984044199,
+   "rms_error_center": 0.03880916584522182,
+   "rms_error_outside": 0.33517703793334847,
+   "fraction_outside": 0.7014714625445898
+  },
+  "tilings": {
+   "Voronoi, destination metric": {
+    "area": 0.11111111111125982,
+    "inscribed_radius": 0.14907119849998596,
+    "farthest_vertex": 0.30046260628888743,
+    "loss_1_f2_pct": 27.876446844640014
+   },
+   "Voronoi, source metric": {
+    "area": 0.11111111111088959,
+    "inscribed_radius": 0.16666666666666666,
+    "farthest_vertex": 0.20833333333321105,
+    "loss_1_f2_pct": 27.130622045081843
+   },
+   "parallelogram of another basis": {
+    "area": 0.11111111111125983,
+    "inscribed_radius": 0.14907119849998593,
+    "farthest_vertex": 0.33333333333308657,
+    "loss_1_f2_pct": 28.37264028375396
+   }
+  },
+  "gate": [
+   {
+    "tolerance": 0.5,
+    "t": 0.4999999997938846
+   },
+   {
+    "tolerance": 0.1,
+    "t": 0.4450693845360177
+   },
+   {
+    "tolerance": 0.01,
+    "t": 0.38512199344086395
+   }
+  ],
+  "synthesis_steps": {
+   "n": 61,
+   "max_error": 0.009713856730434789
+  },
+  "synthesis": {
+   "selected_size": 61,
+   "response_error": 0.009713856730434789,
+   "source_metric": {
+    "selected_size": 53,
+    "response_error": 0.007661797796223779,
+    "max_facet_norm": 3.0,
+    "estimated_size": 55.99215529424619
+   },
+   "estimated_sizes": {
+    "slope_5": {
+     "1.5": 15.650283180582404,
+     "2": 20.86704424077654,
+     "2.5": 26.083805300970674,
+     "3": 31.300566361164808,
+     "4": 41.73408848155308
+    },
+    "slope_10": {
+     "1.5": 31.300566361164808,
+     "2": 41.73408848155308,
+     "2.5": 52.16761060194135,
+     "3": 62.601132722329616,
+     "4": 83.46817696310616
+    },
+    "slope_20": {
+     "1.5": 62.601132722329616,
+     "2": 83.46817696310616,
+     "2.5": 104.3352212038827,
+     "3": 125.20226544465923,
+     "4": 166.93635392621232
+    }
+   }
+  },
+  "moire": {
+   "none": {
+    "rms_alias": 0.2856934481548434,
+    "max_alias": 0.6045437015654497,
+    "rms_signal": 0.34309032191133393,
+    "rms_interp": 0.0034641587265206364,
+    "max_interp": 0.05028560989915731
+   },
+   "0.5": {
+    "rms_alias": 0.02494659462710034,
+    "max_alias": 0.09406222526995764,
+    "kernel_size": 63,
+    "rms_signal": 0.18213966999023976,
+    "rms_interp": 3.3947077845324396e-05,
+    "max_interp": 0.00042263776689499544
+   },
+   "0.1": {
+    "rms_alias": 0.0037072536326773534,
+    "max_alias": 0.012647110520988103,
+    "kernel_size": 61,
+    "rms_signal": 0.16224586461812868,
+    "rms_interp": 1.8118767784749947e-05,
+    "max_interp": 0.0002447718412326161
+   },
+   "source 0.1": {
+    "rms_alias": 0.0034622986934071545,
+    "max_alias": 0.011321812873995252,
+    "kernel_size": 53,
+    "rms_signal": 0.16110541387841024,
+    "rms_interp": 1.298037911221467e-05,
+    "max_interp": 0.000100976248292306
+   },
+   "0.01": {
+    "rms_alias": 0.0004358303948622488,
+    "max_alias": 0.0016551566640192195,
+    "kernel_size": 61
+   }
+  },
+  "size_table": {
+   "running_example": {
+    "slope_5": {
+     "1.5": 15,
+     "2": 21,
+     "2.5": 25,
+     "3": 31,
+     "4": 41
+    },
+    "slope_10": {
+     "1.5": 29,
+     "2": 41,
+     "2.5": 51,
+     "3": 61,
+     "4": 79
+    },
+    "slope_20": {
+     "1.5": 59,
+     "2": 77,
+     "2.5": 97,
+     "3": 117,
+     "4": 155
+    },
+    "slope_10_source": {
+     "1.5": 27,
+     "2": 35,
+     "2.5": 45,
+     "3": 53,
+     "4": 69
+    }
+   }
+  },
+  "periodic": {
+   "fy": 0.122,
+   "tolerance": 0.1,
+   "cell": {
+    "jump": 0.7994035779513893,
+    "size": 39,
+    "accurate_size": null,
+    "accuracy_met": false,
+    "response_error": 0.04381080211372501
+   },
+   "template": {
+    "jump": 0.07994016555188325,
+    "size": 21,
+    "accurate_size": 21,
+    "accuracy_met": true,
+    "response_error": 0.00853485833227674
+   }
+  },
+  "cells_nyquist": {
+   "scale": 1.25,
+   "parallelogram": {
+    "max_abs_vertex": 0.58108913431,
+    "border_jump": 0.4766010130867245
+   },
+   "hexagon": {
+    "max_abs_vertex": 0.478483091312,
+    "border_jump": 0.0030084528070815283
+   }
+  },
+  "nyquist": {
+   "cell gates only": {
+    "error_21": 0.08181951676098786,
+    "size": 39,
+    "accuracy_met": false,
+    "kept_pct": 79.24506587206773,
+    "aliased_pct": 0.07878197158769784,
+    "leak": 0.5217740688361421
+   },
+   "cell and Nyquist gates": {
+    "error_21": 0.008499634126569067,
+    "size": 21,
+    "accuracy_met": true,
+    "kept_pct": 68.99442977247683,
+    "aliased_pct": 0.014001774381537548,
+    "leak": 0.09056571183785306
+   },
+   "border_jump_by_tolerance": {
+    "0.01": {
+     "cell": 0.4677131345472899,
+     "with_gates": 0.004677012548846037,
+     "size_with_gates": 21,
+     "accurate_with_gates": true,
+     "error_with_gates": 0.009517643202309745,
+     "leak_with_gates": 0.004645476872997323
+    },
+    "0.1": {
+     "cell": 0.8291524548833064,
+     "with_gates": 0.0829146757543269,
+     "size_with_gates": 21,
+     "accurate_with_gates": true,
+     "error_with_gates": 0.00853485833227674,
+     "leak_with_gates": 0.09056571183785306
+    },
+    "0.5": {
+     "cell": 0.7626729561556367,
+     "with_gates": 0.38133146970795556,
+     "size_with_gates": 39,
+     "accurate_with_gates": false,
+     "error_with_gates": 0.021237185334701314,
+     "leak_with_gates": 0.4939538665685369
+    }
+   },
+   "rot45_gates_added": 0
+  },
+  "blur": {
+   "rows decimated by 2": {
+    "cell_facets": 2,
+    "template_facets": 1
+   },
+   "decimation x2": {
+    "cell_facets": 2,
+    "template_facets": 2
+   },
+   "running example": {
+    "cell_facets": 2,
+    "template_facets": 2
+   }
+  },
+  "estimation": {
+   "mean_jacobian": {
+    "rotation_deg": 4.910975846651298,
+    "norm_w1": 2.1960619299099924,
+    "norm_w2": 2.1960619299099924
+   },
+   "modes": {
+    "least-square-fit": {
+     "rotation_deg": 4.910975846651347,
+     "norm_w1": 2.196061929909992,
+     "norm_w2": 2.196061929909992,
+     "cell_mismatch_pct": 0.0
+    },
+    "longest-distance": {
+     "rotation_deg": 0.0,
+     "norm_w1": 2.188,
+     "norm_w2": 2.008816567036423,
+     "cell_mismatch_pct": 13.765871670246034
+    }
+   },
+   "affine_residual": 4.41800000000009
+  },
+  "ramp_region": {
+   "0 deg": [
+    1.0,
+    1.07
+   ],
+   "10 deg": [
+    0.863,
+    1.023
+   ],
+   "45 deg": [
+    0.707,
+    0.838
+   ],
+   "unit scale, last angle in the ramp (deg)": 11.9
+  }
+ }
+}

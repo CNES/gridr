@@ -63,6 +63,8 @@ Conceptually:
 - each **source pixel center** :math:`(x,y) \in \mathscr{G}_s` is mapped to a continuous location :math:`(x', y')`,
 - these mapped points must then be projected back onto the destination sampling grid :math:`\mathscr{G}_d` to produce the discrete image.
 
+.. _resampling-backward-mapping:
+
 Backward Mapping (Destination :math:`\to` Source)
 -------------------------------------------------
 A **backward** (or *pull-back*) transformation directly expresses, for each destination sampling point, where to sample the source:
@@ -83,11 +85,22 @@ Both forward and backward mappings can represent common geometric transformation
     Similar to scaling but coarser; often requires low-pass filtering to limit aliasing artefacts
 - Rotation
     The new sampling grid is a rotated version of the original one.
+- Translation
+    The new sampling grid is a shifted version of the original one.
 - General Remapping Functions
     Arbitrary mappings :math:`(x',y') \longmapsto  (x,y)`, e.g., warping fields, distortion corrections, etc.
 - User-provided Sampling Grids
     Arbitrary sets of continuous coordinates, possibly subsampled.
-- translation,
+
+
+.. note::
+
+    GridR describes every resampling by a :ref:`backward <resampling-backward-mapping>` grid: for each destination pixel,
+    the grid gives the point of the source plane where the source is evaluated. Any geometric transformation can be written
+    in this form, whatever its origin (analytic model, sensor model, map projection, displacement field), since a resampling
+    always comes down to evaluating the source at given points. A transformation defined in the forward direction must first
+    be inverted. The grid may be given at a lower resolution than the destination, in which case GridR interpolates it
+    between its nodes, and some nodes may be invalid (grid mask or nodata value).
 
 
 User-provided Sampling Grids

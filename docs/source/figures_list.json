@@ -1,0 +1,7 @@
+[
+    {
+        "name": "antialiasing",
+        "script": "docs/scripts/antialiasing_figures.py",
+        "outdir": "docs/source/images/antialiasing"
+    }
+]

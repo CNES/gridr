@@ -272,6 +272,32 @@ The documentation is then build in docs/build directory and can be consulted wit
 
 Documentation can be edited in docs/source/ RST files.
 
+Generated figures
+-----------------
+
+Some pages show figures produced by a script, for instance ``docs/scripts/antialiasing_figures.py`` for the antialiasing
+pages, whose code lives in the package ``docs/scripts/aa_figures``. The scripts are listed in
+``docs/source/figures_list.json``. Their figures and the ``results.json`` file holding the numbers quoted on the page
+are committed next to the images, and are not regenerated at every build.
+
+``results.json`` records, for each step of a script, the SHA-256 of the files it depends on: the modules of the script
+it uses and the GridR modules. The documentation build compares them with the current files and warns about the
+figures that are missing or out of date. To regenerate them:
+
+.. code-block:: console
+
+  make build-doc-figures                              # all figures
+  make build-doc-figures GRIDR_DOC_FIGURES_MODE=stale # missing or out of date only
+  make build-doc-figures GRIDR_DOC_FIGURES_MODE=check # report only
+
+The documentation build can also regenerate them, with ``GRIDR_DOC_BUILD_FIGURES=stale`` (or ``all``) in the environment
+or ``sphinx-build -D gridr_build_figures=stale``. A single script accepts ``--only`` to run some of its figures, and
+``--list`` to list them:
+
+.. code-block:: console
+
+  python docs/scripts/antialiasing_figures.py --only fig_moire fig_nyquist
+
 Jupyter notebooks
 =================
 
