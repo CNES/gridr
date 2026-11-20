@@ -1,4 +1,5 @@
 [
+    "antialiasing_001_filter_construction.ipynb",
     "core_masking_001_conventions.ipynb",
     "core_masking_002_rasterize.ipynb",
     "core_masking_003_build_mask_geometries.ipynb",

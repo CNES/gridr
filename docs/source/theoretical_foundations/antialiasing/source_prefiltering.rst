@@ -464,9 +464,9 @@ The method is implemented by the class ``ReciprocalCellFilter`` of the module
 the steps of this page to a transition matrix: it computes the cell, decides whether to filter, and synthesizes the
 kernel. On a grid, ``resolve_antialiasing_filter`` estimates the transition matrix (:doc:`transition_matrix_estimation`)
 and calls ``design``. The :doc:`API reference </api_python/core/filter/antialiasing/reciprocal_cell>` documents the
-returned kernel, the diagnostics and the warnings.
-
-.. the :doc:`tutorial </_notebooks/generated/antialiasing_001_filter_construction>` shows the filter on a grid and the effect of each parameter.
+returned kernel, the diagnostics and the warnings. The
+:doc:`tutorial </_notebooks/generated/antialiasing_001_filter_construction>` builds the filter of a decimation by 4 and
+shows the effect of each parameter.
 
 
 +-------------------------------------+-------------------+--------------------------------------------------------------------------------------------------------------+

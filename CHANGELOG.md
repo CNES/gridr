@@ -131,8 +131,9 @@
 
 - Added the user guide notebook `grid_resampling_005_support_policy.ipynb`: both policies around masked samples and at
   the borders of the source array, and how to choose.
-- Added the theoretical foundations pages on antialiasing (`theoretical_foundations/antialiasing/`) and the API pages of
-  `core.filter.antialiasing`.
+- Added the theoretical foundations pages on antialiasing (`theoretical_foundations/antialiasing/`), the API pages of
+  `core.filter.antialiasing` and the user guide notebook `antialiasing_001_filter_construction.ipynb`: the filter of a
+  decimation by 4, the effect of each parameter and the two experimental options.
 
 
 ### Changed
