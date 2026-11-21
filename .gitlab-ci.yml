@@ -87,7 +87,7 @@ variables:
     TAG_IMAGE_PYTHON_DEFAULT_VERSION: "3.12.14"
     TAG_IMAGE_RUST_DEFAULT_VERSION: "1.97.1"
     # Set the numpy version (temp)
-    NUMPY_VERSION_MIN: "1.25.0"
+    NUMPY_VERSION_MIN: "2.0.2"
 
     TAG_IMAGE_SONAR: "sonarsource/sonar-scanner-cli:4.5"
     #============================
@@ -152,7 +152,7 @@ rust_python_init:
           - TAG_IMAGE_PYTHON_VERSION: "3.12.14"
           - TAG_IMAGE_PYTHON_VERSION: "3.11.16"
           - TAG_IMAGE_PYTHON_VERSION: "3.10.21"
-            NUMPY_VERSION: "1.25.0"
+            NUMPY_VERSION: "2.0.2"
     # Utilisation de l'image rust_python generee specifiquement
     image: ${ARTIFACTORY_RUST_PYTHON_IMAGE_URL}/rust_python:rust-${TAG_IMAGE_RUST_VERSION}_python-${TAG_IMAGE_PYTHON_VERSION}_${TAG_IMAGE_OS}
     variables:
@@ -224,7 +224,7 @@ pytest:
           - TAG_IMAGE_PYTHON_VERSION: "3.12.14"
           - TAG_IMAGE_PYTHON_VERSION: "3.11.16"
           - TAG_IMAGE_PYTHON_VERSION: "3.10.21"
-            NUMPY_VERSION: "1.25.0"
+            NUMPY_VERSION: "2.0.2"
     image: ${ARTIFACTORY_RUST_PYTHON_IMAGE_URL}/rust_python:rust-${TAG_IMAGE_RUST_VERSION}_python-${TAG_IMAGE_PYTHON_VERSION}_${TAG_IMAGE_OS}
     needs: 
         - rust_python_init
@@ -348,7 +348,7 @@ package-build:
           - TAG_IMAGE_PYTHON_VERSION: "3.12.14"
           - TAG_IMAGE_PYTHON_VERSION: "3.11.16"
           - TAG_IMAGE_PYTHON_VERSION: "3.10.21"
-            NUMPY_VERSION: "1.25.0"
+            NUMPY_VERSION: "2.0.2"
     image: ${ARTIFACTORY_RUST_PYTHON_IMAGE_URL}/rust_python:rust-${TAG_IMAGE_RUST_VERSION}_python-${TAG_IMAGE_PYTHON_VERSION}_${TAG_IMAGE_OS}
     needs: 
         - rust_python_init

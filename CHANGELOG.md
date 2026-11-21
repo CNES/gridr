@@ -26,6 +26,7 @@
   It now wraps `resolve_antialiasing_filter` with a `ReciprocalCellFilter`, and its kernels change. `filter_nrow` and
   `filter_ncol` must be equal and odd. A hard gate (`filter_cutoff_tanh_slope=None`) or a positive `filter_cutoff_shift`
   raises `ValueError`.
+- **Dependancies (Python)**: the minimum Numpy version is raised from 1.25.0 to 2.0.2.
 
 ### Added
 
@@ -220,6 +221,8 @@
   - Added the `bench-save` and `bench-compare` targets. `BENCH_BASELINE` sets the baseline name.
 - **Benchmark**
   - Added the `benchmark/scripts/bench_rust.py` tool to run and save benchmark results and metadata.
+- **Gitlab-CI**
+  - The Python 3.10 job tests the minimum Numpy version, now 2.0.2.
 
 
 ## [0.7.0] - 2026-09-30
